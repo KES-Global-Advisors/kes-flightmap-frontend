@@ -1,29 +1,43 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/UserContext';
 import { Bell, Search, ChevronDown } from 'lucide-react';
-
-// interface User {
-//   name: string;
-//   email: string;
-//   imageUrl: string;
-// }
-
+import { Link } from 'react-router-dom';
 
 const Header = () => {
-
-  const user = {
-      name: 'Tim Cook',
-      email: 'tom@example.com',
-      imageUrl: '/api/placeholder/32/32'
-    }
-
+  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const { user, logout } = useAuth();
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    setShowUserMenu(false);
+    navigate('/login');
+  };
+
+  const handleNavigation = () => {
+    setShowUserMenu(false);
+  };
+
+  if (!user) return null;
 
   return (
     <header className="bg-white border-b border-gray-200">
       <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Left section */}
+        {/* Left section - unchanged */}
         <div className="flex items-center gap-4">
-
           <div className="flex-1 md:w-64">
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -37,10 +51,9 @@ const Header = () => {
             </div>
           </div>
         </div>
-
-        {/* Right section */}
+      
         <div className="flex items-center gap-4">
-          {/* Notifications */}
+          {/* Notifications - unchanged */}
           <button
             type="button"
             className="relative rounded-full p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2"
@@ -52,48 +65,51 @@ const Header = () => {
           </button>
 
           {/* User menu */}
-          <div className="relative">
+          <div className="relative" ref={menuRef}>
             <button
               type="button"
               className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2"
               onClick={() => setShowUserMenu(!showUserMenu)}
             >
               <img
-                src={user.imageUrl}
+                src={user.imageUrl || '/default-avatar.png'}
                 alt={user.name}
                 className="h-8 w-8 rounded-full"
               />
               <span className="hidden md:flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-700">{user.name}</span>
+                <span className="text-sm font-medium text-gray-700">
+                  {user.name}
+                </span>
                 <ChevronDown className="h-4 w-4 text-gray-400" />
               </span>
             </button>
-
-            {/* Dropdown menu */}
+  
             {showUserMenu && (
               <div className="absolute right-0 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
                 <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100">
-                  <p className="font-medium">{user.name}</p>
-                  <p className="text-gray-500">{user.email}</p>
+                  <p className="font-medium truncate">{user.name}</p>
+                  <p className="text-gray-500 truncate">{user.email}</p>
                 </div>
-                <a
-                  href="/profile"
+                <Link
+                  to="/profile"
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={handleNavigation}
                 >
                   Your Profile
-                </a>
-                <a
-                  href="/settings"
+                </Link>
+                <Link
+                  to="/settings"
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={handleNavigation}
                 >
                   Settings
-                </a>
-                <a
-                  href="/logout"
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t border-gray-100"
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t border-gray-100"
                 >
                   Sign out
-                </a>
+                </button>
               </div>
             )}
           </div>
