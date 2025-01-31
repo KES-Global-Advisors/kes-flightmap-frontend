@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 interface FormData {
   username: string;
@@ -15,9 +17,11 @@ interface FormErrors {
   password?: string;
   first_name?: string;
   last_name?: string;
+  general?: string;
 }
 
 const RegisterForm = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<FormData>({
     username: '',
     email: '',
@@ -46,22 +50,33 @@ const RegisterForm = () => {
     if (validateForm()) {
       setIsLoading(true);
       try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        const response = await fetch('http://127.0.0.1:8000/users/register/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Registration failed');
+        }
+
+        // Handle successful registration
         setIsSuccess(true);
-        // Reset form after success
+        
+        // Wait for 1 second to show success state before redirecting
         setTimeout(() => {
-          setIsSuccess(false);
-          setFormData({
-            username: '',
-            email: '',
-            password: '',
-            first_name: '',
-            last_name: ''
-          });
-        }, 2000);
+          navigate('/login');
+        }, 1000);
+
       } catch (error) {
         console.error('Registration error:', error);
+        setErrors(prev => ({
+          ...prev,
+          general: error instanceof Error ? error.message : 'Registration failed. Please try again.'
+        }));
       } finally {
         setIsLoading(false);
       }
@@ -74,6 +89,13 @@ const RegisterForm = () => {
       ...prev,
       [name]: value
     }));
+    // Clear error when user starts typing
+    if (errors[name as keyof FormErrors]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: undefined
+      }));
+    }
   };
 
   return (
@@ -195,7 +217,7 @@ const RegisterForm = () => {
             <div>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || isSuccess}
                 className="flex w-full justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
@@ -211,9 +233,9 @@ const RegisterForm = () => {
 
           <p className="mt-10 text-center text-sm text-gray-500">
             Already have an account?{' '}
-            <a href="#" className="font-semibold leading-6 text-indigo-600 hover:text-indigo-500">
+            <Link to="/login" className="font-semibold leading-6 text-indigo-600 hover:text-indigo-500">
               Sign in here
-            </a>
+            </Link>
           </p>
         </div>
       </div>
