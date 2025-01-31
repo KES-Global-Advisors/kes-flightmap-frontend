@@ -4,6 +4,8 @@ import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import LoginForm from './components/LoginForm'
 import RegisterForm from './components/RegisterForm'
+import PasswordReset from './components/PasswordReset'
+import PasswordUpdate from './components/PasswordUpdate'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import { AuthProvider, useAuth } from '@/contexts/UserContext';
@@ -55,7 +57,7 @@ const Layout = ({ children }: { children: ReactNode }) => {
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
   const location = useLocation()
-  const noLayoutPaths = ['/login', '/register']
+  const noLayoutPaths = ['/login', '/register', '/reset-password']
 
   if (noLayoutPaths.includes(location.pathname)) {
     return <div className="h-screen">{children}</div>
@@ -80,6 +82,8 @@ function App() {
                 <RegisterForm />
               </AuthRedirect>
             } />
+            <Route path="/reset-password" element={<PasswordReset />} />
+            <Route path="/reset-password/:uidb64/:token/" element={<PasswordUpdate />} />
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <Dashboard />
