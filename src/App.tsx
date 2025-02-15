@@ -8,6 +8,7 @@ import PasswordReset from './components/PasswordReset'
 import PasswordUpdate from './components/PasswordUpdate'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
+import RoadmapStepper from './pages/FormStepper'
 import { AuthProvider, useAuth } from '@/contexts/UserContext';
 
 // Auth components and types
@@ -92,6 +93,11 @@ function App() {
             <Route path="/" element={
               <ProtectedRoute>
                 <Navigate to="/dashboard" replace />
+              </ProtectedRoute>
+            } />
+            <Route path="/create-roadmap" element={
+              <ProtectedRoute>
+                <RoadmapStepper />
               </ProtectedRoute>
             } />
             <Route path="/settings" element={
