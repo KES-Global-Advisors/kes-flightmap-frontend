@@ -1,5 +1,5 @@
-// Sidebar.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   Settings, 
   Home, 
@@ -11,70 +11,41 @@ import {
   ChevronLeft,
   ChevronRight 
 } from 'lucide-react';
+import { ThemeContext } from '@/contexts/ThemeContext'; // Adjust the import path as needed
 
 interface NavItem {
   name: string;
   icon: React.ReactNode;
-  href: string;
+  url: string;
 }
 
 interface TeamItem {
   name: string;
   initial: string;
-  href: string;
+  url: string;
 }
 
 const mainNavItems: NavItem[] = [
-  { name: 'Dashboard', icon: <Home size={20} />, href: '/dashboard' },
-  { name: 'Team', icon: <Users size={20} />, href: '/team' },
-  { name: 'Roadmaps', icon: <FolderOpen size={20} />, href: '/roadmaps' },
-  { name: 'Create Roadmaps', icon: <FolderOpen size={20} />, href: '/create-roadmap' },
-  { name: 'Calendar', icon: <Calendar size={20} />, href: '/calendar' },
-  { name: 'Documents', icon: <FileText size={20} />, href: '/documents' },
-  { name: 'Reports', icon: <BarChart size={20} />, href: '/reports' },
+  { name: 'Dashboard', icon: <Home size={20} />, url: '/dashboard' },
+  { name: 'Team', icon: <Users size={20} />, url: '/team' },
+  { name: 'Roadmaps', icon: <FolderOpen size={20} />, url: '/roadmaps' },
+  { name: 'Create Roadmaps', icon: <FolderOpen size={20} />, url: '/create-roadmap' },
+  { name: 'Calendar', icon: <Calendar size={20} />, url: '/calendar' },
+  { name: 'Documents', icon: <FileText size={20} />, url: '/documents' },
+  { name: 'Reports', icon: <BarChart size={20} />, url: '/reports' },
 ];
 
 const teamItems: TeamItem[] = [
-  { name: 'Heroicons', initial: 'H', href: '/teams/heroicons' },
-  { name: 'Tailwind Labs', initial: 'T', href: '/teams/tailwind-labs' },
-  { name: 'Workcation', initial: 'W', href: '/teams/workcation' },
+  { name: 'Heroicons', initial: 'H', url: '/teams/heroicons' },
+  { name: 'Tailwind Labs', initial: 'T', url: '/teams/tailwind-labs' },
+  { name: 'Workcation', initial: 'W', url: '/teams/workcation' },
 ];
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [themeColor, setThemeColor] = useState('#4F46E5'); // Default indigo-600
-
-  // Listen for theme color changes from localStorage
-  useEffect(() => {
-    // Initial load of theme color
-    const savedColor = localStorage.getItem('themeColor');
-    if (savedColor) {
-      setThemeColor(savedColor);
-    }
-
-    // Set up storage event listener for real-time updates
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'themeColor' && e.newValue) {
-        setThemeColor(e.newValue);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    // Custom event for same-tab communication
-    const handleCustomEvent = (e: CustomEvent) => {
-      if (e.detail && e.detail.themeColor) {
-        setThemeColor(e.detail.themeColor);
-      }
-    };
-
-    window.addEventListener('themeColorChanged', handleCustomEvent as EventListener);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('themeColorChanged', handleCustomEvent as EventListener);
-    };
-  }, []);
+  
+  // Get the current theme color from the global ThemeContext
+  const { themeColor } = useContext(ThemeContext);
 
   // Helper functions for color manipulation
   const getLighterColor = (hexColor: string, opacity: number = 0.1): string => {
@@ -127,9 +98,7 @@ const Sidebar: React.FC = () => {
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full text-white"
-        style={{ 
-          backgroundColor: dynamicStyles.toggleButton.backgroundColor,
-        }}
+        style={{ backgroundColor: dynamicStyles.toggleButton.backgroundColor }}
         onMouseOver={(e) => {
           e.currentTarget.style.backgroundColor = dynamicStyles.toggleButton.hover;
         }}
@@ -156,14 +125,12 @@ const Sidebar: React.FC = () => {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-2 py-4">
         {mainNavItems.map((item) => (
-          <a
+          <Link
             key={item.name}
-            href={item.href}
+            to={item.url}
             className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white"
             title={isCollapsed ? item.name : undefined}
-            style={{ 
-              transition: 'background-color 0.2s ease-in-out',
-            }}
+            style={{ transition: 'background-color 0.2s ease-in-out' }}
             onMouseOver={(e) => {
               e.currentTarget.style.backgroundColor = dynamicStyles.navItem.hoverBg;
             }}
@@ -179,7 +146,7 @@ const Sidebar: React.FC = () => {
                 {item.name}
               </span>
             </div>
-          </a>
+          </Link>
         ))}
 
         {/* Teams Section */}
@@ -195,7 +162,7 @@ const Sidebar: React.FC = () => {
             {teamItems.map((team) => (
               <a
                 key={team.name}
-                href={team.href}
+                href={team.url}
                 className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white"
                 title={isCollapsed ? team.name : undefined}
                 onMouseOver={(e) => {
@@ -224,8 +191,8 @@ const Sidebar: React.FC = () => {
 
       {/* Settings */}
       <div className="p-2" style={{ borderTop: `1px solid ${getLighterColor(themeColor)}` }}>
-        <a
-          href="/settings"
+        <Link
+          to="/settings"
           className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white"
           title={isCollapsed ? 'Settings' : undefined}
           onMouseOver={(e) => {
@@ -241,7 +208,7 @@ const Sidebar: React.FC = () => {
           }`}>
             Settings
           </span>
-        </a>
+        </Link>
       </div>
     </div>
   );

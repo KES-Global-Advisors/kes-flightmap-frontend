@@ -11,6 +11,8 @@ import Settings from './pages/Settings'
 import RoadmapStepper from './pages/FormStepper'
 import RoadmapListing from './pages/RoadmapListing'
 import { AuthProvider, useAuth } from '@/contexts/UserContext';
+import { ThemeProvider } from '@/contexts/ThemeProvider'
+import { ToastContainer } from 'react-toastify';
 
 // Auth components and types
 interface ProtectedRouteProps {
@@ -70,52 +72,67 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppLayout>
-          <Routes>
-            <Route path="/login" element={
-              <AuthRedirect>
-                <LoginForm />
-              </AuthRedirect>
-            } />
-            <Route path="/register" element={
-              <AuthRedirect>
-                <RegisterForm />
-              </AuthRedirect>
-            } />
-            <Route path="/reset-password" element={<PasswordReset />} />
-            <Route path="/reset-password/:uidb64/:token/" element={<PasswordUpdate />} />
-            <Route path="/dashboard" element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            } />
-            <Route path="/" element={
-              <ProtectedRoute>
-                <Navigate to="/dashboard" replace />
-              </ProtectedRoute>
-            } />
-            <Route path="/roadmaps" element={
-              <ProtectedRoute>
-                <RoadmapListing />
-              </ProtectedRoute>
-            } />
-            <Route path="/create-roadmap" element={
-              <ProtectedRoute>
-                <RoadmapStepper />
-              </ProtectedRoute>
-            } />
-            <Route path="/settings" element={
-              <ProtectedRoute>
-                <Settings />
-              </ProtectedRoute>
-            } />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </AppLayout>
-      </BrowserRouter>
-    </AuthProvider>
+    <>
+    <ToastContainer 
+      position="top-right"
+      autoClose={2000}  // auto close after 2 seconds
+      hideProgressBar={false}
+      newestOnTop={false}
+      closeOnClick
+      rtl={false}
+      pauseOnFocusLoss
+      draggable
+      pauseOnHover
+    />
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppLayout>
+            <Routes>
+              <Route path="/login" element={
+                <AuthRedirect>
+                  <LoginForm />
+                </AuthRedirect>
+              } />
+              <Route path="/register" element={
+                <AuthRedirect>
+                  <RegisterForm />
+                </AuthRedirect>
+              } />
+              <Route path="/reset-password" element={<PasswordReset />} />
+              <Route path="/reset-password/:uidb64/:token/" element={<PasswordUpdate />} />
+              <Route path="/dashboard" element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/" element={
+                <ProtectedRoute>
+                  <Navigate to="/dashboard" replace />
+                </ProtectedRoute>
+              } />
+              <Route path="/roadmaps" element={
+                <ProtectedRoute>
+                  <RoadmapListing />
+                </ProtectedRoute>
+              } />
+              <Route path="/create-roadmap" element={
+                <ProtectedRoute>
+                  <RoadmapStepper />
+                </ProtectedRoute>
+              } />
+              <Route path="/settings" element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              } />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </AppLayout>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
+    </>
   )
 }
 

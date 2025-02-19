@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
+import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Check } from 'lucide-react';
 import { RoadmapForm, RoadmapFormData } from '../components/Forms/RoadmapForm';
@@ -45,6 +46,7 @@ const FORM_STEPS = [
 ] as const;
 
 const FormStepper: React.FC = () => {
+  const { themeColor } = useContext(ThemeContext);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [formData, setFormData] = useState<FormDataMap>({});
   const [showSuccess, setShowSuccess] = useState(false);
@@ -129,30 +131,29 @@ const FormStepper: React.FC = () => {
         <div className="flex items-center justify-between">
           {FORM_STEPS.map((step, index) => (
             <React.Fragment key={step.id}>
-              {/* Step Circle */}
-              <div className="flex flex-col items-center">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    index < currentStepIndex
-                      ? 'bg-indigo-600'
-                      : index === currentStepIndex
-                      ? 'bg-indigo-600'
-                      : 'bg-gray-200'
-                  } ${index <= currentStepIndex ? 'text-white' : 'text-gray-500'}`}
-                >
-                  {index < currentStepIndex ? (
-                    <Check className="w-5 h-5" />
-                  ) : (
-                    <span>{index + 1}</span>
-                  )}
-                </div>
-                <span className="mt-2 text-sm font-medium text-gray-600">
-                  {step.label}
-                </span>
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  index <= currentStepIndex ? 'text-white' : 'text-gray-500'
+                }`}
+                style={{
+                  backgroundColor: index <= currentStepIndex ? themeColor : '#e5e7eb' // gray-200 equivalent
+                }}
+              >
+                {index < currentStepIndex ? (
+                  <Check className="w-5 h-5" />
+                ) : (
+                  <span>{index + 1}</span>
+                )}
               </div>
+              
               {/* Connector Line */}
               {index < FORM_STEPS.length - 1 && (
-                <div className={`flex-1 h-0.5 ${index < currentStepIndex ? 'bg-indigo-600' : 'bg-gray-200'}`} />
+                <div 
+                  className="flex-1 h-0.5" 
+                  style={{ 
+                    backgroundColor: index < currentStepIndex ? themeColor : '#e5e7eb' // gray-200 equivalent
+                  }} 
+                />
               )}
             </React.Fragment>
           ))}
@@ -183,7 +184,8 @@ const FormStepper: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+                style={{ backgroundColor: themeColor, cursor: 'pointer' }}
+                className=" text-white px-4 py-2 rounded-md"
               >
                 {currentStepIndex === FORM_STEPS.length - 1 ? 'Finish' : 'Next'}
               </button>

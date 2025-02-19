@@ -1,4 +1,5 @@
 // Dashboard page
+import { useContext } from 'react';
 import {
   EmployeeContribution,
   StrategicAlignment,
@@ -15,9 +16,12 @@ import DashboardFilters from '@/components/Dashboard/DashboardFilters';
 import TrendChart from '@/components/Dashboard/TrendChart';
 import RiskAssessment from '@/components/Dashboard/RiskAssessment';
 import ResourceAllocation from '@/components/Dashboard/ResourceAllocation';
+import { ThemeContext } from '@/contexts/ThemeContext'; // Adjust the path as needed
 import useFetch from '@/hooks/UseFetch'; 
 
 const Dashboard = () => {
+    // Use the theme from the ThemeContext
+    const { themeColor } = useContext(ThemeContext);
   // Fetch core dashboard data
   const { 
     data: dashboardData, 
@@ -72,7 +76,11 @@ const Dashboard = () => {
     risksLoading || 
     workloadsLoading
   ) {
-    return <div className="flex justify-center items-center h-screen">Loading...</div>;
+    return(
+      <div className="flex h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4" style={{ borderColor: themeColor }}></div>
+      </div>
+    );
   }
 
   // Handle errors from any endpoint
