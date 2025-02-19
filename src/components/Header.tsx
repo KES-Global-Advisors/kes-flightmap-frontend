@@ -10,6 +10,24 @@ const Header = () => {
   const { user, logout } = useAuth();
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Initialize themeColor from localStorage (or default to blue)
+  const [themeColor, setThemeColor] = useState<string>(
+    localStorage.getItem('themeColor') || '#3B82F6'
+  );
+
+  // Listen for theme changes dispatched from the settings page
+  useEffect(() => {
+    const handleThemeChange = (event: CustomEvent) => {
+      setThemeColor(event.detail.themeColor);
+    };
+
+    window.addEventListener('themeColorChanged', handleThemeChange as EventListener);
+    return () => {
+      window.removeEventListener('themeColorChanged', handleThemeChange as EventListener);
+    };
+  }, []);
+
+  // Close user menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -33,10 +51,18 @@ const Header = () => {
 
   if (!user) return null;
 
+  // Generate initials from the user's name
+  const initials = user.name
+    .split(' ')
+    .map((n) => n.charAt(0))
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+
   return (
     <header className="bg-white border-b border-gray-200">
       <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Left section - unchanged */}
+        {/* Left section remains unchanged */}
         <div className="flex items-center gap-4">
           <div className="flex-1 md:w-64">
             <div className="relative">
@@ -53,7 +79,7 @@ const Header = () => {
         </div>
       
         <div className="flex items-center gap-4">
-          {/* Notifications - unchanged */}
+          {/* Notifications remain unchanged */}
           <button
             type="button"
             className="relative rounded-full p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2"
@@ -71,15 +97,15 @@ const Header = () => {
               className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2"
               onClick={() => setShowUserMenu(!showUserMenu)}
             >
-              <img
-                src={user.imageUrl || '/default-avatar.png'}
-                alt={user.name}
-                className="h-8 w-8 rounded-full"
-              />
+              {/* Replace image with a div that shows user initials */}
+              <div
+                className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                style={{ backgroundColor: themeColor }}
+              >
+                {initials}
+              </div>
               <span className="hidden md:flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-700">
-                  {user.name}
-                </span>
+                <span className="text-sm font-medium text-gray-700">{user.name}</span>
                 <ChevronDown className="h-4 w-4 text-gray-400" />
               </span>
             </button>

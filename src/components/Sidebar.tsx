@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// Sidebar.tsx
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
   Home, 
@@ -26,7 +27,8 @@ interface TeamItem {
 const mainNavItems: NavItem[] = [
   { name: 'Dashboard', icon: <Home size={20} />, href: '/dashboard' },
   { name: 'Team', icon: <Users size={20} />, href: '/team' },
-  { name: 'Projects', icon: <FolderOpen size={20} />, href: '/projects' },
+  { name: 'Roadmaps', icon: <FolderOpen size={20} />, href: '/roadmaps' },
+  { name: 'Create Roadmaps', icon: <FolderOpen size={20} />, href: '/create-roadmap' },
   { name: 'Calendar', icon: <Calendar size={20} />, href: '/calendar' },
   { name: 'Documents', icon: <FileText size={20} />, href: '/documents' },
   { name: 'Reports', icon: <BarChart size={20} />, href: '/reports' },
@@ -38,19 +40,102 @@ const teamItems: TeamItem[] = [
   { name: 'Workcation', initial: 'W', href: '/teams/workcation' },
 ];
 
-const Sidebar = () => {
+const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [themeColor, setThemeColor] = useState('#4F46E5'); // Default indigo-600
+
+  // Listen for theme color changes from localStorage
+  useEffect(() => {
+    // Initial load of theme color
+    const savedColor = localStorage.getItem('themeColor');
+    if (savedColor) {
+      setThemeColor(savedColor);
+    }
+
+    // Set up storage event listener for real-time updates
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'themeColor' && e.newValue) {
+        setThemeColor(e.newValue);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    // Custom event for same-tab communication
+    const handleCustomEvent = (e: CustomEvent) => {
+      if (e.detail && e.detail.themeColor) {
+        setThemeColor(e.detail.themeColor);
+      }
+    };
+
+    window.addEventListener('themeColorChanged', handleCustomEvent as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('themeColorChanged', handleCustomEvent as EventListener);
+    };
+  }, []);
+
+  // Helper functions for color manipulation
+  const getLighterColor = (hexColor: string, opacity: number = 0.1): string => {
+    return `${hexColor}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
+  };
+  
+  const getDarkerColor = (hex: string): string => {
+    // Convert hex to RGB
+    let r = parseInt(hex.slice(1, 3), 16);
+    let g = parseInt(hex.slice(3, 5), 16);
+    let b = parseInt(hex.slice(5, 7), 16);
+    
+    // Darken by reducing each component by 15%
+    r = Math.max(0, Math.floor(r * 0.85));
+    g = Math.max(0, Math.floor(g * 0.85));
+    b = Math.max(0, Math.floor(b * 0.85));
+    
+    // Convert back to hex
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  };
+
+  // Dynamic styles based on theme color
+  const dynamicStyles = {
+    sidebar: {
+      backgroundColor: themeColor,
+    },
+    toggleButton: {
+      backgroundColor: themeColor,
+      hover: getDarkerColor(themeColor),
+    },
+    navItem: {
+      hoverBg: getLighterColor(themeColor),
+    },
+    teamInitial: {
+      backgroundColor: getLighterColor(themeColor),
+    },
+    border: {
+      borderColor: getLighterColor(themeColor),
+    }
+  };
 
   return (
     <div 
-      className={`relative flex min-h-screen flex-col bg-indigo-600 transition-all duration-300 ease-in-out ${
+      className={`relative flex min-h-screen flex-col transition-all duration-300 ease-in-out ${
         isCollapsed ? 'w-16' : 'w-64'
       }`}
+      style={dynamicStyles.sidebar}
     >
       {/* Toggle Button */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white hover:bg-indigo-700"
+        className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full text-white"
+        style={{ 
+          backgroundColor: dynamicStyles.toggleButton.backgroundColor,
+        }}
+        onMouseOver={(e) => {
+          e.currentTarget.style.backgroundColor = dynamicStyles.toggleButton.hover;
+        }}
+        onMouseOut={(e) => {
+          e.currentTarget.style.backgroundColor = dynamicStyles.toggleButton.backgroundColor;
+        }}
       >
         {isCollapsed ? (
           <ChevronRight size={14} />
@@ -62,7 +147,7 @@ const Sidebar = () => {
       {/* Logo */}
       <div className="flex h-16 items-center pl-4">
         <div className="flex items-center">
-          <div className="h-8 w-8 rounded-lg bg-white/10 p-1">
+          <div className="h-8 w-8 rounded-lg p-1" style={{ backgroundColor: getLighterColor(themeColor) }}>
             <div className="h-full w-full rounded-md bg-white/90" />
           </div>
         </div>
@@ -74,8 +159,17 @@ const Sidebar = () => {
           <a
             key={item.name}
             href={item.href}
-            className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white hover:bg-white/10"
+            className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white"
             title={isCollapsed ? item.name : undefined}
+            style={{ 
+              transition: 'background-color 0.2s ease-in-out',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.backgroundColor = dynamicStyles.navItem.hoverBg;
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
           >
             <div className="flex items-center">
               {item.icon}
@@ -102,10 +196,19 @@ const Sidebar = () => {
               <a
                 key={team.name}
                 href={team.href}
-                className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white hover:bg-white/10"
+                className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white"
                 title={isCollapsed ? team.name : undefined}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = dynamicStyles.navItem.hoverBg;
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
               >
-                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/10 text-sm font-medium">
+                <span 
+                  className="flex h-6 w-6 items-center justify-center rounded-lg text-sm font-medium"
+                  style={{ backgroundColor: dynamicStyles.teamInitial.backgroundColor }}
+                >
                   {team.initial}
                 </span>
                 <span className={`ml-3 transition-opacity duration-300 ${
@@ -120,11 +223,17 @@ const Sidebar = () => {
       </nav>
 
       {/* Settings */}
-      <div className="border-t border-white/10 p-2">
+      <div className="p-2" style={{ borderTop: `1px solid ${getLighterColor(themeColor)}` }}>
         <a
           href="/settings"
-          className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white hover:bg-white/10"
+          className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white"
           title={isCollapsed ? 'Settings' : undefined}
+          onMouseOver={(e) => {
+            e.currentTarget.style.backgroundColor = dynamicStyles.navItem.hoverBg;
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }}
         >
           <Settings className="h-5 w-5" />
           <span className={`ml-3 transition-opacity duration-300 ${
