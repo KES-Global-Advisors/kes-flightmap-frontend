@@ -13,6 +13,7 @@ export interface Milestone {
     id: number;
     name: string;
     deadline: string;
+    status: 'not_started' | 'in_progress' | 'completed';
     activities: Activity[];
   }
   
