@@ -11,17 +11,11 @@ import {
   ChevronLeft,
   ChevronRight 
 } from 'lucide-react';
-import { ThemeContext } from '@/contexts/ThemeContext'; // Adjust the import path as needed
+import { ThemeContext } from '@/contexts/ThemeContext';
 
 interface NavItem {
   name: string;
   icon: React.ReactNode;
-  url: string;
-}
-
-interface TeamItem {
-  name: string;
-  initial: string;
   url: string;
 }
 
@@ -35,11 +29,6 @@ const mainNavItems: NavItem[] = [
   { name: 'Reports', icon: <BarChart size={20} />, url: '/reports' },
 ];
 
-const teamItems: TeamItem[] = [
-  { name: 'Heroicons', initial: 'H', url: '/teams/heroicons' },
-  { name: 'Tailwind Labs', initial: 'T', url: '/teams/tailwind-labs' },
-  { name: 'Workcation', initial: 'W', url: '/teams/workcation' },
-];
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -148,45 +137,6 @@ const Sidebar: React.FC = () => {
             </div>
           </Link>
         ))}
-
-        {/* Teams Section */}
-        <div className={`mt-8 transition-opacity duration-300 ${
-          isCollapsed ? 'opacity-0' : 'opacity-100'
-        }`}>
-          <h3 className={`px-3 text-sm font-medium text-white/70 ${
-            isCollapsed ? 'hidden' : 'block'
-          }`}>
-            Your teams
-          </h3>
-          <div className="mt-2 space-y-1">
-            {teamItems.map((team) => (
-              <a
-                key={team.name}
-                href={team.url}
-                className="group flex items-center rounded-md px-2 py-2 text-sm font-medium text-white"
-                title={isCollapsed ? team.name : undefined}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.backgroundColor = dynamicStyles.navItem.hoverBg;
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-              >
-                <span 
-                  className="flex h-6 w-6 items-center justify-center rounded-lg text-sm font-medium"
-                  style={{ backgroundColor: dynamicStyles.teamInitial.backgroundColor }}
-                >
-                  {team.initial}
-                </span>
-                <span className={`ml-3 transition-opacity duration-300 ${
-                  isCollapsed ? 'w-0 overflow-hidden opacity-0' : 'opacity-100'
-                }`}>
-                  {team.name}
-                </span>
-              </a>
-            ))}
-          </div>
-        </div>
       </nav>
 
       {/* Settings */}
