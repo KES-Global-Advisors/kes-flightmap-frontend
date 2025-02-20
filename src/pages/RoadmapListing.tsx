@@ -102,7 +102,7 @@ const RoadmapListing: React.FC = () => {
       {showModal && selectedRoadmap && (
         <Modal onClose={closeModal}>
           <h2 className="text-xl font-bold mb-4">{selectedRoadmap.name}</h2>
-          <RoadmapSwitcher />
+          <RoadmapSwitcher roadmap={selectedRoadmap} />
         </Modal>
       )}
     </div>
