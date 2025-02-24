@@ -3,12 +3,12 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import { JwtPayload } from '@/types/auth';
 
-interface User {
+export type User = {
   name: string;
-  email: string;
   username: string;
-  imageUrl?: string;
-}
+  email: string;
+  role: string;
+};
 
 interface AuthContextType {
   user: User | null;
@@ -31,12 +31,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             name: string;
             email: string;
             username: string;
+            role: string;
           } = jwtDecode(token);
           
           setUser({
             name: decoded.name,
             email: decoded.email,
             username: decoded.username,
+            role: decoded.role,
           });
         } catch (error) {
           console.error('Invalid token:', error);

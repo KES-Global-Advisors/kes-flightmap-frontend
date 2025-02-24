@@ -4,6 +4,7 @@ function useFetch<T>(url: string) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -18,9 +19,11 @@ function useFetch<T>(url: string) {
         }
 
         const response = await fetch(url, { headers });
+        setStatus(response.status);
         
         if (!response.ok) {
-          throw new Error('Network response was not ok');
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Network response was not ok');
         }
 
         const jsonData = await response.json();
@@ -35,7 +38,7 @@ function useFetch<T>(url: string) {
     fetchData();
   }, [url]);
 
-  return { data, loading, error };
+  return { data, loading, error, status };
 }
 
 export default useFetch;
