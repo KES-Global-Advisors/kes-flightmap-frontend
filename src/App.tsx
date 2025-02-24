@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import LoginForm from './components/LoginForm'
@@ -71,6 +71,14 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
 }
 
 function App() {
+    // Fetch the CSRF cookie once on mount
+    useEffect(() => {
+      fetch('http://127.0.0.1:8000/users/csrf/', {
+        method: 'GET',
+        credentials: 'include', // allows setting the csrftoken cookie
+      }).catch(err => console.error('Failed to get CSRF cookie:', err));
+    }, []);
+  
   return (
     <>
     <ToastContainer 

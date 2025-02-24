@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
+import { getCookie } from '@/utils/getCookie';
 
 interface FormData {
   username: string;
@@ -32,6 +33,8 @@ const RegisterForm = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  // const [csrfToken, setCsrfToken] = useState('');
+
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -47,6 +50,8 @@ const RegisterForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const csrfToken = getCookie('csrftoken'); // read from the cookie
+
     if (validateForm()) {
       setIsLoading(true);
       try {
@@ -54,7 +59,10 @@ const RegisterForm = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest',
           },
+          credentials: 'include',
           body: JSON.stringify(formData),
         });
 

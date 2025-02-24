@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import { Link } from 'react-router-dom';
+import { getCookie } from '@/utils/getCookie';
 
 
 interface Errors {
@@ -17,26 +18,6 @@ const LoginForm = () => {
   const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState(0);
-  const [csrfToken, setCsrfToken] = useState('');
-
-  // Fetch CSRF token on component mount
-  useEffect(() => {
-    const fetchCSRFToken = async () => {
-      try {
-        const response = await fetch('http://127.0.0.1:8000/users/csrf/', {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (!response.ok) throw new Error('CSRF fetch failed');
-        const data = await response.json();
-        setCsrfToken(data.csrfToken); // Use token from response body
-      } catch {
-        setErrors({ api: 'Failed to initialize security token' });
-      }
-    };
-  
-    fetchCSRFToken();
-  }, []);
 
   const validateForm = () => {
     const newErrors: Errors = {};
@@ -66,10 +47,11 @@ const LoginForm = () => {
 
   const handleLogout = async () => {
     try {
+      const cookieToken = getCookie('csrftoken')
       await fetch('http://127.0.0.1:8000/users/logout/', {
         method: 'POST',
         headers: {
-          'X-CSRFToken': csrfToken,
+          'X-CSRFToken': cookieToken,
           'X-Requested-With': 'XMLHttpRequest'
         },
         credentials: 'include'
@@ -86,11 +68,12 @@ const LoginForm = () => {
 
   const refreshToken = async () => {
     try {
+      const cookieToken = getCookie('csrftoken')
       const response = await fetch('http://127.0.0.1:8000/users/refresh/', {
         method: 'POST',
         credentials: 'include',
         headers: {
-          'X-CSRFToken': csrfToken,
+          'X-CSRFToken': cookieToken,
         },
       });
       
@@ -121,12 +104,13 @@ const LoginForm = () => {
     setIsSubmitting(true);
     
     try {
+      const cookieToken = getCookie('csrftoken')
       const response = await fetch('http://127.0.0.1:8000/users/login/', {
         method: 'POST',
         // Update handleSubmit headers:
         headers: { 
           'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken,
+          'X-CSRFToken': cookieToken,
           'X-Requested-With': 'XMLHttpRequest'  // Add this header
         },
         credentials: 'include',
