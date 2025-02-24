@@ -17,8 +17,6 @@ interface RoadmapCardProps {
 const RoadmapCard: React.FC<RoadmapCardProps> = ({ roadmap, openModal, onDelete }) => {
   const { themeColor } = useContext(ThemeContext);
   const { user } = useAuth();
-  console.log('Current user role:', user?.role);
-  console.log('Current user:', user);
 
   const [showDropdown, setShowDropdown] = useState(false);
 

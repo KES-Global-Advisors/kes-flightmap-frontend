@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import FlightmapVisualization from './FlightmapVisualization';
+import RoadmapVisualization from './FlightmapVisualization';
 import GanttChart from './GanttChart';
 import { RoadmapData } from '@/types/roadmap';
 
@@ -27,7 +27,7 @@ const RoadmapSwitcher: React.FC<RoadmapSwitcherProps> = ({ roadmap }) => {
         </button>
       </div>
 
-      {viewMode === 'flightmap' && <FlightmapVisualization data={roadmap} />}
+      {viewMode === 'flightmap' && <RoadmapVisualization data={roadmap} />}
       {viewMode === 'gantt' && <GanttChart data={roadmap} />}
     </div>
   );
