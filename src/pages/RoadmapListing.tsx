@@ -1,16 +1,63 @@
 import React, { useState, useContext } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { RoadmapData } from '@/types/roadmap';
+import { useAuth } from '@/contexts/UserContext';
 import Modal from '@/components/Roadmap/Modal';
 import useFetch from '@/hooks/UseFetch';
 import RoadmapSwitcher from '@/components/Roadmap/RoadmapSwitcher';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, MoreVertical, Trash2 } from 'lucide-react';
 
-const RoadmapCard: React.FC<{ roadmap: RoadmapData; openModal: (roadmap: RoadmapData) => void }> = ({ roadmap, openModal }) => {
+
+interface RoadmapCardProps {
+  roadmap: RoadmapData;
+  openModal: (roadmap: RoadmapData) => void;
+  onDelete: (id: number) => void;
+}
+
+const RoadmapCard: React.FC<RoadmapCardProps> = ({ roadmap, openModal, onDelete }) => {
   const { themeColor } = useContext(ThemeContext);
+  const { user } = useAuth();
+  console.log('Current user role:', user?.role);
+  console.log('Current user:', user);
+
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const handleDelete = async () => {
+    const confirmed = window.confirm('Are you sure you want to delete this roadmap?');
+    if (confirmed) {
+      onDelete(roadmap.id);
+    }
+    setShowDropdown(false);
+  };
 
   return (
-    <div className="bg-white rounded-lg p-6 hover:shadow-xl transition-all duration-300 border border-gray-100">
+    <div className="bg-white rounded-lg p-6 hover:shadow-xl transition-all duration-300 border border-gray-100 relative">
+      {/* Admin Menu */}
+      {user?.role === 'admin' && (
+        <div className="absolute top-4 right-4">
+          <button
+            onClick={() => setShowDropdown(!showDropdown)}
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <MoreVertical className="w-5 h-5 text-gray-500" />
+          </button>
+          
+          {showDropdown && (
+            <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+              <div className="py-1">
+                <button
+                  onClick={handleDelete}
+                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Roadmap
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="mb-4">
         <svg viewBox="0 0 200 120" className="w-full h-32">
           <rect x="0" y="0" width="200" height="120" fill="#f0f9ff" />
@@ -35,7 +82,7 @@ const RoadmapCard: React.FC<{ roadmap: RoadmapData; openModal: (roadmap: Roadmap
         <button
           onClick={() => openModal(roadmap)}
           style={{ backgroundColor: themeColor, cursor: 'pointer' }}
-          className="w-full mt-4  text-white px-6 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center group"
+          className="w-full mt-4 text-white px-6 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center group"
         >
           <span>View Roadmap</span>
           <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
@@ -55,6 +102,29 @@ const RoadmapListing: React.FC = () => {
     loading,
     error,
   } = useFetch<RoadmapData[]>('http://127.0.0.1:8000/roadmaps/');
+
+  const handleDelete = async (id: number) => {
+    try {
+      const accessToken = sessionStorage.getItem('accessToken');
+      const response = await fetch(`http://127.0.0.1:8000/roadmaps/${id}/`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete roadmap');
+      }
+
+      // Refresh the page to update the roadmap list
+      window.location.reload();
+    } catch (error) {
+      console.error('Error deleting roadmap:', error);
+      alert('Failed to delete roadmap. Please try again.');
+    }
+  };
 
   if (loading) {
     return (
@@ -95,7 +165,12 @@ const RoadmapListing: React.FC = () => {
       <h1 className="text-2xl font-bold mb-6">Roadmaps</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {roadmaps.map((roadmap) => (
-          <RoadmapCard key={roadmap.id} roadmap={roadmap} openModal={openModal} />
+          <RoadmapCard 
+            key={roadmap.id} 
+            roadmap={roadmap} 
+            openModal={openModal}
+            onDelete={handleDelete}
+          />
         ))}
       </div>
 

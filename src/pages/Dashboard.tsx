@@ -16,12 +16,12 @@ import DashboardFilters from '@/components/Dashboard/DashboardFilters';
 import TrendChart from '@/components/Dashboard/TrendChart';
 import RiskAssessment from '@/components/Dashboard/RiskAssessment';
 import ResourceAllocation from '@/components/Dashboard/ResourceAllocation';
-import { ThemeContext } from '@/contexts/ThemeContext'; // Adjust the path as needed
-import useFetch from '@/hooks/UseFetch'; 
+import { ThemeContext } from '@/contexts/ThemeContext';
+import useFetch from '@/hooks/UseFetch';
 
 const Dashboard = () => {
-    // Use the theme from the ThemeContext
-    const { themeColor } = useContext(ThemeContext);
+  const { themeColor } = useContext(ThemeContext);
+
   // Fetch core dashboard data
   const { 
     data: dashboardData, 
@@ -41,13 +41,14 @@ const Dashboard = () => {
     error: alignmentError 
   } = useFetch<StrategicAlignment>('http://127.0.0.1:8000/strategic-alignment/');
 
+  // Modified timeline fetch to handle "no roadmap" case
   const { 
     data: timelineEvents, 
-    loading: timelineLoading, 
-    error: timelineError 
-  } = useFetch<TimelineEvent[]>('http://127.0.0.1:8000/roadmaps/1/timeline/');
+    loading: timelineLoading,
+    error: timelineError,
+    status: timelineStatus 
+  } = useFetch<TimelineEvent[]>('http://127.0.0.1:8000/roadmaps/4/timeline/');
 
-  // Fetch additional dashboard data
   const { 
     data: trendData, 
     loading: trendLoading, 
@@ -66,7 +67,7 @@ const Dashboard = () => {
     error: workloadsError 
   } = useFetch<WorkloadDistribution[]>('http://127.0.0.1:8000/dashboard/workloads/');
 
-  // Handle loading state: if any endpoint is still loading
+  // Handle loading state
   if (
     summaryLoading || 
     contributionsLoading || 
@@ -83,15 +84,15 @@ const Dashboard = () => {
     );
   }
 
-  // Handle errors from any endpoint
+  // Handle critical errors (excluding timeline "no roadmap" case)
   if (
     summaryError || 
     contributionsError || 
     alignmentError || 
-    timelineError || 
     trendError || 
     risksError || 
-    workloadsError
+    workloadsError ||
+    (timelineError && timelineStatus !== 404)  // Only treat non-404 timeline errors as critical
   ) {
     return (
       <div className="text-red-600 p-4">
@@ -100,12 +101,11 @@ const Dashboard = () => {
     );
   }
 
-  // Handle case where data hasn't been loaded yet
+  // Handle case where critical data hasn't been loaded yet
   if (
     !dashboardData || 
     !contributions || 
     !alignment || 
-    !timelineEvents || 
     !trendData || 
     !risks || 
     !workloads
@@ -113,7 +113,6 @@ const Dashboard = () => {
     return <div>No data available</div>;
   }
 
-  // Unwrap dashboard summary:
   const summary = dashboardData.summary;
 
   return (
@@ -150,37 +149,39 @@ const Dashboard = () => {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        {/* Left Column: Project Timeline and Trend Analysis */}
+        {/* Left Column */}
         <div className="space-y-8">
-          {/* Timeline Section */}
+          {/* Timeline Section with "no roadmap" handling */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Project Timeline</h2>
-            <Timeline events={timelineEvents} />
+            {timelineStatus === 404 ? (
+              <div className="text-gray-500 text-center py-4">
+                No roadmap available for this project.
+              </div>
+            ) : (
+              <Timeline events={timelineEvents || []} />
+            )}
           </div>
 
-          {/* Trend Analysis Section */}
+          {/* Rest of the left column components */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Progress Trends</h2>
             <TrendChart data={trendData} />
           </div>
 
-          {/* Team Performance Section */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Team Performance</h2>
             <PerformanceChart data={contributions} />
           </div>
         </div>
 
-
-        {/* Right Column: Team Performance, Strategic Alignment, Risk, and Resource Allocation */}
+        {/* Right Column */}
         <div className="space-y-8">
-          {/* Risk Assessment Section */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Risk Assessment</h2>
             <RiskAssessment risks={risks} />
           </div>
 
-          {/* Strategic Alignment Section */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Strategic Alignment</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -203,11 +204,10 @@ const Dashboard = () => {
             </div>
           </div>
 
-            {/* Resource Allocation Section */}
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-bold mb-4">Resource Allocation</h2>
-              <ResourceAllocation workloads={workloads} />
-            </div>
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-bold mb-4">Resource Allocation</h2>
+            <ResourceAllocation workloads={workloads} />
+          </div>
         </div>
       </div>
     </div>
