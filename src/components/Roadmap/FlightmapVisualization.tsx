@@ -369,6 +369,11 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .attr("transform", `translate(${width - margin.right + 20}, ${margin.top})`);
 
     const legendItemHeight = 30;
+    // Variable to hold the active filter key.
+    let activeFilter: string | null = null;
+    // Set of interactive roadmap types.
+    const interactiveTypes = new Set(["roadmap", "strategy", "program", "workstream", "milestone", "activity"]);
+
     legend
       .selectAll(".legend-item")
       .data(legendData)
@@ -495,6 +500,42 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
           .attr("fill", "black")
           .style("font-size", "12px")
           .text(d.label);
+
+        // Make both roadmap and progress legend items interactive.
+        if (interactiveTypes.has(d.type) || d.type.startsWith("status_")) {
+          g.style("cursor", "pointer")
+            .on("click", function () {
+              // Determine the filter key.
+              const filterKey = d.type.startsWith("status_") ? d.status : d.type;
+              // Toggle filter.
+              if (activeFilter === filterKey) {
+                activeFilter = null;
+                nodes.transition().duration(500).style("opacity", 1);
+              } else {
+                activeFilter = filterKey;
+                nodes.transition().duration(500).style("opacity", function (nd) {
+                  // For progress filter, only show activity nodes with matching status.
+                  if (
+                    filterKey === "completed" ||
+                    filterKey === "in_progress" ||
+                    filterKey === "not_started"
+                  ) {
+                    return nd.data.type === "activity" && nd.data.status === filterKey ? 1 : 0.2;
+                  } else {
+                    return nd.data.type === filterKey ? 1 : 0.2;
+                  }
+                });
+              }
+              // Update legend styling to reflect the active filter.
+              legend.selectAll(".legend-item").style("opacity", function (legData) {
+                const legKey = legData.type.startsWith("status_") ? legData.status : legData.type;
+                if (activeFilter) {
+                  return legKey === activeFilter ? 1 : 0.5;
+                }
+                return 1;
+              });
+            });
+        }
       });
   }, [data]);
 
