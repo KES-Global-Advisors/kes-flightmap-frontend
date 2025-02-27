@@ -1,12 +1,61 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useRef, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { RoadmapData } from '@/types/roadmap';
 import { useAuth } from '@/contexts/UserContext';
 import Modal from '@/components/Roadmap/Modal';
 import useFetch from '@/hooks/UseFetch';
 import RoadmapSwitcher from '@/components/Roadmap/RoadmapSwitcher';
-import { ChevronRight, MoreVertical, Trash2 } from 'lucide-react';
+import { ChevronRight, MoreVertical, Trash2, X } from 'lucide-react';
 
+interface ConfirmationDialogProps {
+  isOpen: boolean;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
+  isOpen,
+  message,
+  onConfirm,
+  onCancel,
+}) => {
+  const { themeColor } = useContext(ThemeContext);
+  
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium">Confirm Action</h3>
+          <button 
+            onClick={onCancel}
+            className="p-1 rounded-full hover:bg-gray-100"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="mb-6 text-gray-600">{message}</p>
+        <div className="flex justify-end space-x-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{ backgroundColor: themeColor }}
+            className="px-4 py-2 rounded-lg text-white"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface RoadmapCardProps {
   roadmap: RoadmapData;
@@ -19,20 +68,42 @@ const RoadmapCard: React.FC<RoadmapCardProps> = ({ roadmap, openModal, onDelete 
   const { user } = useAuth();
 
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleDelete = async () => {
-    const confirmed = window.confirm('Are you sure you want to delete this roadmap?');
-    if (confirmed) {
-      onDelete(roadmap.id);
-    }
+    setShowConfirmDialog(true);
+  };
+
+  const confirmDelete = () => {
+    onDelete(roadmap.id);
+    setShowConfirmDialog(false);
     setShowDropdown(false);
+  };
+
+  const cancelDelete = () => {
+    setShowConfirmDialog(false);
   };
 
   return (
     <div className="bg-white rounded-lg p-6 hover:shadow-xl transition-all duration-300 border border-gray-100 relative">
       {/* Admin Menu */}
       {user?.role === 'admin' && (
-        <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4" ref={dropdownRef}>
           <button
             onClick={() => setShowDropdown(!showDropdown)}
             className="p-1 hover:bg-gray-100 rounded-full transition-colors"
@@ -86,6 +157,14 @@ const RoadmapCard: React.FC<RoadmapCardProps> = ({ roadmap, openModal, onDelete 
           <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
+
+      {/* Custom Confirmation Dialog */}
+      <ConfirmationDialog 
+        isOpen={showConfirmDialog}
+        message="Are you sure you want to delete this roadmap?"
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+      />
     </div>
   );
 };

@@ -12,7 +12,6 @@ import {
 import SummaryCard from '@/components/Dashboard/SummaryCard';
 import Timeline from '@/components/Dashboard/Timeline';
 import PerformanceChart from '@/components/Dashboard/PerformanceChart';
-import DashboardFilters from '@/components/Dashboard/DashboardFilters';
 import TrendChart from '@/components/Dashboard/TrendChart';
 import RiskAssessment from '@/components/Dashboard/RiskAssessment';
 import ResourceAllocation from '@/components/Dashboard/ResourceAllocation';
@@ -47,7 +46,7 @@ const Dashboard = () => {
     loading: timelineLoading,
     error: timelineError,
     status: timelineStatus 
-  } = useFetch<TimelineEvent[]>('http://127.0.0.1:8000/roadmaps/4/timeline/');
+  } = useFetch<TimelineEvent[]>('http://127.0.0.1:8000/roadmaps/5/timeline/');
 
   const { 
     data: trendData, 
@@ -117,10 +116,6 @@ const Dashboard = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Advanced Filtering Section */}
-      <div className="mb-8">
-        <DashboardFilters onFilterChange={(filters) => console.log('Filters applied:', filters)} />
-      </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
