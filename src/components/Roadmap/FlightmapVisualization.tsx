@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { RoadmapData } from "@/types/roadmap";
 import JSONExportButton from "./FlightmapUtils/JSONExportButton";
@@ -6,6 +6,8 @@ import CSVExportButton from "./FlightmapUtils/CSVExportButton";
 import ScreenshotButton from "./FlightmapUtils/ScreenshotButton";
 import { wrapText } from "./FlightmapUtils/wrapText";
 import { buildHierarchy } from "./FlightmapUtils/buildHierarchy";
+import Tooltip from "./FlightmapUtils/Tooltip";         // Extracted tooltip component
+import { getTooltipContent } from "./FlightmapUtils/getTooltip"; // Tooltip content helper
 
 interface RoadmapProps {
   data: RoadmapData;
@@ -13,8 +15,13 @@ interface RoadmapProps {
 
 const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
+  const [tooltip, setTooltip] = useState({
+    content: "",
+    left: 0,
+    top: 0,
+    visible: false,
+  });
 
   useEffect(() => {
     const svgEl = d3.select(svgRef.current);
@@ -65,7 +72,7 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .attr("d", (d) =>
         linkGenerator({
           source: { x: d.source.x, y: d.source.y },
-          target: { x: d.target.x, y: d.target.y }
+          target: { x: d.target.x, y: d.target.y },
         }) as string
       )
       .attr("fill", "none")
@@ -106,44 +113,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
     const getFontSize = (d: any): string =>
       `${Math.max(10, 16 - d.depth * 2)}px`;
 
-    // Tooltip content based on node type & metadata
-    const getTooltipContent = (d: any): string => {
-      const type = d.data.type;
-      if (type === "roadmap") {
-        return `<strong>${d.data.name}</strong><br/>
-                <em>${d.data.description}</em><br/>
-                Created: ${d.data.created_at ? new Date(d.data.created_at).toLocaleDateString() : "N/A"}`;
-      } else if (type === "strategy") {
-        return `<strong>${d.data.name}</strong><br/>
-                <em>${d.data.tagline}</em><br/>
-                Vision: ${d.data.vision}`;
-      } else if (type === "program") {
-        return `<strong>${d.data.name}</strong><br/>
-                Progress: ${d.data.progress?.percentage || 0}%<br/>
-                Deadline: ${d.data.time_horizon}`;
-      } else if (type === "workstream") {
-        return `<strong>${d.data.name}</strong><br/>
-                Milestones: ${d.data.progress_summary?.total_milestones || 0}<br/>
-                Team: ${
-                  d.data.contributors && d.data.contributors.length > 0
-                    ? d.data.contributors.map((c: any) => c.username).join(", ")
-                    : "N/A"
-                }`;
-      } else if (type === "milestone") {
-        return `<strong>${d.data.name}</strong><br/>
-                Status: ${d.data.status || "N/A"}<br/>
-                Deadline: ${d.data.deadline || "N/A"}<br/>
-                Progress: ${d.data.current_progress || 0}%<br/>
-                ${d.data.description ? `<em>${d.data.description}</em>` : ""}`;
-      } else if (type === "activity") {
-        return `<strong>${d.data.name}</strong><br/>
-                Status: ${d.data.status || "N/A"}<br/>
-                Dates: ${d.data.target_start_date || "N/A"} - ${d.data.target_end_date || "N/A"}`;
-      } else {
-        return `<strong>${d.data.name}</strong><br/><em>${d.data.type}</em>`;
-      }
-    };
-
     const paddingX = 20;
     const paddingY = 15;
     const nodes = container
@@ -155,25 +124,22 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .attr("class", (d) => "node " + (d.children ? "node--internal" : "node--leaf"))
       .attr("transform", (d) => `translate(${d.y},${d.x})`)
       .on("mouseover", (event, d) => {
-        if (tooltipRef.current) {
-          d3.select(tooltipRef.current)
-            .style("opacity", 1)
-            .html(getTooltipContent(d))
-            .style("left", event.pageX + 10 + "px")
-            .style("top", event.pageY - 28 + "px");
-        }
+        setTooltip({
+          content: getTooltipContent(d),
+          left: event.pageX + 10,
+          top: event.pageY - 28,
+          visible: true,
+        });
       })
       .on("mousemove", (event) => {
-        if (tooltipRef.current) {
-          d3.select(tooltipRef.current)
-            .style("left", event.pageX + 10 + "px")
-            .style("top", event.pageY - 28 + "px");
-        }
+        setTooltip((prev) => ({
+          ...prev,
+          left: event.pageX + 10,
+          top: event.pageY - 28,
+        }));
       })
       .on("mouseout", () => {
-        if (tooltipRef.current) {
-          d3.select(tooltipRef.current).style("opacity", 0);
-        }
+        setTooltip((prev) => ({ ...prev, visible: false }));
       });
 
     // Append text, wrap it, then insert a shape behind it based on node type.
@@ -187,8 +153,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .each(function (d) {
         wrapText(d3.select(this), 120);
         const bbox = this.getBBox();
-
-        // Allow extra vertical padding based on node type for better fit
         let extraVerticalPadding = 0;
         switch (d.data.type) {
           case "roadmap":
@@ -210,13 +174,11 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             extraVerticalPadding = 8;
             break;
         }
-
         const shapeWidth = bbox.width + paddingX * 2;
         const shapeHeight = bbox.height + paddingY * 2 + extraVerticalPadding;
         const nodeType = d.data.type;
 
         if (nodeType === "roadmap") {
-          // Rounded rectangle with double border
           d3.select(this.parentNode).insert("rect", ":first-child")
             .attr("width", shapeWidth)
             .attr("height", shapeHeight)
@@ -238,7 +200,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", d3.color(getColor(nodeType))?.darker(0.5) + "")
             .attr("stroke-width", 1);
         } else if (nodeType === "strategy") {
-          // Hexagon shape
           const w = shapeWidth, h = shapeHeight;
           const points = [
             [-w / 4, -h / 2],
@@ -256,7 +217,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", d3.color(getColor(nodeType))?.darker(0.5) + "")
             .attr("stroke-width", 1);
         } else if (nodeType === "program") {
-          // Regular rounded rectangle
           d3.select(this.parentNode).insert("rect", ":first-child")
             .attr("width", shapeWidth)
             .attr("height", shapeHeight)
@@ -268,7 +228,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", d3.color(getColor(nodeType))?.darker(0.5) + "")
             .attr("stroke-width", 1);
         } else if (nodeType === "workstream") {
-          // Pill shape: heavily rounded rectangle
           d3.select(this.parentNode).insert("rect", ":first-child")
             .attr("width", shapeWidth)
             .attr("height", shapeHeight)
@@ -280,7 +239,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", d3.color(getColor(nodeType))?.darker(0.5) + "")
             .attr("stroke-width", 1);
         } else if (nodeType === "milestone") {
-          // Circle shape
           const radius = Math.max(shapeWidth, shapeHeight) / 2;
           d3.select(this.parentNode).insert("circle", ":first-child")
             .attr("r", radius)
@@ -290,7 +248,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", d3.color(getColor(nodeType))?.darker(0.5) + "")
             .attr("stroke-width", 1);
         } else if (nodeType === "activity") {
-          // Diamond shape (rotated square)
           const halfWidth = shapeWidth / 2;
           const halfHeight = shapeHeight / 2;
           const points = `0,${-halfHeight} ${halfWidth},0 0,${halfHeight} ${-halfWidth},0`;
@@ -299,7 +256,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("fill", getColor(nodeType))
             .attr("stroke", d3.color(getColor(nodeType))?.darker(0.5) + "")
             .attr("stroke-width", 1);
-          // Add status indicator for activities
           if (d.data.status) {
             const half = Math.min(halfWidth, halfHeight);
             d3.select(this.parentNode)
@@ -337,7 +293,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             }
           }
         } else {
-          // Fallback: rectangle
           d3.select(this.parentNode).insert("rect", ":first-child")
             .attr("width", shapeWidth)
             .attr("height", shapeHeight)
@@ -351,7 +306,7 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
         }
       });
 
-    // Add Legend in the top-right corner (including status indicators)
+    // Legend Rendering
     const legendData = [
       { type: "roadmap", label: "Roadmap" },
       { type: "strategy", label: "Strategy" },
@@ -369,10 +324,15 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .attr("transform", `translate(${width - margin.right + 20}, ${margin.top})`);
 
     const legendItemHeight = 30;
-    // Variable to hold the active filter key.
     let activeFilter: string | null = null;
-    // Set of interactive roadmap types.
-    const interactiveTypes = new Set(["roadmap", "strategy", "program", "workstream", "milestone", "activity"]);
+    const interactiveTypes = new Set([
+      "roadmap",
+      "strategy",
+      "program",
+      "workstream",
+      "milestone",
+      "activity",
+    ]);
 
     legend
       .selectAll(".legend-item")
@@ -501,20 +461,16 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
           .style("font-size", "12px")
           .text(d.label);
 
-        // Make both roadmap and progress legend items interactive.
         if (interactiveTypes.has(d.type) || d.type.startsWith("status_")) {
           g.style("cursor", "pointer")
             .on("click", function () {
-              // Determine the filter key.
               const filterKey = d.type.startsWith("status_") ? d.status : d.type;
-              // Toggle filter.
               if (activeFilter === filterKey) {
                 activeFilter = null;
                 nodes.transition().duration(500).style("opacity", 1);
               } else {
                 activeFilter = filterKey;
                 nodes.transition().duration(500).style("opacity", function (nd) {
-                  // For progress filter, only show activity nodes with matching status.
                   if (
                     filterKey === "completed" ||
                     filterKey === "in_progress" ||
@@ -526,7 +482,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
                   }
                 });
               }
-              // Update legend styling to reflect the active filter.
               legend.selectAll(".legend-item").style("opacity", function (legData) {
                 const legKey = legData.type.startsWith("status_") ? legData.status : legData.type;
                 if (activeFilter) {
@@ -542,10 +497,7 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
   return (
     <div className="w-full h-full relative">
       <svg ref={svgRef}></svg>
-      <div
-        ref={tooltipRef}
-        className="absolute pointer-events-none bg-white border rounded shadow p-2 opacity-0 transition-opacity text-sm"
-      ></div>
+      <Tooltip content={tooltip.content} left={tooltip.left} top={tooltip.top} visible={tooltip.visible} />
       <button
         onClick={() => {
           if (svgRef.current && zoomRef.current) {
