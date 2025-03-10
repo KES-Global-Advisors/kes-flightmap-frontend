@@ -1,31 +1,37 @@
-// FlightmapUtils/api/sendContribution.ts
-export const sendContribution = async (
-    type: 'milestone' | 'activity',
-    task: any,
-    user: any
-  ): Promise<void> => {
-    const endpoint = type === 'milestone' ? '/api/milestone_contributions' : '/api/activity_contributions';
-    const payload = { userId: user.id, taskId: task.id };
-    
-    const accessToken = sessionStorage.getItem('accessToken');
-    const headers: HeadersInit = { 'Content-Type': 'application/json' };
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-    
+import { GanttItem } from '../GanttChart';
+import { User } from '@/contexts/UserContext';
+  
+  export async function sendContribution(item: GanttItem,  user: User) {
+    console.log(user);
+    const BASE_URL = 'http://localhost:8000';
+      const accessToken = sessionStorage.getItem('accessToken');
+      let url = '';
+      // Determine the correct endpoint and payload key based on item level.
+      const numericId = parseInt(item.id.split('-')[1]);
+      if (item.level === 'activity') {
+        url = `${BASE_URL}/activity-contributors/`;
+      } else if (item.level === 'milestone') {
+        url = `${BASE_URL}/milestone-contributors/`;
+      } else {
+        return; // No contribution is sent for other levels.
+      }
     try {
-      const response = await fetch(endpoint, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(payload)
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+           'Content-Type': 'application/json',
+           'Authorization': `Bearer ${accessToken || ''}`,
+        },
+        body: JSON.stringify({
+          [item.level]: numericId,
+          user: user.id,
+       }),
       });
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Failed to update ${type} contribution`);
+         console.error('Failed to send contribution', response.statusText);
       }
     } catch (error) {
-      console.error(`Failed to update ${type} contributions:`, error);
-      throw error;
+        console.error('Error sending contribution', error);
     }
-  };
+  }
   
