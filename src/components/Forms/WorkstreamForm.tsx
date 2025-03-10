@@ -21,7 +21,7 @@ export const WorkstreamForm: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <h2>Workstream Form</h2>
+      <h2 className="text-xl font-bold mb-10">Workstream Form</h2>
       <div>
         <label className="block text-sm font-medium text-gray-700">Program</label>
         {loadingPrograms ? (
