@@ -1,50 +1,61 @@
 import React, { useState } from 'react';
 import { RoadmapData, Activity, Contributor } from '@/types/roadmap';
+import { updateActivityStatus, sendActivityContribution } from './ActivityUtils/ActivityUtils';
+import { useAuth } from '@/contexts/UserContext';
 
 interface ActivityTableProps {
   data: RoadmapData;
 }
 
 const ActivityTable: React.FC<ActivityTableProps> = ({ data }) => {
-  // Flatten activities for easier display
+  const { user: currentUser } = useAuth();
+
+  // Flatten activities from both direct workstream activities and nested milestone activities.
   const [activities, setActivities] = useState<Activity[]>(
-    data.strategies.flatMap(strategy => 
-      strategy.programs.flatMap(program => 
+    data.strategies.flatMap(strategy =>
+      strategy.programs.flatMap(program =>
         program.workstreams.flatMap(workstream => [
-          ...workstream.activities,
-          ...((workstream.milestones || []).flatMap(milestone => milestone.activities))
+          ...(workstream.activities || []),
+          ...((workstream.milestones || []).flatMap(milestone => milestone.activities || []))
         ])
       )
     )
   );
   
-
-  // Status change handler
+  // Status change handler for activities.
   const handleStatusChange = async (activityId: number, newStatus: 'not_started' | 'in_progress' | 'completed') => {
     try {
-      // Here you would normally make an API call
-      // For example:
-      // await fetch(`/api/activities/${activityId}`, {
-      //   method: 'PATCH',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ status: newStatus })
-      // });
+      const activity = activities.find(a => a.id === activityId);
+      if (!activity) return;
+
+      // Create updated activity object.
+      const updatedActivity: Activity = { ...activity, status: newStatus };
+      if (newStatus === 'completed') {
+        updatedActivity.completed_date = new Date().toISOString().split('T')[0];
+      }
       
+      // Update the activity status via the API.
+      await updateActivityStatus(updatedActivity);
+
+      // Send the contribution record.
+      await sendActivityContribution(updatedActivity, currentUser!);
+
       console.log(`Updating activity ${activityId} to status: ${newStatus}`);
-      
-      // Update local state
-      setActivities(prevActivities => 
-        prevActivities.map(activity => 
-          activity.id === activityId ? { ...activity, status: newStatus } : activity
+
+      // Update local state.
+      setActivities(prevActivities =>
+        prevActivities.map(act =>
+          act.id === activityId 
+            ? { ...act, status: newStatus, completed_date: updatedActivity.completed_date }
+            : act
         )
       );
     } catch (error) {
       console.error("Failed to update activity status:", error);
-      // You could add error handling/notification here
     }
   };
 
-  // Helper to format dates
+  // Helper to format dates.
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "—";
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -54,9 +65,9 @@ const ActivityTable: React.FC<ActivityTableProps> = ({ data }) => {
     });
   };
 
-  // Function to get status color classes
+  // Function to get status color classes.
   const getStatusClasses = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'completed':
         return 'bg-green-100 text-green-800 border-green-300';
       case 'in_progress':
@@ -68,9 +79,9 @@ const ActivityTable: React.FC<ActivityTableProps> = ({ data }) => {
     }
   };
 
-  // Function to get priority indicator
+  // Function to get priority indicator.
   const getPriorityIndicator = (priority: number) => {
-    switch(priority) {
+    switch (priority) {
       case 1:
         return <span className="inline-block w-4 h-4 bg-red-500 rounded-full" title="High Priority"></span>;
       case 2:
@@ -82,7 +93,7 @@ const ActivityTable: React.FC<ActivityTableProps> = ({ data }) => {
     }
   };
 
-  // Get workstream name from activity
+  // Get workstream name from activity.
   const getWorkstreamName = (workstreamId: number) => {
     for (const strategy of data.strategies) {
       for (const program of strategy.programs) {
@@ -96,12 +107,12 @@ const ActivityTable: React.FC<ActivityTableProps> = ({ data }) => {
     return "Unknown";
   };
 
-  // Get milestone name from activity
+  // Get milestone name from activity.
   const getMilestoneName = (milestoneId: number) => {
     for (const strategy of data.strategies) {
       for (const program of strategy.programs) {
         for (const workstream of program.workstreams) {
-          for (const milestone of workstream.milestones) {
+          for (const milestone of workstream.milestones || []) {
             if (milestone.id === milestoneId) {
               return milestone.name;
             }
@@ -112,16 +123,15 @@ const ActivityTable: React.FC<ActivityTableProps> = ({ data }) => {
     return "Unknown";
   };
 
-  // Get contributors string
+  // Get contributors string.
   const getContributorsString = (contributors: Contributor[]) => {
     if (contributors.length === 0) return "—";
     
     return contributors.map(contributor => {
-      // Find the contributor with username
       for (const strategy of data.strategies) {
         for (const program of strategy.programs) {
           for (const workstream of program.workstreams) {
-            for (const wsContributor of workstream.contributors) {
+            for (const wsContributor of workstream.contributors || []) {
               if (contributor.user === wsContributor.id) {
                 return wsContributor.username;
               }
