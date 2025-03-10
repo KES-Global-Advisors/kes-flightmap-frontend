@@ -24,49 +24,52 @@ export function buildHierarchy(data: RoadmapData): any {
   const roadmapNode = mapNode(data, "roadmap");
   roadmapNode.description = data.description || "";
   roadmapNode.created_at = data.created_at || "";
+
   roadmapNode.children = data.strategies
     ? data.strategies.map((strategy: any) => {
         const strategyNode = mapNode(strategy, "strategy");
         strategyNode.tagline = strategy.tagline || "";
         strategyNode.vision = strategy.vision || "";
         strategyNode.time_horizon = strategy.time_horizon || "";
+
         strategyNode.children = strategy.programs
           ? strategy.programs.map((program: any) => {
               const programNode = mapNode(program, "program");
               programNode.vision = program.vision || "";
               programNode.time_horizon = program.time_horizon || "";
+
               programNode.children = program.workstreams
                 ? program.workstreams.map((workstream: any) => {
                     const workstreamNode = mapNode(workstream, "workstream");
-                    workstreamNode.children = [];
+
+                    // Instead of pushing a "Milestones" group node, we push the milestone nodes directly.
                     if (workstream.milestones && workstream.milestones.length > 0) {
-                      workstreamNode.children.push({
-                        name: "Milestones",
-                        type: "milestonesGroup",
-                        children: workstream.milestones.map((milestone: any) => {
-                          const milestoneNode = mapNode(milestone, "milestone");
-                          milestoneNode.deadline = milestone.deadline || "";
-                          milestoneNode.status = milestone.status || "";
-                          milestoneNode.current_progress = milestone.current_progress || 0;
-                          milestoneNode.children =
-                            milestone.activities && milestone.activities.length > 0
-                              ? milestone.activities.map((activity: any) =>
-                                  mapNode(activity, "activity")
-                                )
-                              : [];
-                          return milestoneNode;
-                        })
+                      const milestoneNodes = workstream.milestones.map((milestone: any) => {
+                        const milestoneNode = mapNode(milestone, "milestone");
+                        milestoneNode.deadline = milestone.deadline || "";
+                        milestoneNode.status = milestone.status || "";
+                        milestoneNode.current_progress = milestone.current_progress || 0;
+
+                        // Attach activities as direct children of the milestone node.
+                        if (milestone.activities && milestone.activities.length > 0) {
+                          milestoneNode.children = milestone.activities.map((activity: any) =>
+                            mapNode(activity, "activity")
+                          );
+                        }
+                        return milestoneNode;
                       });
+                      // push them directly
+                      workstreamNode.children.push(...milestoneNodes);
                     }
+
+                    // Same for activities that are directly under the workstream
                     if (workstream.activities && workstream.activities.length > 0) {
-                      workstreamNode.children.push({
-                        name: "Activities",
-                        type: "activitiesGroup",
-                        children: workstream.activities.map((activity: any) =>
-                          mapNode(activity, "activity")
-                        )
-                      });
+                      const activityNodes = workstream.activities.map((activity: any) =>
+                        mapNode(activity, "activity")
+                      );
+                      workstreamNode.children.push(...activityNodes);
                     }
+
                     return workstreamNode;
                   })
                 : [];
@@ -76,5 +79,6 @@ export function buildHierarchy(data: RoadmapData): any {
         return strategyNode;
       })
     : [];
+
   return roadmapNode;
 }
