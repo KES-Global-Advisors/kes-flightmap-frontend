@@ -53,15 +53,6 @@ const Header = () => {
         <div className="flex items-center gap-4">
           {/* Notifications remain unchanged */}
           <Notifications />
-          {/* <button
-            type="button"
-            className={`relative rounded-full p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-${themeColor}`}
-          >
-            <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
-              3
-            </span>
-            <Bell className="h-6 w-6" />
-          </button> */}
 
           {/* User menu */}
           <div className="relative" ref={menuRef}>
@@ -89,13 +80,6 @@ const Header = () => {
                   <p className="font-medium truncate">{user.name}</p>
                   <p className="text-gray-500 truncate">{user.email}</p>
                 </div>
-                <Link
-                  to="/profile"
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  onClick={handleNavigation}
-                >
-                  Your Profile
-                </Link>
                 <Link
                   to="/settings"
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"

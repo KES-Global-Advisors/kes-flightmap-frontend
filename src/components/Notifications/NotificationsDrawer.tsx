@@ -1,7 +1,7 @@
 // NotificationsDrawer.tsx
 import React from 'react';
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle, TransitionChild } from '@headlessui/react';
-import { XMarkIcon, BellIcon, CheckCircleIcon, UserIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, BellIcon, CheckCircleIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 export interface Notification {
   id: number;
@@ -15,6 +15,7 @@ interface NotificationsDrawerProps {
   isOpen: boolean;
   notifications: Notification[];
   markAllRead: () => void;
+  clearAll: () => void;
   onClose: () => void;
 }
 
@@ -22,6 +23,7 @@ const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
   isOpen,
   notifications,
   markAllRead,
+  clearAll,
   onClose,
 }) => {
   const unreadCount = notifications.filter(notification => !notification.read).length;
@@ -64,16 +66,31 @@ const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                       </span>
                     )}
                   </DialogTitle>
-                  <button
-                    onClick={markAllRead}
-                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
-                  >
-                    <CheckCircleIcon className="size-4 mr-1" />
-                    Mark all as read
-                  </button>
                 </div>
                 
                 <div className="border-t border-gray-200 mt-4"></div>
+
+                <div className="mt-2 px-4 sm:px-6">
+                  <div className="flex space-x-2 text-sm">
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={markAllRead}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
+                    >
+                      <CheckCircleIcon className="size-4 mr-1" />
+                      Mark all as read
+                    </button>
+                    <button
+                      onClick={clearAll}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-800"
+                      title="Clear all notifications"
+                    >
+                      <TrashIcon className="size-4 mr-1" />
+                      Clear all
+                    </button>
+                  </div>
+                  </div>
+                </div>
                 
                 <div className="relative mt-4 flex-1 px-4 sm:px-6">
                   {notifications.length === 0 ? (
@@ -97,11 +114,6 @@ const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className={`text-sm ${notification.read ? 'text-gray-700' : 'text-gray-900 font-medium'}`}>
-                                {notification.actor_username && (
-                                  <span className="font-medium text-blue-600 mr-1">
-                                    {notification.actor_username}
-                                  </span>
-                                )}
                                 {notification.message}
                               </p>
                               <div className="mt-1 flex items-center text-xs text-gray-500">
@@ -122,14 +134,6 @@ const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                     </div>
                   )}
                 </div>
-                
-                {notifications.length > 0 && (
-                  <div className="px-4 sm:px-6 mt-4 border-t border-gray-200 pt-4 flex justify-center">
-                    <button className="text-sm text-blue-600 hover:text-blue-800">
-                      View all notifications
-                    </button>
-                  </div>
-                )}
               </div>
             </DialogPanel>
           </div>

@@ -21,6 +21,17 @@ const BASE_URL = 'http://localhost:8000';
     }
   };
 
+  // Function to clear notifications
+  const clearNotifications = async () => {
+    try {
+      await axiosInstance.delete(`${BASE_URL}/notifications/clear/`);
+      // Optionally, clear your local notifications state
+      setNotifications([]);
+    } catch (error) {
+      console.error("Failed to clear notifications:", error);
+    }
+  };
+
   // Use SSE to listen for new notifications.
   useEffect(() => {
     const accessToken = sessionStorage.getItem('accessToken');
@@ -64,6 +75,7 @@ const BASE_URL = 'http://localhost:8000';
         isOpen={isModalOpen}
         notifications={notifications}
         markAllRead={markAllAsRead}
+        clearAll={clearNotifications}
         onClose={() => setIsModalOpen(false)}
       />
     </>
