@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/UserContext';
-import { Bell, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { ThemeContext } from '@/contexts/ThemeContext'; // Adjust the path as needed
+import { ThemeContext } from '@/contexts/ThemeContext';
+import Notifications from './Notifications/Notifications'; 
 
 const Header = () => {
   const navigate = useNavigate();
@@ -51,7 +52,8 @@ const Header = () => {
       <div className="flex h-16 items-center justify-end px-4 sm:px-6 lg:px-8">      
         <div className="flex items-center gap-4">
           {/* Notifications remain unchanged */}
-          <button
+          <Notifications />
+          {/* <button
             type="button"
             className={`relative rounded-full p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-${themeColor}`}
           >
@@ -59,7 +61,7 @@ const Header = () => {
               3
             </span>
             <Bell className="h-6 w-6" />
-          </button>
+          </button> */}
 
           {/* User menu */}
           <div className="relative" ref={menuRef}>
