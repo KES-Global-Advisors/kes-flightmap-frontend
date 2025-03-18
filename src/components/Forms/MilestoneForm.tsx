@@ -1,116 +1,19 @@
-// import React from 'react';
-// import { useFormContext } from 'react-hook-form';
-// import useFetch from '../../hooks/UseFetch';
-// import { StrategicGoal, Workstream } from '../../types/model';
-
-// export type MilestoneFormData = {
-//   workstream: number;
-//   name: string;
-//   description?: string;
-//   deadline: string;
-//   status: 'not_started' | 'in_progress' | 'completed';
-//   strategic_goals: number[];
-// };
-
-// export const MilestoneForm: React.FC = () => {
-//   const { register } = useFormContext<MilestoneFormData>();
-//   const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream>('http://127.0.0.1:8000/workstreams/');
-//   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
-
-//   return (
-//     <div className="space-y-4">
-//       <h2>Milestone Form</h2>
-//       <div>
-//         <label className="block text-sm font-medium text-gray-700">Workstream</label>
-//         {loadingWorkstreams ? (
-//           <p>Loading workstreams...</p>
-//         ) : errorWorkstreams ? (
-//           <p>Error: {errorWorkstreams}</p>
-//         ) : (
-//           <select
-//             {...register('workstream')}
-//             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-//           >
-//             <option value="">Select a workstream</option>
-//             {workstreams.map((ws) => (
-//               <option key={ws.id} value={ws.id}>
-//                 {ws.name}
-//               </option>
-//             ))}
-//           </select>
-//         )}
-//       </div>
-//       <div>
-//         <label className="block text-sm font-medium text-gray-700">Name</label>
-//         <input
-//           {...register('name')}
-//           type="text"
-//           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-//         />
-//       </div>
-//       <div>
-//         <label className="block text-sm font-medium text-gray-700">Description</label>
-//         <textarea
-//           {...register('description')}
-//           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-//         />
-//       </div>
-//       <div>
-//         <label className="block text-sm font-medium text-gray-700">Deadline</label>
-//         <input
-//           {...register('deadline')}
-//           type="date"
-//           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-//         />
-//       </div>
-//       <div>
-//         <label className="block text-sm font-medium text-gray-700">Status</label>
-//         <select
-//           {...register('status')}
-//           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-//         >
-//           <option value="not_started">Not Started</option>
-//           <option value="in_progress">In Progress</option>
-//           <option value="completed">Completed</option>
-//         </select>
-//       </div>
-//       <div>
-//         <label className="block text-sm font-medium text-gray-700">Strategic Goals</label>
-//         {loadingGoals ? (
-//           <p>Loading strategic goals...</p>
-//         ) : errorGoals ? (
-//           <p>Error: {errorGoals}</p>
-//         ) : (
-//           <select
-//             {...register('strategic_goals')}
-//             multiple
-//             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-//           >
-//             {strategicGoals.map((goal) => (
-//               <option key={goal.id} value={goal.id}>
-//                 {goal.goal_text}
-//               </option>
-//             ))}
-//           </select>
-//         )}
-//       </div>
-//     </div>
-//   );
-// };
-
 import React, { useState } from 'react';
-import { useFormContext, useForm } from 'react-hook-form';
+import { useFormContext, useForm, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Workstream } from '../../types/model';
+import { PlusCircle, Trash2 } from 'lucide-react';
 
 export type MilestoneFormData = {
-  workstream: number;
-  name: string;
-  description?: string;
-  deadline: string;
-  status: 'not_started' | 'in_progress' | 'completed';
-  strategic_goals: number[];
-  dependencies?: number[]; // IDs of dependent milestones
+  milestones: {
+    workstream: number;
+    name: string;
+    description?: string;
+    deadline: string;
+    status: 'not_started' | 'in_progress' | 'completed';
+    strategic_goals: number[];
+    dependencies?: number[]; // IDs of dependent milestones
+  }[];
 };
 
 type Milestone = {
@@ -130,9 +33,22 @@ type DependentMilestoneModalProps = {
 // Modal for creating a dependent milestone and sending it to the backend.
 const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClose, onCreate }) => {
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
-  const { register, handleSubmit, reset } = useForm<MilestoneFormData>();
+  const { register, handleSubmit, reset } = useForm<{
+    workstream: number;
+    name: string;
+    description?: string;
+    deadline: string;
+    status: 'not_started' | 'in_progress' | 'completed';
+    strategic_goals: number[];
+  }>();
 
-  const onSubmit = async (data: MilestoneFormData) => {
+  const onSubmit = async (data: {
+    name: string;
+    description?: string;
+    deadline: string;
+    status: 'not_started' | 'in_progress' | 'completed';
+    strategic_goals: number[];
+  }) => {
     // Create payload without workstream; this milestone will be created solely as a dependency.
     const payload = {
       name: data.name,
@@ -235,7 +151,12 @@ const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClo
 };
 
 export const MilestoneForm: React.FC = () => {
-  const { register } = useFormContext<MilestoneFormData>();
+  const { register, control } = useFormContext<MilestoneFormData>();
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "milestones"
+  });
+  
   const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream>('http://127.0.0.1:8000/workstreams/');
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
   // Optionally, fetch existing milestones so users can pick dependencies.
@@ -247,118 +168,176 @@ export const MilestoneForm: React.FC = () => {
   const handleDependentMilestoneCreate = (milestone: Milestone) => {
     setDependentMilestones((prev) => [...prev, milestone]);
   };
+  
+  // Add a new empty milestone
+  const addMilestone = () => {
+    append({
+      workstream: 0,
+      name: "",
+      description: "",
+      deadline: "",
+      status: "not_started",
+      strategic_goals: [],
+      dependencies: []
+    });
+  };
+
+  // Add an initial milestone if the array is empty
+  React.useEffect(() => {
+    if (fields.length === 0) {
+      addMilestone();
+    }
+  }, [fields.length]);
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold mb-10">Milestone Form</h2>
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Workstream</label>
-        {loadingWorkstreams ? (
-          <p>Loading workstreams...</p>
-        ) : errorWorkstreams ? (
-          <p>Error: {errorWorkstreams}</p>
-        ) : (
-          <select
-            {...register('workstream')}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-          >
-            <option value="">Select a workstream</option>
-            {workstreams.map((ws) => (
-              <option key={ws.id} value={ws.id}>
-                {ws.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Name</label>
-        <input
-          {...register('name')}
-          type="text"
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Description</label>
-        <textarea
-          {...register('description')}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Deadline</label>
-        <input
-          {...register('deadline')}
-          type="date"
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Status</label>
-        <select
-          {...register('status')}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+    <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Milestones</h2>
+        <button
+          type="button"
+          onClick={addMilestone}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
         >
-          <option value="not_started">Not Started</option>
-          <option value="in_progress">In Progress</option>
-          <option value="completed">Completed</option>
-        </select>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add Milestone
+        </button>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Strategic Goals</label>
-        {loadingGoals ? (
-          <p>Loading strategic goals...</p>
-        ) : errorGoals ? (
-          <p>Error: {errorGoals}</p>
-        ) : (
-          <select
-            {...register('strategic_goals')}
-            multiple
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-          >
-            {strategicGoals.map((goal) => (
-              <option key={goal.id} value={goal.id}>
-                {goal.goal_text}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700">Dependent Milestones</label>
-        {loadingMilestones ? (
-          <p>Loading milestones...</p>
-        ) : errorMilestones ? (
-          <p>Error: {errorMilestones}</p>
-        ) : (
-          <select
-            {...register('dependencies')}
-            multiple
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-          >
-            {milestones.map((ms) => (
-              <option key={ms.id} value={ms.id}>
-                {ms.name}
-              </option>
-            ))}
-            {dependentMilestones.map((ms) => (
-              <option key={ms.id} value={ms.id}>
-                {ms.name}
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="mt-2">
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="text-indigo-600 hover:text-indigo-800 underline"
-          >
-            Create dependent Milestone
-          </button>
+
+      {fields.map((field, index) => (
+        <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-semibold">Milestone {index + 1}</h3>
+            {fields.length > 1 && (
+              <button
+                type="button"
+                onClick={() => remove(index)}
+                className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                <Trash2 className="mr-1 h-4 w-4" />
+                Remove
+              </button>
+            )}
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Workstream</label>
+              {loadingWorkstreams ? (
+                <p>Loading workstreams...</p>
+              ) : errorWorkstreams ? (
+                <p>Error: {errorWorkstreams}</p>
+              ) : (
+                <select
+                  {...register(`milestones.${index}.workstream` as const)}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  <option value="">Select a workstream</option>
+                  {workstreams.map((ws) => (
+                    <option key={ws.id} value={ws.id}>
+                      {ws.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <input
+                {...register(`milestones.${index}.name` as const)}
+                type="text"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Description</label>
+              <textarea
+                {...register(`milestones.${index}.description` as const)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Deadline</label>
+              <input
+                {...register(`milestones.${index}.deadline` as const)}
+                type="date"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Status</label>
+              <select
+                {...register(`milestones.${index}.status` as const)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Strategic Goals</label>
+              {loadingGoals ? (
+                <p>Loading strategic goals...</p>
+              ) : errorGoals ? (
+                <p>Error: {errorGoals}</p>
+              ) : (
+                <select
+                  {...register(`milestones.${index}.strategic_goals` as const)}
+                  multiple
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  {strategicGoals.map((goal) => (
+                    <option key={goal.id} value={goal.id}>
+                      {goal.goal_text}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Dependent Milestones</label>
+              {loadingMilestones ? (
+                <p>Loading milestones...</p>
+              ) : errorMilestones ? (
+                <p>Error: {errorMilestones}</p>
+              ) : (
+                <select
+                  {...register(`milestones.${index}.dependencies` as const)}
+                  multiple
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  {milestones.map((ms) => (
+                    <option key={ms.id} value={ms.id}>
+                      {ms.name}
+                    </option>
+                  ))}
+                  {dependentMilestones.map((ms) => (
+                    <option key={ms.id} value={ms.id}>
+                      {ms.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(true)}
+                  className="text-indigo-600 hover:text-indigo-800 underline"
+                >
+                  Create dependent Milestone
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      ))}
+      
       {isModalOpen && (
         <DependentMilestoneModal
           onClose={() => setIsModalOpen(false)}
