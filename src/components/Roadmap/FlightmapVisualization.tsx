@@ -15,8 +15,7 @@ import Tooltip from "./FlightmapUtils/Tooltip";
 import { getTooltipContent } from "./FlightmapUtils/getTooltip";
 
 /**
- * Helper function: checks if a node has an ancestor that is a completed milestone.
- * Used to gray out any activities that belong to a completed milestone.
+ * Checks if a node has an ancestor milestone that is completed.
  */
 function hasAncestorCompletedMilestone(d: d3.HierarchyNode<any>): boolean {
   let current = d.parent;
@@ -29,32 +28,43 @@ function hasAncestorCompletedMilestone(d: d3.HierarchyNode<any>): boolean {
   return false;
 }
 
-interface RoadmapProps {
-  data: RoadmapData;
-}
-
 /**
  * getNodeColor:
- * Returns the fill color for a node in the main D3 tree (not the legend).
+ * Returns the fill color for a node based on its type and nearest workstream color.
  */
-function getNodeColor(
-  d: d3.HierarchyNode<any>,
-  workstreamColor: string
-): string {
+function getNodeColor(d: d3.HierarchyNode<any>): string {
   const nodeType = d.data.type;
   const nodeStatus = d.data.status;
 
-  // If it's an activity with a completed milestone ancestor, grey it out
+  // Gray out an activity if any ancestor milestone is completed.
   if (nodeType === "activity" && hasAncestorCompletedMilestone(d)) {
     return "#ccc";
   }
 
-  // Use user-chosen color for all workstreams
+  // For workstream nodes, return the stored color.
   if (nodeType === "workstream") {
-    return workstreamColor;
+    return d.data.color || "#0000FF";
   }
 
-  // Otherwise, default colors
+  // For milestones/activities, inherit parent's workstream color.
+  let workstreamColor: string | null = null;
+  let current = d;
+  while (current) {
+    if (current.data.type === "workstream" && current.data.color) {
+      workstreamColor = current.data.color;
+      break;
+    }
+    current = current.parent;
+  }
+
+  if (nodeType === "milestone") {
+    return nodeStatus === "completed" ? "#ccc" : (workstreamColor ? workstreamColor : "#facc15");
+  }
+  if (nodeType === "activity") {
+    return workstreamColor ? workstreamColor : "#f87171";
+  }
+
+  // Fallback colors for other node types.
   switch (nodeType) {
     case "roadmap":
       return "#a78bfa";
@@ -62,11 +72,6 @@ function getNodeColor(
       return "#2dd4bf";
     case "program":
       return "#fb923c";
-    case "milestone":
-      // grey out if completed
-      return nodeStatus === "completed" ? "#ccc" : "#facc15";
-    case "activity":
-      return "#f87171";
     default:
       return "#d1d5db";
   }
@@ -74,7 +79,7 @@ function getNodeColor(
 
 /**
  * getStatusColor:
- * Used to determine stroke color for status icons (circles, lines, check marks).
+ * Determines stroke color for status icons (circles, lines, check marks).
  */
 function getStatusColor(status: string): string {
   switch (status) {
@@ -89,22 +94,19 @@ function getStatusColor(status: string): string {
 
 /**
  * getLegendColor:
- * Returns the fill color for the shapes in the legend (not the main D3 nodes).
+ * Returns the fill color for legend shapes.
  */
 function getLegendColor(
   type: string,
   status: string | undefined,
   workstreamColor: string
 ): string {
-  // If it's a workstream, use user-chosen color
   if (type === "workstream") {
     return workstreamColor;
   }
-  // If it's a completed milestone, gray
   if (type === "milestone" && status === "completed") {
     return "#ccc";
   }
-  // Otherwise, default
   switch (type) {
     case "roadmap":
       return "#a78bfa";
@@ -121,7 +123,7 @@ function getLegendColor(
   }
 }
 
-const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
+const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
 
@@ -132,18 +134,17 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
     visible: false,
   });
 
-  // Single color for all workstreams
-  const [workstreamColor, setWorkstreamColor] = useState("#22d3ee");
+  // Default fallback workstream color from the backend.
+  const [defaultWorkstreamColor, setDefaultWorkstreamColor] = useState("#22d3ee");
 
-  // Control modal visibility
+  // Modal for picking workstream color.
   const [colorModalVisible, setColorModalVisible] = useState(false);
 
   useEffect(() => {
-    // Clear previous SVG content
     const svgEl = d3.select(svgRef.current);
     svgEl.selectAll("*").remove();
 
-    // Dimensions
+    // Dimensions and margins.
     const width = window.innerWidth;
     const height = window.innerHeight * 0.8;
     const margin = { top: 20, right: 150, bottom: 30, left: 150 };
@@ -158,7 +159,7 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Zoom behavior
+    // Zoom behavior.
     zoomRef.current = d3
       .zoom()
       .scaleExtent([0.5, 5])
@@ -167,20 +168,18 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       });
     svgEl.call(zoomRef.current);
 
-    // Build the hierarchy
+    // Build hierarchy from the Roadmap data.
     const hierarchyData = buildHierarchy(data);
     const root = d3.hierarchy(hierarchyData);
 
-    // Layout
-    // We use nodeSize instead of size to give more space between nodes (esp. milestones).
+    // Use a tree layout with nodeSize + separation.
     const treeLayout = d3
       .tree()
-      .nodeSize([60, 220]) // (vertical spacing, horizontal spacing)
-      .separation((a, b) => (a.parent === b.parent ? 1.5 : 2.0));
+      .nodeSize([60, 300])
+      .separation(() => 2.5);
     treeLayout(root);
 
-    // Manually compute a bounding box for the entire layout
-    // If you prefer, you can let it flow. But this ensures we can see everything.
+    // Compute bounding box for all nodes.
     let xMin = Infinity, xMax = -Infinity;
     let yMin = Infinity, yMax = -Infinity;
     root.each((d) => {
@@ -189,23 +188,19 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       if (d.y < yMin) yMin = d.y;
       if (d.y > yMax) yMax = d.y;
     });
-    // add some padding
     xMin -= 50; xMax += 50;
     yMin -= 50; yMax += 200;
-
-    // We'll shift the container so that the top-left corner is visible
-    // You could also adjust the SVG's viewBox if you prefer
     container.attr("transform", `translate(${margin.left - yMin}, ${margin.top - xMin})`);
 
-    // Link generator
+    // Link generator (horizontal).
     const linkGenerator = d3
       .linkHorizontal<{ x: number; y: number }>()
       .x((d) => d.y)
       .y((d) => d.x);
 
-    // Draw standard links
-    container
-      .append("g")
+    // 1) Draw hierarchical links (behind everything).
+    const linksGroup = container.append("g").attr("class", "links");
+    linksGroup
       .selectAll(".link")
       .data(root.links())
       .enter()
@@ -220,9 +215,71 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .attr("fill", "none")
       .attr("stroke", "#ccc");
 
-    // Node groups
-    const nodes = container
-      .append("g")
+    // --- Extra Links for Multiple Milestone–Activity Connections ---
+    // Build a map of milestone nodes by ID -> { x, y }.
+    const milestoneNodeMap: { [key: number]: { x: number; y: number } } = {};
+    root.descendants().forEach((d) => {
+      if (d.data.type === "milestone" && d.data.id) {
+        milestoneNodeMap[d.data.id] = { x: d.x, y: d.y };
+      }
+    });
+
+    // Collect all cross-workstream links from supported_milestones / additional_milestones.
+    const extraLinks: Array<{
+      source: { x: number; y: number };
+      target: { x: number; y: number };
+      activityId: number;
+      milestoneId: number;
+    }> = [];
+
+    root.descendants().forEach((d) => {
+      if (d.data.type === "activity" && d.data.id) {
+        const activityX = d.x;
+        const activityY = d.y;
+        const targetIds: number[] = [];
+        if (d.data.supported_milestones && Array.isArray(d.data.supported_milestones)) {
+          targetIds.push(...d.data.supported_milestones);
+        }
+        if (d.data.additional_milestones && Array.isArray(d.data.additional_milestones)) {
+          targetIds.push(...d.data.additional_milestones);
+        }
+
+        targetIds.forEach((targetId: number) => {
+          const target = milestoneNodeMap[targetId];
+          if (target) {
+            extraLinks.push({
+              source: { x: activityX, y: activityY },
+              target: target,
+              activityId: d.data.id,
+              milestoneId: targetId,
+            });
+          }
+        });
+      }
+    });
+
+    // 2) Draw extra dashed links (still behind nodes).
+    const extraLinksGroup = container.append("g").attr("class", "extra-links");
+    extraLinksGroup
+      .selectAll("path")
+      .data(extraLinks)
+      .enter()
+      .append("path")
+      .attr("class", "extra-link")
+      .attr("d", (d) =>
+        linkGenerator({
+          source: d.source,
+          target: d.target,
+        }) as string
+      )
+      .attr("fill", "none")
+      .attr("stroke", "#888")
+      .attr("stroke-dasharray", "4 2")
+      .attr("stroke-width", 1);
+
+    // 3) Draw nodes on top.
+    const nodesGroup = container.append("g").attr("class", "nodes");
+    const nodes = nodesGroup
       .selectAll(".node")
       .data(root.descendants())
       .enter()
@@ -248,63 +305,50 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
         setTooltip((prev) => ({ ...prev, visible: false }));
       });
 
-    // Append text (and shape behind it)
+    // For each node, draw the shape and text label.
     nodes
       .append("text")
       .attr("dy", "0.35em")
       .attr("text-anchor", "middle")
       .text((d) => d.data.name)
       .each(function (d) {
-        // Let’s add some extra space for activity shapes so text doesn't overflow
-        let paddingX = 20;
-        let paddingY = 15;
-
+        let paddingX = 20,
+          paddingY = 15;
         switch (d.data.type) {
           case "roadmap":
-            paddingY += 5; // just to ensure it's big enough
-            break;
           case "strategy":
-            paddingY += 5;
-            break;
           case "program":
-            paddingY += 5;
-            break;
           case "workstream":
             paddingY += 5;
             break;
           case "activity":
-            // Increase padding for activities so the diamond shape is larger
             paddingX += 10;
             paddingY += 10;
             break;
           default:
-            // milestone or other
             break;
         }
-
         const textSel = d3.select(this);
         wrapText(textSel, 120);
-
         const bbox = (this as SVGTextElement).getBBox();
         const shapeWidth = bbox.width + paddingX * 2;
         const shapeHeight = bbox.height + paddingY * 2;
-        const nodeType = d.data.type;
-        const nodeStatus = d.data.status;
-        const fillColor = getNodeColor(d, workstreamColor);
+        const fillColor = getNodeColor(d);
 
-        if (nodeType === "milestone") {
-          // Circle
+        // Render shape by node type:
+        if (d.data.type === "milestone") {
           const radius = Math.max(shapeWidth, shapeHeight) / 2;
-          d3.select(this.parentNode).insert("circle", ":first-child")
+          d3.select(this.parentNode)
+            .insert("circle", ":first-child")
             .attr("r", radius)
             .attr("cx", 0)
             .attr("cy", 0)
             .attr("fill", fillColor)
             .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
             .attr("stroke-width", 1);
-        } else if (nodeType === "roadmap") {
-          // Double rectangle
-          d3.select(this.parentNode).insert("rect", ":first-child")
+        } else if (d.data.type === "roadmap") {
+          d3.select(this.parentNode)
+            .insert("rect", ":first-child")
             .attr("width", shapeWidth)
             .attr("height", shapeHeight)
             .attr("x", -shapeWidth / 2)
@@ -314,7 +358,8 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("fill", "none")
             .attr("stroke", fillColor)
             .attr("stroke-width", 3);
-          d3.select(this.parentNode).insert("rect", ":first-child")
+          d3.select(this.parentNode)
+            .insert("rect", ":first-child")
             .attr("width", shapeWidth - 6)
             .attr("height", shapeHeight - 6)
             .attr("x", -(shapeWidth - 6) / 2)
@@ -324,10 +369,9 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("fill", fillColor)
             .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
             .attr("stroke-width", 1);
-        } else if (nodeType === "strategy") {
-          // Hexagon shape
-          const w = shapeWidth;
-          const h = shapeHeight;
+        } else if (d.data.type === "strategy") {
+          const w = shapeWidth,
+            h = shapeHeight;
           const points = [
             [-w / 4, -h / 2],
             [w / 4, -h / 2],
@@ -338,14 +382,15 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
           ]
             .map((p) => p.join(","))
             .join(" ");
-          d3.select(this.parentNode).insert("polygon", ":first-child")
+          d3.select(this.parentNode)
+            .insert("polygon", ":first-child")
             .attr("points", points)
             .attr("fill", fillColor)
             .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
             .attr("stroke-width", 1);
-        } else if (nodeType === "program") {
-          // Rounded rect
-          d3.select(this.parentNode).insert("rect", ":first-child")
+        } else if (d.data.type === "program") {
+          d3.select(this.parentNode)
+            .insert("rect", ":first-child")
             .attr("width", shapeWidth)
             .attr("height", shapeHeight)
             .attr("x", -shapeWidth / 2)
@@ -355,9 +400,9 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("fill", fillColor)
             .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
             .attr("stroke-width", 1);
-        } else if (nodeType === "workstream") {
-          // Pill shaped
-          d3.select(this.parentNode).insert("rect", ":first-child")
+        } else if (d.data.type === "workstream") {
+          d3.select(this.parentNode)
+            .insert("rect", ":first-child")
             .attr("width", shapeWidth)
             .attr("height", shapeHeight)
             .attr("x", -shapeWidth / 2)
@@ -367,18 +412,18 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("fill", fillColor)
             .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
             .attr("stroke-width", 1);
-        } else if (nodeType === "activity") {
-          // Diamond shape
+        } else if (d.data.type === "activity") {
           const halfWidth = shapeWidth / 2;
           const halfHeight = shapeHeight / 2;
           const points = `0,${-halfHeight} ${halfWidth},0 0,${halfHeight} ${-halfWidth},0`;
-          d3.select(this.parentNode).insert("polygon", ":first-child")
+          d3.select(this.parentNode)
+            .insert("polygon", ":first-child")
             .attr("points", points)
             .attr("fill", fillColor)
             .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
             .attr("stroke-width", 1);
 
-          // Activity status indicator
+          // Optional status indicator
           const half = Math.min(halfWidth, halfHeight);
           if (d.data.status) {
             const statusStroke = getStatusColor(d.data.status);
@@ -390,7 +435,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
               .attr("fill", "white")
               .attr("stroke", statusStroke)
               .attr("stroke-width", 1);
-
             if (d.data.status === "completed") {
               d3.select(this.parentNode)
                 .append("path")
@@ -407,7 +451,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
                 .attr("r", 3)
                 .attr("fill", statusStroke);
             } else {
-              // not_started
               d3.select(this.parentNode)
                 .append("line")
                 .attr("x1", -3)
@@ -419,9 +462,17 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             }
           }
         }
+        // Node label (bottom-right)
+        d3.select(this.parentNode)
+          .append("text")
+          .attr("x", shapeWidth + 5)
+          .attr("y", shapeHeight / 2 + 5)
+          .attr("fill", "black")
+          .style("font-size", "12px")
+          .text(d.data.label || "");
       });
 
-    // --- Legend data (restoring the old approach for status icons) ---
+    // --- Legend with Toggling Logic ---
     const legendData = [
       { type: "roadmap", label: "Flightmap" },
       { type: "strategy", label: "Strategy" },
@@ -441,8 +492,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       .attr("transform", `translate(${width - margin.right + 20}, ${margin.top})`);
 
     const legendItemHeight = 30;
-    // let activeFilter: string | null = null;
-
     const interactiveTypes = new Set([
       "roadmap",
       "strategy",
@@ -463,7 +512,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
         const g = d3.select(nodes[i]);
         const shapeSize = 20;
 
-        // If it's the color pick legend item:
         if (d.type === "pick_workstream_color") {
           g.append("text")
             .attr("x", 0)
@@ -478,11 +526,9 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
           return;
         }
 
-        // For normal legend items:
-        const fill = getLegendColor(d.type, d.status, workstreamColor);
+        const fill = getLegendColor(d.type, d.status, defaultWorkstreamColor);
 
         if (d.type.startsWith("status_")) {
-          // We revert to the old style icons:
           g.append("circle")
             .attr("cx", shapeSize / 2)
             .attr("cy", shapeSize / 2)
@@ -491,9 +537,7 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", getStatusColor(d.status || ""))
             .attr("stroke-width", 1);
 
-          // Now the inside icon
           if (d.status === "completed") {
-            // Checkmark
             g.append("path")
               .attr("d", "M-3,0 L-1,2 L3,-2")
               .attr("transform", `translate(${shapeSize / 2},${shapeSize / 2})`)
@@ -501,14 +545,12 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
               .attr("stroke-width", 2)
               .attr("fill", "none");
           } else if (d.status === "in_progress") {
-            // Small circle
             g.append("circle")
               .attr("cx", shapeSize / 2)
               .attr("cy", shapeSize / 2)
               .attr("r", 3)
               .attr("fill", getStatusColor(d.status));
           } else {
-            // not_started => line
             g.append("line")
               .attr("x1", shapeSize / 2 - 3)
               .attr("y1", shapeSize / 2)
@@ -537,7 +579,8 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", d3.color(fill)?.darker(0.5) + "")
             .attr("stroke-width", 1);
         } else if (d.type === "strategy") {
-          const w = shapeSize, h = shapeSize;
+          const w = shapeSize,
+            h = shapeSize;
           const points = [
             [-w / 4, -h / 2],
             [w / 4, -h / 2],
@@ -563,7 +606,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke", d3.color(fill)?.darker(0.5) + "")
             .attr("stroke-width", 1);
         } else if (d.type === "workstream") {
-          // pill
           g.append("rect")
             .attr("width", shapeSize)
             .attr("height", shapeSize)
@@ -599,7 +641,6 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
             .attr("stroke-width", 1);
         }
 
-        // text label
         g.append("text")
           .attr("x", shapeSize + 5)
           .attr("y", shapeSize / 2 + 5)
@@ -607,18 +648,23 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
           .style("font-size", "12px")
           .text(d.label);
 
-        // Toggling logic
+        // Legend toggling logic (filters by type or status).
         let activeFilter: string | null = null;
         if (interactiveTypes.has(d.type) || d.type.startsWith("status_")) {
-          g.style("cursor", "pointer")
-            .on("click", function () {
-              const filterKey = d.type.startsWith("status_") ? d.status : d.type;
-              if (activeFilter === filterKey) {
-                activeFilter = null;
-                d3.selectAll(".node").transition().duration(500).style("opacity", 1);
-              } else {
-                activeFilter = filterKey;
-                d3.selectAll(".node").transition().duration(500).style("opacity", function (nd: any) {
+          g.style("cursor", "pointer").on("click", function () {
+            const filterKey = d.type.startsWith("status_") ? d.status : d.type;
+            if (activeFilter === filterKey) {
+              activeFilter = null;
+              d3.selectAll(".node")
+                .transition()
+                .duration(500)
+                .style("opacity", 1);
+            } else {
+              activeFilter = filterKey;
+              d3.selectAll(".node")
+                .transition()
+                .duration(500)
+                .style("opacity", function (nd: any) {
                   if (
                     filterKey === "completed" ||
                     filterKey === "in_progress" ||
@@ -629,30 +675,28 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
                     return nd.data.type === filterKey ? 1 : 0.2;
                   }
                 });
+            }
+            d3.selectAll(".legend-item").style("opacity", function (legData: any) {
+              const legKey = legData.type.startsWith("status_") ? legData.status : legData.type;
+              if (activeFilter) {
+                return legKey === activeFilter ? 1 : 0.5;
               }
-              d3.selectAll(".legend-item").style("opacity", function (legData: any) {
-                const legKey = legData.type.startsWith("status_") ? legData.status : legData.type;
-                if (activeFilter) {
-                  return legKey === activeFilter ? 1 : 0.5;
-                }
-                return 1;
-              });
+              return 1;
             });
+          });
         }
       });
-  }, [data, workstreamColor]);
+  }, [data, defaultWorkstreamColor]);
 
   return (
     <div className="w-full h-full relative">
       <svg ref={svgRef}></svg>
-
       <Tooltip
         content={tooltip.content}
         left={tooltip.left}
         top={tooltip.top}
         visible={tooltip.visible}
       />
-
       <button
         onClick={() => {
           if (svgRef.current && zoomRef.current) {
@@ -666,19 +710,16 @@ const RoadmapVisualization: React.FC<RoadmapProps> = ({ data }) => {
       >
         Reset View
       </button>
-
       <div className="absolute top-4 left-4 flex flex-col gap-2">
         <JSONExportButton hierarchyData={buildHierarchy(data)} />
         <CSVExportButton hierarchyData={buildHierarchy(data)} />
         <ScreenshotButton svgRef={svgRef} />
       </div>
-
-      {/* The color picker modal */}
       <WorkstreamColorPickerModal
         visible={colorModalVisible}
         onClose={() => setColorModalVisible(false)}
-        onColorChange={(color) => setWorkstreamColor(color)}
-        initialColor={workstreamColor}
+        onColorChange={(color) => setDefaultWorkstreamColor(color)}
+        initialColor={defaultWorkstreamColor}
       />
     </div>
   );

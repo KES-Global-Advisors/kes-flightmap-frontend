@@ -18,6 +18,9 @@ export function buildHierarchy(data: RoadmapData): any {
     target_end_date: node.target_end_date || "",
     contributors: node.contributors || [],
     created_at: node.created_at || "",
+    supported_milestones: node.supported_milestones || [],
+    additional_milestones: node.additional_milestones || [],
+    color: node.color || "",
     children: []
   });
 
@@ -41,6 +44,7 @@ export function buildHierarchy(data: RoadmapData): any {
               programNode.children = program.workstreams
                 ? program.workstreams.map((workstream: any) => {
                     const workstreamNode = mapNode(workstream, "workstream");
+                    // workstreamNode.color is now set from the backend via mapNode
 
                     // Instead of pushing a "Milestones" group node, we push the milestone nodes directly.
                     if (workstream.milestones && workstream.milestones.length > 0) {
@@ -58,11 +62,11 @@ export function buildHierarchy(data: RoadmapData): any {
                         }
                         return milestoneNode;
                       });
-                      // push them directly
+                      // Push milestone nodes directly.
                       workstreamNode.children.push(...milestoneNodes);
                     }
 
-                    // Same for activities that are directly under the workstream
+                    // Same for activities directly under the workstream.
                     if (workstream.activities && workstream.activities.length > 0) {
                       const activityNodes = workstream.activities.map((activity: any) =>
                         mapNode(activity, "activity")
