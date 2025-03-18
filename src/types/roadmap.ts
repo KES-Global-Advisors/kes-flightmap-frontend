@@ -21,6 +21,8 @@
     contributors: Contributor[];
     milestone: number;
     workstream: number;
+    supported_milestones: number[];
+    additional_milestones: number[];
   }
   
   export interface Milestone {
@@ -44,6 +46,7 @@
     time_horizon: string;
     milestones: Milestone[];
     activities: Activity[];
+    color: string;
     contributors: {
       id: number;
       username: string;
