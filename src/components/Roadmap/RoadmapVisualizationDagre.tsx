@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
-import dagre from '@dagrejs/dagre'
+import dagre from "@dagrejs/dagre";
 import { RoadmapData } from "@/types/roadmap";
 
-// Utility components (adjust to your structure)
+// Utility components
 import JSONExportButton from "./FlightmapUtils/JSONExportButton";
 import CSVExportButton from "./FlightmapUtils/CSVExportButton";
 import ScreenshotButton from "./FlightmapUtils/ScreenshotButton";
@@ -18,7 +18,6 @@ import { getTooltipContent } from "./FlightmapUtils/getTooltip";
 /**
  * estimateNodeSize:
  * Returns approximate width/height for Dagre's layout calculations.
- * In a real app, you'd measure text or do a more refined approach.
  */
 function estimateNodeSize(nodeData: any): { width: number; height: number } {
   switch (nodeData.type) {
@@ -40,18 +39,23 @@ function estimateNodeSize(nodeData: any): { width: number; height: number } {
 }
 
 /**
- * Basic color logic (without advanced "ancestor completed" checks).
- * You can adapt your old logic as needed.
+ * getNodeColor:
+ * Returns the fill color for a node, using an inherited workstream color when available.
  */
 function getNodeColor(nodeData: any): string {
   if (nodeData.type === "workstream") {
     return nodeData.color || "#0000FF";
   }
-  if (nodeData.type === "milestone") {
-    return nodeData.status === "completed" ? "#ccc" : "#facc15";
-  }
-  if (nodeData.type === "activity") {
-    return "#f87171";
+  if (nodeData.type === "milestone" || nodeData.type === "activity") {
+    if (nodeData.parentWorkstreamColor) {
+      if (nodeData.type === "milestone" && nodeData.status === "completed") {
+        return "#ccc";
+      }
+      return nodeData.parentWorkstreamColor;
+    }
+    return nodeData.type === "milestone"
+      ? nodeData.status === "completed" ? "#ccc" : "#facc15"
+      : "#f87171";
   }
   if (nodeData.type === "roadmap") {
     return "#a78bfa";
@@ -67,7 +71,7 @@ function getNodeColor(nodeData: any): string {
 
 /**
  * getStatusColor:
- * For drawing status icons on activities, etc.
+ * For drawing status icons on activities.
  */
 function getStatusColor(status: string): string {
   switch (status) {
@@ -90,11 +94,8 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
     top: 0,
     visible: false,
   });
-
   const [defaultWorkstreamColor, setDefaultWorkstreamColor] = useState("#22d3ee");
   const [colorModalVisible, setColorModalVisible] = useState(false);
-
-  // We'll store the currently active filter (for clickable legend).
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,9 +112,8 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
       .attr("viewBox", `0 0 ${width} ${height}`)
       .attr("class", "bg-white");
 
-    const container = svgEl
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+    // Create container for zoom and later adjustments
+    const container = svgEl.append("g");
 
     // Zoom / pan
     zoomRef.current = d3
@@ -124,42 +124,38 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
       });
     svgEl.call(zoomRef.current);
 
-    // 1) Convert to hierarchy, then flatten into nodes + edges
+    // 1) Convert to hierarchy and flatten into nodes + edges,
+    //    while passing inherited workstream color.
     const hierarchyData = buildHierarchy(data);
 
-    const graphNodes: Array<{
-      id: string;
-      nodeData: any;
-      width: number;
-      height: number;
-    }> = [];
+    const graphNodes: Array<{ id: string; nodeData: any; width: number; height: number }> = [];
     const graphEdges: Array<{ source: string; target: string; type: string }> = [];
 
-    function traverse(node: any, parentId: string | null) {
+    function traverse(node: any, parentId: string | null, inheritedColor: string | null) {
+      if (node.type === "workstream" && !node.color && inheritedColor) {
+        node.color = inheritedColor;
+      }
+      if ((node.type === "milestone" || node.type === "activity") && inheritedColor) {
+        node.parentWorkstreamColor = inheritedColor;
+      }
+
       const nodeId = `${node.type}-${node.id}`;
       const size = estimateNodeSize(node);
-      graphNodes.push({
-        id: nodeId,
-        nodeData: node,
-        width: size.width,
-        height: size.height,
-      });
+      graphNodes.push({ id: nodeId, nodeData: node, width: size.width, height: size.height });
       if (parentId) {
-        graphEdges.push({
-          source: parentId,
-          target: nodeId,
-          type: "hierarchy",
-        });
+        graphEdges.push({ source: parentId, target: nodeId, type: "hierarchy" });
+      }
+      let newInheritedColor = inheritedColor;
+      if (node.type === "workstream") {
+        newInheritedColor = node.color || inheritedColor;
       }
       if (node.children) {
-        node.children.forEach((child: any) => {
-          traverse(child, nodeId);
-        });
+        node.children.forEach((child: any) => traverse(child, nodeId, newInheritedColor));
       }
     }
-    traverse(hierarchyData, null);
+    traverse(hierarchyData, null, null);
 
-    // Extra links (activities -> supported_milestones, etc.)
+    // Extra links (e.g., activities -> supported_milestones)
     function gatherExtraLinks(node: any) {
       if (node.type === "activity" && node.id) {
         const nodeId = `${node.type}-${node.id}`;
@@ -167,11 +163,7 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
         const aM = node.additional_milestones || [];
         [...sM, ...aM].forEach((mid: number) => {
           const milestoneId = `milestone-${mid}`;
-          graphEdges.push({
-            source: nodeId,
-            target: milestoneId,
-            type: "extra",
-          });
+          graphEdges.push({ source: nodeId, target: milestoneId, type: "extra" });
         });
       }
       if (node.children) {
@@ -180,17 +172,14 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
     }
     gatherExtraLinks(hierarchyData);
 
-    // 2) Build a Dagre graph
+    // 2) Build a Dagre graph with increased margins for better spacing.
     const g = new dagre.graphlib.Graph();
-    g.setGraph({ rankdir: "LR", marginx: 50, marginy: 50 });
+    g.setGraph({ rankdir: "LR", marginx: 150, marginy: 150 });
     g.setDefaultEdgeLabel(() => ({}));
 
     // 3) Add nodes
     graphNodes.forEach((n) => {
-      g.setNode(n.id, {
-        width: n.width,
-        height: n.height,
-      });
+      g.setNode(n.id, { width: n.width, height: n.height });
     });
 
     // 4) Add edges
@@ -200,6 +189,17 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
 
     // 5) Run Dagre layout
     dagre.layout(g);
+
+    // 5a) Adjust container transform based on bounding box.
+    let xMin = Infinity, yMin = Infinity;
+    g.nodes().forEach((nodeId) => {
+      const pos = g.node(nodeId);
+      if (pos.x < xMin) xMin = pos.x;
+      if (pos.y < yMin) yMin = pos.y;
+    });
+    // Add extra horizontal offset (e.g., 100px) to push nodes to the right.
+    const offsetX = 300;
+    container.attr("transform", `translate(${margin.left - yMin + offsetX}, ${margin.top - xMin})`);
 
     // 6) Render edges
     const edgesGroup = container.append("g").attr("class", "edges");
@@ -253,38 +253,26 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
         });
       })
       .on("mousemove", (event) => {
-        setTooltip((prev) => ({
-          ...prev,
-          left: event.pageX + 10,
-          top: event.pageY - 28,
-        }));
+        setTooltip((prev) => ({ ...prev, left: event.pageX + 10, top: event.pageY - 28 }));
       })
       .on("mouseout", () => {
         setTooltip((prev) => ({ ...prev, visible: false }));
       });
 
-    // 8) For each node, replicate the shape-drawing logic from your old snippet.
+    // 8) Draw each node’s shape and text
     nodeSelection.each(function (nodeId) {
       const group = d3.select(this);
       const nodeObj = graphNodes.find((n) => n.id === nodeId);
       if (!nodeObj) return;
-
       const nodeData = nodeObj.nodeData;
-      // We'll create a text element first, measure, then insert shape behind it.
       const text = group
         .append("text")
         .attr("dy", "0.35em")
         .attr("text-anchor", "middle")
         .text(nodeData.name);
-
-      // Use your wrapText if desired:
       wrapText(d3.select(text.node()), 120);
-
       const bbox = (text.node() as SVGTextElement).getBBox();
-      let paddingX = 20,
-        paddingY = 15;
-
-      // Adjust for node types
+      let paddingX = 20, paddingY = 15;
       switch (nodeData.type) {
         case "roadmap":
         case "strategy":
@@ -299,12 +287,10 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
         default:
           break;
       }
-
       const shapeWidth = bbox.width + paddingX * 2;
       const shapeHeight = bbox.height + paddingY * 2;
       const fillColor = getNodeColor(nodeData);
 
-      // Insert shape behind the text
       if (nodeData.type === "milestone") {
         const radius = Math.max(shapeWidth, shapeHeight) / 2;
         group
@@ -327,7 +313,6 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
           .attr("fill", "none")
           .attr("stroke", fillColor)
           .attr("stroke-width", 3);
-
         group
           .insert("rect", "text")
           .attr("width", shapeWidth - 6)
@@ -340,8 +325,7 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
           .attr("stroke", d3.color(fillColor)?.darker(0.5)?.toString() || "#333")
           .attr("stroke-width", 1);
       } else if (nodeData.type === "strategy") {
-        const w = shapeWidth,
-          h = shapeHeight;
+        const w = shapeWidth, h = shapeHeight;
         const points = [
           [-w / 4, -h / 2],
           [w / 4, -h / 2],
@@ -392,8 +376,6 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
           .attr("fill", fillColor)
           .attr("stroke", d3.color(fillColor)?.darker(0.5)?.toString() || "#333")
           .attr("stroke-width", 1);
-
-        // Optional status indicator
         if (nodeData.status) {
           const statusStroke = getStatusColor(nodeData.status);
           group
@@ -431,19 +413,13 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
           }
         }
       }
-
-      // If you want a bottom-right label (like old code):
-      // group.append("text")... etc. 
-      // For brevity, we just do a single text element here.
     });
 
-    // Finally, apply any filtering logic (if activeFilter is set).
-    // We can set node opacity based on whether the node matches the filter.
+    // Apply filtering logic: set node opacity based on active filter.
     nodeSelection.style("opacity", (nodeId) => {
       if (!activeFilter) return 1;
       const nodeObj = graphNodes.find((n) => n.id === nodeId);
       if (!nodeObj) return 1;
-
       const { type, status } = nodeObj.nodeData;
       if (activeFilter === "completed" || activeFilter === "in_progress" || activeFilter === "not_started") {
         return type === "activity" && status === activeFilter ? 1 : 0.2;
@@ -453,7 +429,6 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
     });
   }, [data, defaultWorkstreamColor, activeFilter]);
 
-  // 9) Legend with clickable logic
   const legendData = [
     { type: "roadmap", label: "Flightmap" },
     { type: "strategy", label: "Strategy" },
@@ -467,17 +442,12 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
     { type: "pick_workstream_color", label: "Workstream color" },
   ];
 
-  const interactiveTypes = new Set(["roadmap","strategy","program","workstream","milestone","activity"]);
+  const interactiveTypes = new Set(["roadmap", "strategy", "program", "workstream", "milestone", "activity"]);
 
   return (
     <div className="w-full h-full relative">
       <svg ref={svgRef}></svg>
-      <Tooltip
-        content={tooltip.content}
-        left={tooltip.left}
-        top={tooltip.top}
-        visible={tooltip.visible}
-      />
+      <Tooltip content={tooltip.content} left={tooltip.left} top={tooltip.top} visible={tooltip.visible} />
       <button
         onClick={() => {
           if (svgRef.current && zoomRef.current) {
@@ -491,26 +461,18 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
       >
         Reset View
       </button>
-
       <div className="absolute top-4 left-4 flex flex-col gap-2">
         <JSONExportButton hierarchyData={buildHierarchy(data)} />
         <CSVExportButton hierarchyData={buildHierarchy(data)} />
         <ScreenshotButton svgRef={svgRef} />
       </div>
-
       <WorkstreamColorPickerModal
         visible={colorModalVisible}
         onClose={() => setColorModalVisible(false)}
         onColorChange={(color) => setDefaultWorkstreamColor(color)}
         initialColor={defaultWorkstreamColor}
       />
-
-      {/* Legend */}
-      <svg
-        width={200}
-        height={legendData.length * 30 + 20}
-        style={{ position: "absolute", top: 20, right: 20 }}
-      >
+      <svg width={200} height={legendData.length * 30 + 20} style={{ position: "absolute", top: 20, right: 20 }}>
         {legendData.map((d, i) => {
           const shapeSize = 20;
           const yOffset = i * 30;
@@ -520,14 +482,12 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
           const stroke = d.type.startsWith("status_")
             ? getStatusColor(d.status || "")
             : d3.color(fill)?.darker(0.5)?.toString() || "#333";
-
           return (
             <g
               key={i}
               transform={`translate(10, ${yOffset})`}
               style={{ cursor: "pointer", opacity: activeFilter ? 0.5 : 1 }}
               onClick={() => {
-                // Legend toggling logic
                 const filterKey = d.type.startsWith("status_") ? d.status : d.type;
                 setActiveFilter((prev) => (prev === filterKey ? null : filterKey));
               }}
@@ -553,12 +513,7 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
                           fill="none"
                         />
                       ) : d.status === "in_progress" ? (
-                        <circle
-                          cx={shapeSize / 2}
-                          cy={shapeSize / 2}
-                          r={3}
-                          fill={stroke}
-                        />
+                        <circle cx={shapeSize / 2} cy={shapeSize / 2} r={3} fill={stroke} />
                       ) : (
                         <line
                           x1={shapeSize / 2 - 3}
@@ -572,7 +527,6 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
                     </>
                   );
                 }
-                // For node types
                 if (d.type === "roadmap") {
                   return (
                     <>
@@ -600,8 +554,7 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
                   );
                 }
                 if (d.type === "strategy") {
-                  const w = shapeSize,
-                    h = shapeSize;
+                  const w = shapeSize, h = shapeSize;
                   const points = [
                     [-w / 4, -h / 2],
                     [w / 4, -h / 2],
@@ -680,12 +633,7 @@ const RoadmapVisualizationDagre: React.FC<{ data: RoadmapData }> = ({ data }) =>
                 }
                 return null;
               })()}
-              <text
-                x={shapeSize + 5}
-                y={shapeSize / 2 + 5}
-                fill="black"
-                fontSize={12}
-              >
+              <text x={shapeSize + 5} y={shapeSize / 2 + 5} fill="black" fontSize={12}>
                 {d.label}
               </text>
             </g>

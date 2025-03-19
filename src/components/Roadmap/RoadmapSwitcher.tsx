@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import RoadmapVisualization from './FlightmapVisualization';
+import RoadmapVisualizationDagre from './RoadmapVisualizationDagre'
 import GanttChart from './GanttChart';
 import ActivityTable  from './Table'
 import { RoadmapData } from '@/types/roadmap';
@@ -9,7 +10,7 @@ interface RoadmapSwitcherProps {
 }
 
 const RoadmapSwitcher: React.FC<RoadmapSwitcherProps> = ({ roadmap }) => {
-  const [viewMode, setViewMode] = useState<'flightmap' | 'gantt' | 'table'>('flightmap');
+  const [viewMode, setViewMode] = useState<'flightmap' | 'dagre' | 'gantt' | 'table'>('flightmap');
 
   return (
     <div>
@@ -19,6 +20,12 @@ const RoadmapSwitcher: React.FC<RoadmapSwitcherProps> = ({ roadmap }) => {
           className={`px-4 py-2 rounded ${viewMode === 'flightmap' ? 'bg-gray-200' : 'bg-white'}`}
         >
           Flightmap View
+        </button>
+        <button
+          onClick={() => setViewMode('dagre')}
+          className={`px-4 py-2 rounded ${viewMode === 'dagre' ? 'bg-gray-200' : 'bg-white'}`}
+        >
+          DagreMap View
         </button>
         <button
           onClick={() => setViewMode('gantt')}
@@ -35,6 +42,7 @@ const RoadmapSwitcher: React.FC<RoadmapSwitcherProps> = ({ roadmap }) => {
       </div>
 
       {viewMode === 'flightmap' && <RoadmapVisualization data={roadmap} />}
+      {viewMode === 'dagre' && <RoadmapVisualizationDagre data={roadmap} />}
       {viewMode === 'gantt' && <GanttChart data={roadmap} />}
       {viewMode === 'table' && <ActivityTable data={roadmap} />}
     </div>
