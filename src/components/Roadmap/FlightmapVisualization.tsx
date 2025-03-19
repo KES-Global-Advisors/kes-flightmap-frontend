@@ -305,172 +305,197 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
         setTooltip((prev) => ({ ...prev, visible: false }));
       });
 
+    // Define separate state variable for filtering workstream nodes.
+    let activeWorkstreamFilter: { id: number } | null = null;
+
     // For each node, draw the shape and text label.
-    nodes
-      .append("text")
-      .attr("dy", "0.35em")
-      .attr("text-anchor", "middle")
-      .text((d) => d.data.name)
-      .each(function (d) {
-        let paddingX = 20,
-          paddingY = 15;
-        switch (d.data.type) {
-          case "roadmap":
-          case "strategy":
-          case "program":
-          case "workstream":
-            paddingY += 5;
-            break;
-          case "activity":
-            paddingX += 10;
-            paddingY += 10;
-            break;
-          default:
-            break;
-        }
-        const textSel = d3.select(this);
-        wrapText(textSel, 120);
-        const bbox = (this as SVGTextElement).getBBox();
-        const shapeWidth = bbox.width + paddingX * 2;
-        const shapeHeight = bbox.height + paddingY * 2;
-        const fillColor = getNodeColor(d);
+    nodes.each(function(d) {
+      let paddingX = 20,
+        paddingY = 15;
+      switch (d.data.type) {
+        case "roadmap":
+        case "strategy":
+        case "program":
+        case "workstream":
+          paddingY += 5;
+          break;
+        case "activity":
+          paddingX += 10;
+          paddingY += 10;
+          break;
+        default:
+          break;
+      }
+      const textSel = d3.select(this).append("text")
+        .attr("dy", "0.35em")
+        .attr("text-anchor", "middle")
+        .text(d.data.name);
+      wrapText(textSel, 120);
+      const bbox = (textSel.node() as SVGTextElement).getBBox();
+      const shapeWidth = bbox.width + paddingX * 2;
+      const shapeHeight = bbox.height + paddingY * 2;
+      const fillColor = getNodeColor(d);
 
-        // Render shape by node type:
-        if (d.data.type === "milestone") {
-          const radius = Math.max(shapeWidth, shapeHeight) / 2;
-          d3.select(this.parentNode)
-            .insert("circle", ":first-child")
-            .attr("r", radius)
+      // Render shape by node type:
+      if (d.data.type === "milestone") {
+        const radius = Math.max(shapeWidth, shapeHeight) / 2;
+        d3.select(this)
+          .insert("circle", ":first-child")
+          .attr("r", radius)
+          .attr("cx", 0)
+          .attr("cy", 0)
+          .attr("fill", fillColor)
+          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+          .attr("stroke-width", 1);
+      } else if (d.data.type === "roadmap") {
+        d3.select(this)
+          .insert("rect", ":first-child")
+          .attr("width", shapeWidth)
+          .attr("height", shapeHeight)
+          .attr("x", -shapeWidth / 2)
+          .attr("y", -shapeHeight / 2)
+          .attr("rx", 10)
+          .attr("ry", 10)
+          .attr("fill", "none")
+          .attr("stroke", fillColor)
+          .attr("stroke-width", 3);
+        d3.select(this)
+          .insert("rect", ":first-child")
+          .attr("width", shapeWidth - 6)
+          .attr("height", shapeHeight - 6)
+          .attr("x", -(shapeWidth - 6) / 2)
+          .attr("y", -(shapeHeight - 6) / 2)
+          .attr("rx", 8)
+          .attr("ry", 8)
+          .attr("fill", fillColor)
+          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+          .attr("stroke-width", 1);
+      } else if (d.data.type === "strategy") {
+        const w = shapeWidth,
+          h = shapeHeight;
+        const points = [
+          [-w / 4, -h / 2],
+          [w / 4, -h / 2],
+          [w / 2, 0],
+          [w / 4, h / 2],
+          [-w / 4, h / 2],
+          [-w / 2, 0],
+        ]
+          .map((p) => p.join(","))
+          .join(" ");
+        d3.select(this)
+          .insert("polygon", ":first-child")
+          .attr("points", points)
+          .attr("fill", fillColor)
+          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+          .attr("stroke-width", 1);
+      } else if (d.data.type === "program") {
+        d3.select(this)
+          .insert("rect", ":first-child")
+          .attr("width", shapeWidth)
+          .attr("height", shapeHeight)
+          .attr("x", -shapeWidth / 2)
+          .attr("y", -shapeHeight / 2)
+          .attr("rx", 5)
+          .attr("ry", 5)
+          .attr("fill", fillColor)
+          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+          .attr("stroke-width", 1);
+      } else if (d.data.type === "workstream") {
+        d3.select(this)
+          .insert("rect", ":first-child")
+          .attr("width", shapeWidth)
+          .attr("height", shapeHeight)
+          .attr("x", -shapeWidth / 2)
+          .attr("y", -shapeHeight / 2)
+          .attr("rx", shapeHeight / 2)
+          .attr("ry", shapeHeight / 2)
+          .attr("fill", fillColor)
+          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+          .attr("stroke-width", 1);
+      } else if (d.data.type === "activity") {
+        const halfWidth = shapeWidth / 2;
+        const halfHeight = shapeHeight / 2;
+        const points = `0,${-halfHeight} ${halfWidth},0 0,${halfHeight} ${-halfWidth},0`;
+        d3.select(this)
+          .insert("polygon", ":first-child")
+          .attr("points", points)
+          .attr("fill", fillColor)
+          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+          .attr("stroke-width", 1);
+
+        // Optional status indicator
+        const half = Math.min(halfWidth, halfHeight);
+        if (d.data.status) {
+          const statusStroke = getStatusColor(d.data.status);
+          d3.select(this)
+            .append("circle")
             .attr("cx", 0)
-            .attr("cy", 0)
-            .attr("fill", fillColor)
-            .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+            .attr("cy", -halfHeight - 10)
+            .attr("r", 8)
+            .attr("fill", "white")
+            .attr("stroke", statusStroke)
             .attr("stroke-width", 1);
-        } else if (d.data.type === "roadmap") {
-          d3.select(this.parentNode)
-            .insert("rect", ":first-child")
-            .attr("width", shapeWidth)
-            .attr("height", shapeHeight)
-            .attr("x", -shapeWidth / 2)
-            .attr("y", -shapeHeight / 2)
-            .attr("rx", 10)
-            .attr("ry", 10)
-            .attr("fill", "none")
-            .attr("stroke", fillColor)
-            .attr("stroke-width", 3);
-          d3.select(this.parentNode)
-            .insert("rect", ":first-child")
-            .attr("width", shapeWidth - 6)
-            .attr("height", shapeHeight - 6)
-            .attr("x", -(shapeWidth - 6) / 2)
-            .attr("y", -(shapeHeight - 6) / 2)
-            .attr("rx", 8)
-            .attr("ry", 8)
-            .attr("fill", fillColor)
-            .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.data.type === "strategy") {
-          const w = shapeWidth,
-            h = shapeHeight;
-          const points = [
-            [-w / 4, -h / 2],
-            [w / 4, -h / 2],
-            [w / 2, 0],
-            [w / 4, h / 2],
-            [-w / 4, h / 2],
-            [-w / 2, 0],
-          ]
-            .map((p) => p.join(","))
-            .join(" ");
-          d3.select(this.parentNode)
-            .insert("polygon", ":first-child")
-            .attr("points", points)
-            .attr("fill", fillColor)
-            .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.data.type === "program") {
-          d3.select(this.parentNode)
-            .insert("rect", ":first-child")
-            .attr("width", shapeWidth)
-            .attr("height", shapeHeight)
-            .attr("x", -shapeWidth / 2)
-            .attr("y", -shapeHeight / 2)
-            .attr("rx", 5)
-            .attr("ry", 5)
-            .attr("fill", fillColor)
-            .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.data.type === "workstream") {
-          d3.select(this.parentNode)
-            .insert("rect", ":first-child")
-            .attr("width", shapeWidth)
-            .attr("height", shapeHeight)
-            .attr("x", -shapeWidth / 2)
-            .attr("y", -shapeHeight / 2)
-            .attr("rx", shapeHeight / 2)
-            .attr("ry", shapeHeight / 2)
-            .attr("fill", fillColor)
-            .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.data.type === "activity") {
-          const halfWidth = shapeWidth / 2;
-          const halfHeight = shapeHeight / 2;
-          const points = `0,${-halfHeight} ${halfWidth},0 0,${halfHeight} ${-halfWidth},0`;
-          d3.select(this.parentNode)
-            .insert("polygon", ":first-child")
-            .attr("points", points)
-            .attr("fill", fillColor)
-            .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-
-          // Optional status indicator
-          const half = Math.min(halfWidth, halfHeight);
-          if (d.data.status) {
-            const statusStroke = getStatusColor(d.data.status);
-            d3.select(this.parentNode)
+          if (d.data.status === "completed") {
+            d3.select(this)
+              .append("path")
+              .attr("d", "M-3,0 L-1,2 L3,-2")
+              .attr("transform", `translate(0,${-halfHeight - 10})`)
+              .attr("stroke", statusStroke)
+              .attr("stroke-width", 2)
+              .attr("fill", "none");
+          } else if (d.data.status === "in_progress") {
+            d3.select(this)
               .append("circle")
               .attr("cx", 0)
               .attr("cy", -halfHeight - 10)
-              .attr("r", 8)
-              .attr("fill", "white")
+              .attr("r", 3)
+              .attr("fill", statusStroke);
+          } else {
+            d3.select(this)
+              .append("line")
+              .attr("x1", -3)
+              .attr("y1", -halfHeight - 10)
+              .attr("x2", 3)
+              .attr("y2", -halfHeight - 10)
               .attr("stroke", statusStroke)
-              .attr("stroke-width", 1);
-            if (d.data.status === "completed") {
-              d3.select(this.parentNode)
-                .append("path")
-                .attr("d", "M-3,0 L-1,2 L3,-2")
-                .attr("transform", `translate(0,${-halfHeight - 10})`)
-                .attr("stroke", statusStroke)
-                .attr("stroke-width", 2)
-                .attr("fill", "none");
-            } else if (d.data.status === "in_progress") {
-              d3.select(this.parentNode)
-                .append("circle")
-                .attr("cx", 0)
-                .attr("cy", -halfHeight - 10)
-                .attr("r", 3)
-                .attr("fill", statusStroke);
-            } else {
-              d3.select(this.parentNode)
-                .append("line")
-                .attr("x1", -3)
-                .attr("y1", -halfHeight - 10)
-                .attr("x2", 3)
-                .attr("y2", -halfHeight - 10)
-                .attr("stroke", statusStroke)
-                .attr("stroke-width", 2);
-            }
+              .attr("stroke-width", 2);
           }
         }
-        // Node label (bottom-right)
-        d3.select(this.parentNode)
-          .append("text")
-          .attr("x", shapeWidth + 5)
-          .attr("y", shapeHeight / 2 + 5)
-          .attr("fill", "black")
-          .style("font-size", "12px")
-          .text(d.data.label || "");
-      });
+      }
+      // Node label (bottom-right)
+      d3.select(this)
+        .append("text")
+        .attr("x", shapeWidth + 5)
+        .attr("y", shapeHeight / 2 + 5)
+        .attr("fill", "black")
+        .style("font-size", "12px")
+        .text(d.data.label || "");
+
+      // Attach click handler ONLY to workstream nodes.
+      if (d.data.type === "workstream") {
+        d3.select(this)
+          .style("cursor", "pointer")
+          .on("click", function(event, d) {
+            if (activeWorkstreamFilter && activeWorkstreamFilter.id === d.data.id) {
+              activeWorkstreamFilter = null;
+              d3.selectAll(".node")
+                .transition()
+                .duration(500)
+                .style("opacity", 1);
+            } else {
+              activeWorkstreamFilter = { id: d.data.id };
+              const selectedNodes = d.descendants();
+              d3.selectAll(".node")
+                .transition()
+                .duration(500)
+                .style("opacity", function(nd: any) {
+                  return selectedNodes.includes(nd) ? 1 : 0.2;
+                });
+            }
+          });
+      }
+    });
 
     // --- Legend with Toggling Logic ---
     const legendData = [
