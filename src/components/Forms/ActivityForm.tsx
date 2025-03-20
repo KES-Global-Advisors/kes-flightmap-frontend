@@ -3,6 +3,8 @@ import { useFormContext, useForm, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Workstream, Milestone, Activity } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
+// Import the new MultiSelect component
+import { MultiSelect } from './Utils/MultiSelect';
 
 export type ActivityFormData = {
   activities: {
@@ -37,47 +39,49 @@ const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
   onClose,
   onCreate,
 }) => {
-  const { register, handleSubmit, reset } = useForm<{
-    name: string;
-    status: 'not_started' | 'in_progress' | 'completed';
-    priority: 1 | 2 | 3;
-    target_start_date: string;
-    target_end_date: string;
-  }>();
-
-  const onSubmit = async (data: {
-    name: string;
-    status: 'not_started' | 'in_progress' | 'completed';
-    priority: 1 | 2 | 3;
-    target_start_date: string;
-    target_end_date: string;
-  }) => {
-    const payload = {
-      name: data.name,
-      status: data.status,
-      priority: data.priority,
-      target_start_date: data.target_start_date,
-      target_end_date: data.target_end_date,
-    };
-
-    try {
-      const response = await fetch('http://127.0.0.1:8000/activities/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to create dependent activity');
+    const { register, handleSubmit, reset } = useForm<{
+      name: string;
+      status: 'not_started' | 'in_progress' | 'completed';
+      priority: 1 | 2 | 3;
+      target_start_date: string;
+      target_end_date: string;
+    }>();
+  
+    const onSubmit = async (data: {
+      name: string;
+      status: 'not_started' | 'in_progress' | 'completed';
+      priority: 1 | 2 | 3;
+      target_start_date: string;
+      target_end_date: string;
+    }) => {
+      const payload = {
+        name: data.name,
+        status: data.status,
+        priority: data.priority,
+        target_start_date: data.target_start_date,
+        target_end_date: data.target_end_date,
+      };
+  
+      try {
+        const response = await fetch('http://127.0.0.1:8000/activities/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to create dependent activity');
+        }
+        const newActivity = await response.json();
+        onCreate(newActivity);
+        reset();
+        onClose();
+      } catch (error) {
+        console.error(error);
       }
-      const newActivity = await response.json();
-      onCreate(newActivity);
-      reset();
-      onClose();
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
+    };
+  // The modal form remains unchanged
+  // You can add your modal implementation here
+  // For brevity, this example uses a placeholder
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white p-4 rounded-md shadow-lg w-1/2">
@@ -146,7 +150,7 @@ const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
 };
 
 export const ActivityForm: React.FC = () => {
-  const { register, control, watch } = useFormContext<ActivityFormData>();
+  const { register, control, watch, setValue } = useFormContext<ActivityFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: "activities"
@@ -155,6 +159,10 @@ export const ActivityForm: React.FC = () => {
   const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream>('http://127.0.0.1:8000/workstreams/');
   const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone>('http://127.0.0.1:8000/milestones/');
   const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity>('http://127.0.0.1:8000/activities/');
+
+  // Build options arrays for MultiSelect fields
+  const milestoneOptions = milestones ? milestones.map(m => ({ label: m.name, value: m.id })) : [];
+  const activityOptions = activities ? activities.map(a => ({ label: a.name, value: a.id })) : [];
 
   const [dependentActivities, setDependentActivities] = useState<{
     prerequisite: Activity[];
@@ -185,7 +193,7 @@ export const ActivityForm: React.FC = () => {
     setModalOpen(true);
   };
 
-  // Add a new empty activity
+  // Add a new empty activity to the form
   const addActivity = () => {
     append({
       workstream: undefined,
@@ -214,8 +222,14 @@ export const ActivityForm: React.FC = () => {
     }
   }, [fields.length]);
 
+  // Helper to update multiselect values in the form state
+  const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
+    setValue(`activities.${index}.${fieldName}`, selectedValues);
+  };
+
   return (
     <div className="space-y-8">
+      {/* Header and add activity button */}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold">Activities</h2>
         <button
@@ -230,6 +244,7 @@ export const ActivityForm: React.FC = () => {
 
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          {/* Activity header with remove button */}
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Activity {index + 1}</h3>
             {fields.length > 1 && (
@@ -245,6 +260,7 @@ export const ActivityForm: React.FC = () => {
           </div>
           
           <div className="space-y-4">
+            {/* Workstream Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Workstream (optional)</label>
               {loadingWorkstreams ? (
@@ -265,6 +281,8 @@ export const ActivityForm: React.FC = () => {
                 </select>
               )}
             </div>
+            
+            {/* Milestone Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Milestone (optional)</label>
               {loadingMilestones ? (
@@ -285,13 +303,15 @@ export const ActivityForm: React.FC = () => {
                 </select>
               )}
             </div>
-            {/* Show a warning if both milestone and workstream are selected */}
-            {watch(`activities.${index}.milestone`) && watch(`activities.${index}.workstream`) ? (
+
+            {/* Warning if both milestone and workstream are selected */}
+            {watch(`activities.${index}.milestone`) && watch(`activities.${index}.workstream`) && (
               <p className="text-red-500 text-sm mt-1">
                 An activity should not be both under a milestone and directly under a workstream!
               </p>
-            ) : null}
+            )}
 
+            {/* Name Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Name</label>
               <input
@@ -300,6 +320,8 @@ export const ActivityForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
+            
+            {/* Priority Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Priority</label>
               <select
@@ -311,6 +333,8 @@ export const ActivityForm: React.FC = () => {
                 <option value={3}>Low</option>
               </select>
             </div>
+            
+            {/* Status Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Status</label>
               <select
@@ -322,6 +346,8 @@ export const ActivityForm: React.FC = () => {
                 <option value="completed">Completed</option>
               </select>
             </div>
+            
+            {/* Date Fields */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Target Start Date</label>
               <input
@@ -338,31 +364,20 @@ export const ActivityForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            {/* Dependency Fields */}
+            
+            {/* Dependency Fields using MultiSelect */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Prerequisite Activities</label>
-              {loadingActivities ? (
-                <p>Loading activities...</p>
-              ) : errorActivities ? (
-                <p>Error: {errorActivities}</p>
-              ) : (
-                <select
-                  {...register(`activities.${index}.prerequisite_activities` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {activities.map((act) => (
-                    <option key={act.id} value={act.id}>
-                      {act.name}
-                    </option>
-                  ))}
-                  {dependentActivities.prerequisite.map((act) => (
-                    <option key={act.id} value={act.id}>
-                      {act.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Prerequisite Activities"
+                options={activityOptions}
+                value={watch(`activities.${index}.prerequisite_activities`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'prerequisite_activities', newValue)
+                }
+                isLoading={loadingActivities}
+                error={errorActivities}
+                placeholder="Select prerequisite activities..."
+              />
               <div className="mt-2">
                 <button
                   type="button"
@@ -373,30 +388,19 @@ export const ActivityForm: React.FC = () => {
                 </button>
               </div>
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700">Parallel Activities</label>
-              {loadingActivities ? (
-                <p>Loading activities...</p>
-              ) : errorActivities ? (
-                <p>Error: {errorActivities}</p>
-              ) : (
-                <select
-                  {...register(`activities.${index}.parallel_activities` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {activities.map((act) => (
-                    <option key={act.id} value={act.id}>
-                      {act.name}
-                    </option>
-                  ))}
-                  {dependentActivities.parallel.map((act) => (
-                    <option key={act.id} value={act.id}>
-                      {act.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Parallel Activities"
+                options={activityOptions}
+                value={watch(`activities.${index}.parallel_activities`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'parallel_activities', newValue)
+                }
+                isLoading={loadingActivities}
+                error={errorActivities}
+                placeholder="Select parallel activities..."
+              />
               <div className="mt-2">
                 <button
                   type="button"
@@ -407,30 +411,19 @@ export const ActivityForm: React.FC = () => {
                 </button>
               </div>
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700">Successive Activities</label>
-              {loadingActivities ? (
-                <p>Loading activities...</p>
-              ) : errorActivities ? (
-                <p>Error: {errorActivities}</p>
-              ) : (
-                <select
-                  {...register(`activities.${index}.successive_activities` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {activities.map((act) => (
-                    <option key={act.id} value={act.id}>
-                      {act.name}
-                    </option>
-                  ))}
-                  {dependentActivities.successive.map((act) => (
-                    <option key={act.id} value={act.id}>
-                      {act.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Successive Activities"
+                options={activityOptions}
+                value={watch(`activities.${index}.successive_activities`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'successive_activities', newValue)
+                }
+                isLoading={loadingActivities}
+                error={errorActivities}
+                placeholder="Select successive activities..."
+              />
               <div className="mt-2">
                 <button
                   type="button"
@@ -441,47 +434,36 @@ export const ActivityForm: React.FC = () => {
                 </button>
               </div>
             </div>
-            {/* New Fields for Milestone Connections */}
+            
+            {/* Milestone Connection Fields using MultiSelect */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Supported Milestones</label>
-              {loadingMilestones ? (
-                <p>Loading milestones...</p>
-              ) : errorMilestones ? (
-                <p>Error: {errorMilestones}</p>
-              ) : (
-                <select
-                  {...register(`activities.${index}.supported_milestones` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {milestones.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Supported Milestones"
+                options={milestoneOptions}
+                value={watch(`activities.${index}.supported_milestones`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'supported_milestones', newValue)
+                }
+                isLoading={loadingMilestones}
+                error={errorMilestones}
+                placeholder="Select supported milestones..."
+              />
             </div>
+            
             <div>
-              <label className="block text-sm font-medium text-gray-700">Additional Milestones</label>
-              {loadingMilestones ? (
-                <p>Loading milestones...</p>
-              ) : errorMilestones ? (
-                <p>Error: {errorMilestones}</p>
-              ) : (
-                <select
-                  {...register(`activities.${index}.additional_milestones` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {milestones.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Additional Milestones"
+                options={milestoneOptions}
+                value={watch(`activities.${index}.additional_milestones`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'additional_milestones', newValue)
+                }
+                isLoading={loadingMilestones}
+                error={errorMilestones}
+                placeholder="Select additional milestones..."
+              />
             </div>
+            
             {/* Resource Fields */}
             <div>
               <label className="block text-sm font-medium text-gray-700">

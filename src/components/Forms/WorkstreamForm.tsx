@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
 import { SketchPicker } from 'react-color';
 import useFetch from '../../hooks/UseFetch';
 import { Program, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
+import { MultiSelect } from './Utils/MultiSelect';
 
 export type WorkstreamFormData = {
   workstreams: {
@@ -20,7 +21,7 @@ export type WorkstreamFormData = {
 };
 
 export const WorkstreamForm: React.FC = () => {
-  const { register, control } = useFormContext<WorkstreamFormData>();
+  const { register, control, watch, setValue } = useFormContext<WorkstreamFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: "workstreams"
@@ -29,7 +30,10 @@ export const WorkstreamForm: React.FC = () => {
   const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program>('http://127.0.0.1:8000/programs/');
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User>('http://127.0.0.1:8000/users/');
 
-  // Add a new empty workstream
+  // Map users to options for MultiSelect fields
+  const userOptions = users ? users.map(u => ({ label: u.username, value: u.id })) : [];
+
+  // Add a new workstream
   const addWorkstream = () => {
     append({
       program: 0,
@@ -44,12 +48,16 @@ export const WorkstreamForm: React.FC = () => {
     });
   };
 
-  // Add an initial workstream if the array is empty
-  React.useEffect(() => {
+  useEffect(() => {
     if (fields.length === 0) {
       addWorkstream();
     }
   }, [fields.length]);
+
+  // Update multi-select values
+  const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
+    setValue(`workstreams.${index}.${fieldName}`, selectedValues);
+  };
 
   return (
     <div className="space-y-8">
@@ -64,7 +72,7 @@ export const WorkstreamForm: React.FC = () => {
           Add Workstream
         </button>
       </div>
-
+      
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
           <div className="flex justify-between items-center mb-6">
@@ -82,6 +90,7 @@ export const WorkstreamForm: React.FC = () => {
           </div>
           
           <div className="space-y-4">
+            {/* Program Dropdown */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Program</label>
               {loadingPrograms ? (
@@ -94,7 +103,7 @@ export const WorkstreamForm: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a program</option>
-                  {programs.map((program) => (
+                  {programs.map(program => (
                     <option key={program.id} value={program.id}>
                       {program.name}
                     </option>
@@ -102,7 +111,7 @@ export const WorkstreamForm: React.FC = () => {
                 </select>
               )}
             </div>
-            
+            {/* Name Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Name</label>
               <input
@@ -111,7 +120,7 @@ export const WorkstreamForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            
+            {/* Vision Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Vision</label>
               <textarea
@@ -120,7 +129,7 @@ export const WorkstreamForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            
+            {/* Time Horizon Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Time Horizon</label>
               <input
@@ -129,8 +138,7 @@ export const WorkstreamForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            
-            {/* Color picker for workstream color */}
+            {/* Color Picker */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Workstream Color</label>
               <Controller
@@ -147,49 +155,35 @@ export const WorkstreamForm: React.FC = () => {
                 )}
               />
             </div>
-            
+            {/* MultiSelect for Workstream Leads */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Workstream Leads</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`workstreams.${index}.workstream_leads` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Workstream Leads"
+                options={userOptions}
+                value={watch(`workstreams.${index}.workstream_leads`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'workstream_leads', newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select workstream leads..."
+              />
             </div>
-            
+            {/* MultiSelect for Team Members */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Team Members</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`workstreams.${index}.team_members` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Team Members"
+                options={userOptions}
+                value={watch(`workstreams.${index}.team_members`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'team_members', newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select team members..."
+              />
             </div>
-            
+            {/* Improvement Targets and Organizational Goals remain as text inputs */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Improvement Targets (comma separated)</label>
               <input
@@ -199,7 +193,6 @@ export const WorkstreamForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            
             <div>
               <label className="block text-sm font-medium text-gray-700">Organizational Goals (comma separated)</label>
               <input
@@ -215,3 +208,5 @@ export const WorkstreamForm: React.FC = () => {
     </div>
   );
 };
+
+export default WorkstreamForm;

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Strategy, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
+import { MultiSelect } from './Utils/MultiSelect';
 
 export type ProgramFormData = {
   programs: {
@@ -19,7 +20,7 @@ export type ProgramFormData = {
 };
 
 export const ProgramForm: React.FC = () => {
-  const { register, control } = useFormContext<ProgramFormData>();
+  const { register, control, watch, setValue } = useFormContext<ProgramFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: "programs"
@@ -29,7 +30,11 @@ export const ProgramForm: React.FC = () => {
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User>('http://127.0.0.1:8000/users/');
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
 
-  // Add a new empty program
+  // Map fetched users and strategic goals to options
+  const userOptions = users ? users.map(u => ({ label: u.username, value: u.id })) : [];
+  const strategicGoalOptions = strategicGoals ? strategicGoals.map(goal => ({ label: goal.goal_text, value: goal.id })) : [];
+
+  // Add a new program
   const addProgram = () => {
     append({
       strategy: 0,
@@ -44,12 +49,16 @@ export const ProgramForm: React.FC = () => {
     });
   };
 
-  // Add an initial program if the array is empty
-  React.useEffect(() => {
+  useEffect(() => {
     if (fields.length === 0) {
       addProgram();
     }
   }, [fields.length]);
+
+  // Helper to update multi-select fields
+  const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
+    setValue(`programs.${index}.${fieldName}`, selectedValues);
+  };
 
   return (
     <div className="space-y-8">
@@ -82,6 +91,7 @@ export const ProgramForm: React.FC = () => {
           </div>
           
           <div className="space-y-4">
+            {/* Strategy (single select) */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Strategy</label>
               {loadingStrategies ? (
@@ -94,7 +104,7 @@ export const ProgramForm: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a strategy</option>
-                  {strategies.map((strategy) => (
+                  {strategies.map(strategy => (
                     <option key={strategy.id} value={strategy.id}>
                       {strategy.name}
                     </option>
@@ -102,7 +112,7 @@ export const ProgramForm: React.FC = () => {
                 </select>
               )}
             </div>
-            
+            {/* Name Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Name</label>
               <input
@@ -111,7 +121,7 @@ export const ProgramForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            
+            {/* Vision Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Vision</label>
               <textarea
@@ -120,7 +130,7 @@ export const ProgramForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            
+            {/* Time Horizon Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Time Horizon</label>
               <input
@@ -129,110 +139,72 @@ export const ProgramForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            
+            {/* MultiSelect for Users */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Executive Sponsors</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`programs.${index}.executive_sponsors` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Executive Sponsors"
+                options={userOptions}
+                value={watch(`programs.${index}.executive_sponsors`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'executive_sponsors', newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select executive sponsors..."
+              />
             </div>
-            
             <div>
-              <label className="block text-sm font-medium text-gray-700">Program Leads</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`programs.${index}.program_leads` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Program Leads"
+                options={userOptions}
+                value={watch(`programs.${index}.program_leads`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'program_leads', newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select program leads..."
+              />
             </div>
-            
             <div>
-              <label className="block text-sm font-medium text-gray-700">Workforce Sponsors</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`programs.${index}.workforce_sponsors` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Workforce Sponsors"
+                options={userOptions}
+                value={watch(`programs.${index}.workforce_sponsors`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'workforce_sponsors', newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select workforce sponsors..."
+              />
             </div>
-            
+            {/* MultiSelect for Strategic Goals */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Key Improvement Targets</label>
-              {loadingGoals ? (
-                <p>Loading strategic goals...</p>
-              ) : errorGoals ? (
-                <p>Error: {errorGoals}</p>
-              ) : (
-                <select
-                  {...register(`programs.${index}.key_improvement_targets` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {strategicGoals.map((goal) => (
-                    <option key={goal.id} value={goal.id}>
-                      {goal.goal_text}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Key Improvement Targets"
+                options={strategicGoalOptions}
+                value={watch(`programs.${index}.key_improvement_targets`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'key_improvement_targets', newValue)
+                }
+                isLoading={loadingGoals}
+                error={errorGoals}
+                placeholder="Select key improvement targets..."
+              />
             </div>
-            
             <div>
-              <label className="block text-sm font-medium text-gray-700">Key Organizational Goals</label>
-              {loadingGoals ? (
-                <p>Loading strategic goals...</p>
-              ) : errorGoals ? (
-                <p>Error: {errorGoals}</p>
-              ) : (
-                <select
-                  {...register(`programs.${index}.key_organizational_goals` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {strategicGoals.map((goal) => (
-                    <option key={goal.id} value={goal.id}>
-                      {goal.goal_text}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Key Organizational Goals"
+                options={strategicGoalOptions}
+                value={watch(`programs.${index}.key_organizational_goals`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'key_organizational_goals', newValue)
+                }
+                isLoading={loadingGoals}
+                error={errorGoals}
+                placeholder="Select key organizational goals..."
+              />
             </div>
           </div>
         </div>
@@ -240,3 +212,5 @@ export const ProgramForm: React.FC = () => {
     </div>
   );
 };
+
+export default ProgramForm;

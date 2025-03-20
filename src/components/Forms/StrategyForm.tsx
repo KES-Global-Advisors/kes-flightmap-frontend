@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Roadmap, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
+import { MultiSelect } from './Utils/MultiSelect';
 
 export type StrategyFormData = {
   strategies: {
@@ -18,7 +19,7 @@ export type StrategyFormData = {
 };
 
 export const StrategyForm: React.FC = () => {
-  const { register, control } = useFormContext<StrategyFormData>();
+  const { register, control, watch, setValue } = useFormContext<StrategyFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: "strategies"
@@ -26,6 +27,9 @@ export const StrategyForm: React.FC = () => {
   
   const { data: roadmaps, loading: loadingRoadmaps, error: errorRoadmaps } = useFetch<Roadmap>('http://127.0.0.1:8000/roadmaps/');
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User>('http://127.0.0.1:8000/users/');
+
+  // Helper: map users to MultiSelect options
+  const userOptions = users ? users.map(u => ({ label: u.username, value: u.id })) : [];
 
   // Add a new empty strategy
   const addStrategy = () => {
@@ -42,7 +46,7 @@ export const StrategyForm: React.FC = () => {
   };
 
   // Add an initial strategy if the array is empty
-  React.useEffect(() => {
+  useEffect(() => {
     if (fields.length === 0) {
       addStrategy();
     }
@@ -79,6 +83,7 @@ export const StrategyForm: React.FC = () => {
           </div>
           
           <div className="space-y-4">
+            {/* Roadmap Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Roadmap</label>
               {loadingRoadmaps ? (
@@ -100,6 +105,7 @@ export const StrategyForm: React.FC = () => {
               )}
             </div>
             
+            {/* Name Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Name</label>
               <input
@@ -109,6 +115,7 @@ export const StrategyForm: React.FC = () => {
               />
             </div>
             
+            {/* Tagline Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Tagline</label>
               <input
@@ -118,6 +125,7 @@ export const StrategyForm: React.FC = () => {
               />
             </div>
             
+            {/* Vision Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Vision</label>
               <textarea
@@ -127,6 +135,7 @@ export const StrategyForm: React.FC = () => {
               />
             </div>
             
+            {/* Time Horizon Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Time Horizon</label>
               <input
@@ -136,67 +145,49 @@ export const StrategyForm: React.FC = () => {
               />
             </div>
             
+            {/* MultiSelect for Executive Sponsors */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Executive Sponsors</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`strategies.${index}.executive_sponsors` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Executive Sponsors"
+                options={userOptions}
+                value={watch(`strategies.${index}.executive_sponsors`) || []}
+                onChange={(newValue) =>
+                  setValue(`strategies.${index}.executive_sponsors`, newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select executive sponsors..."
+              />
             </div>
             
+            {/* MultiSelect for Strategy Leads */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Strategy Leads</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`strategies.${index}.strategy_leads` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Strategy Leads"
+                options={userOptions}
+                value={watch(`strategies.${index}.strategy_leads`) || []}
+                onChange={(newValue) =>
+                  setValue(`strategies.${index}.strategy_leads`, newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select strategy leads..."
+              />
             </div>
             
+            {/* MultiSelect for Communication Leads */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Communication Leads</label>
-              {loadingUsers ? (
-                <p>Loading users...</p>
-              ) : errorUsers ? (
-                <p>Error: {errorUsers}</p>
-              ) : (
-                <select
-                  {...register(`strategies.${index}.communication_leads` as const)}
-                  multiple
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <MultiSelect
+                label="Communication Leads"
+                options={userOptions}
+                value={watch(`strategies.${index}.communication_leads`) || []}
+                onChange={(newValue) =>
+                  setValue(`strategies.${index}.communication_leads`, newValue)
+                }
+                isLoading={loadingUsers}
+                error={errorUsers}
+                placeholder="Select communication leads..."
+              />
             </div>
           </div>
         </div>
@@ -204,3 +195,5 @@ export const StrategyForm: React.FC = () => {
     </div>
   );
 };
+
+export default StrategyForm;
