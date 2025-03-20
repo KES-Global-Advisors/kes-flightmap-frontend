@@ -6,7 +6,6 @@ import { RoadmapData } from "@/types/roadmap";
 import JSONExportButton from "./FlightmapUtils/JSONExportButton";
 import CSVExportButton from "./FlightmapUtils/CSVExportButton";
 import ScreenshotButton from "./FlightmapUtils/ScreenshotButton";
-import WorkstreamColorPickerModal from "./FlightmapUtils/WorkstreamColorPickerModal";
 
 // Helpers
 import { wrapText } from "./FlightmapUtils/wrapText";
@@ -135,10 +134,7 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
   });
 
   // Default fallback workstream color from the backend.
-  const [defaultWorkstreamColor, setDefaultWorkstreamColor] = useState("#22d3ee");
-
-  // Modal for picking workstream color.
-  const [colorModalVisible, setColorModalVisible] = useState(false);
+  const [defaultWorkstreamColor] = useState("#22d3ee");
 
   useEffect(() => {
     const svgEl = d3.select(svgRef.current);
@@ -508,7 +504,6 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
       { type: "status_completed", label: "Completed", status: "completed" },
       { type: "status_in_progress", label: "In Progress", status: "in_progress" },
       { type: "status_not_started", label: "Not Started", status: "not_started" },
-      { type: "pick_workstream_color", label: "Workstream color" },
     ];
 
     const legend = svgEl
@@ -536,20 +531,6 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
       .each((d, i, nodes) => {
         const g = d3.select(nodes[i]);
         const shapeSize = 20;
-
-        if (d.type === "pick_workstream_color") {
-          g.append("text")
-            .attr("x", 0)
-            .attr("y", shapeSize / 2 + 5)
-            .attr("fill", "blue")
-            .style("font-size", "12px")
-            .style("cursor", "pointer")
-            .text(d.label)
-            .on("click", () => {
-              setColorModalVisible(true);
-            });
-          return;
-        }
 
         const fill = getLegendColor(d.type, d.status, defaultWorkstreamColor);
 
@@ -740,12 +721,6 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
         <CSVExportButton hierarchyData={buildHierarchy(data)} />
         <ScreenshotButton svgRef={svgRef} />
       </div>
-      <WorkstreamColorPickerModal
-        visible={colorModalVisible}
-        onClose={() => setColorModalVisible(false)}
-        onColorChange={(color) => setDefaultWorkstreamColor(color)}
-        initialColor={defaultWorkstreamColor}
-      />
     </div>
   );
 };
