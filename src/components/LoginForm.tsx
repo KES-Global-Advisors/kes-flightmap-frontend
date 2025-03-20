@@ -232,9 +232,11 @@ const LoginForm = () => {
               </label>
             </div>
             <div className="text-sm">
-              <a href="/forgot-password" className="font-medium text-indigo-600 hover:text-indigo-500">
+              <Link
+                to="/reset-password"
+                className="font-medium text-indigo-600 hover:text-indigo-500">
                 Forgot password?
-              </a>
+              </Link>
             </div>
           </div>
 
