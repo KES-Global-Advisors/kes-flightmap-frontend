@@ -75,7 +75,7 @@ const Header = () => {
             </button>
   
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+              <div className="absolute z-10 right-0 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
                 <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100">
                   <p className="font-medium truncate">{user.name}</p>
                   <p className="text-gray-500 truncate">{user.email}</p>
