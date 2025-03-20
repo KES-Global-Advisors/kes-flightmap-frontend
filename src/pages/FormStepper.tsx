@@ -185,6 +185,12 @@ const FormStepper: React.FC = () => {
           successive_activities: Array.isArray(activity.successive_activities)
             ? activity.successive_activities.flat()
             : activity.successive_activities,
+          supported_milestones: Array.isArray(activity.supported_milestones)
+            ? activity.supported_milestones.flat()
+            : activity.supported_milestones,
+          additional_milestones: Array.isArray(activity.additional_milestones)
+            ? activity.additional_milestones.flat()
+            : activity.additional_milestones,
           impacted_employee_groups: Array.isArray(activity.impacted_employee_groups)
             ? activity.impacted_employee_groups.flat()
             : activity.impacted_employee_groups,

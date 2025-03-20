@@ -86,6 +86,8 @@
     development_support: string[]; // JSON field
     external_resources: string[]; // JSON field
     corporate_resources: string[]; // JSON field
+    supported_milestones: number[];
+    additional_milestones: number[];
   };
   
   // Additional helper types for form handling
