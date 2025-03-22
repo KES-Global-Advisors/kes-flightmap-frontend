@@ -1,6 +1,7 @@
 // PasswordUpdate.tsx
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { ThemeContext } from '@/contexts/ThemeContext'; 
 import axios from "axios";
 
 const PasswordUpdate = () => {
@@ -10,6 +11,7 @@ const PasswordUpdate = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { uidb64, token } = useParams();
+  const { themeColor } = useContext(ThemeContext);
   const navigate = useNavigate();
 
   const validatePassword = (password: string) => {
@@ -82,7 +84,7 @@ const PasswordUpdate = () => {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your new password"
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-${themeColor} focus:border-${themeColor}`}
             />
           </div>
           <div>
@@ -98,7 +100,7 @@ const PasswordUpdate = () => {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-${themeColor} focus:border-${themeColor}`}
             />
           </div>
           {message && <p className="text-green-600">{message}</p>}
@@ -106,7 +108,8 @@ const PasswordUpdate = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className={`w-full text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-${themeColor} focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors`}
+            style={{ backgroundColor: themeColor }}
           >
             {loading ? "Updating..." : "Update Password"}
           </button>
