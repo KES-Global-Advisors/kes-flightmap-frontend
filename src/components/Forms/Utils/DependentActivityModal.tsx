@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useForm } from 'react-hook-form';
-import useFetch from '../../../hooks/UseFetch';
-import { Activity, Workstream } from '../../../types/model';
+import { Activity } from '../../../types/model';
 
 type DependentActivityModalProps = {
   dependencyType: 'prerequisite' | 'parallel' | 'successive';
@@ -21,7 +20,6 @@ type FormValues = {
   development_support: string;
   external_resources: string;
   corporate_resources: string;
-  workstream?: number;
 };
 
 const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
@@ -31,9 +29,6 @@ const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const accessToken = sessionStorage.getItem('accessToken');
-
-  // Fetch workstreams and milestones for the select fields.
-  const { data: workstreams, loading: loadingWorkstreams } = useFetch<Workstream>('http://127.0.0.1:8000/workstreams/');
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormValues>();
 
@@ -71,7 +66,6 @@ const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
       development_support: devSupport,
       external_resources: externalRes,
       corporate_resources: corporateRes,
-      workstream: data.workstream || null,
     };
 
     try {
@@ -112,27 +106,6 @@ const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
           Create New {dependencyType.charAt(0).toUpperCase() + dependencyType.slice(1)} Activity
         </h3>
         <form onSubmit={handleSubmit(onSubmit)}>
-          {/* Workstream Field */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700">Workstream (optional)</label>
-            {loadingWorkstreams ? (
-              <p>Loading workstreams...</p>
-            ) : (
-              <select
-                {...register('workstream')}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              >
-                <option value="">Select a workstream</option>
-                {workstreams &&
-                  workstreams.map((ws) => (
-                    <option key={ws.id} value={ws.id}>
-                      {ws.name}
-                    </option>
-                  ))}
-              </select>
-            )}
-          </div>
-
           {/* Basic Information */}
           <div className="space-y-4">
             <div>

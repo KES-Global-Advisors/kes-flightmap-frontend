@@ -8,9 +8,10 @@ import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm
 import { StrategicGoalForm, StrategicGoalFormData } from '../components/Forms/StrategicGoalForm';
 import { ProgramForm, ProgramFormData } from '../components/Forms/ProgramForm';
 import { WorkstreamForm, WorkstreamFormData } from '../components/Forms/WorkstreamForm';
-import { MilestoneForm, MilestoneFormData } from '../components/Forms/MilestoneForm';
+import MilestoneForm, { MilestoneFormData } from '../components/Forms/MilestoneForm';
 import { ActivityForm, ActivityFormData } from '../components/Forms/ActivityForm';
 import DependentActivityModal from '../components/Forms/Utils/DependentActivityModal';
+import DependentMilestoneModal from '../components/Forms/Utils/DependentMilestoneModal';
 
 // Allowed step IDs.
 type StepId =
@@ -69,7 +70,7 @@ const FormStepper: React.FC = () => {
     defaultValues: formData[currentStepId] || {},
   });
 
-  // Reset form when step changes
+  // Reset form when step changes.
   useEffect(() => {
     methods.reset(formData[currentStepId] || {});
   }, [currentStepIndex, formData, currentStepId, methods]);
@@ -220,7 +221,7 @@ const FormStepper: React.FC = () => {
     }
   };
 
-  // Submission handler: iterate over the transformed array and POST each item individually.
+  // Submission handler.
   const onSubmitStep = async (data: AllFormData) => {
     const isLastStep = currentStepIndex === FORM_STEPS.length - 1;
     const payloadArray = transformData(currentStepId, data);
@@ -241,12 +242,10 @@ const FormStepper: React.FC = () => {
         results.push(result);
       }
 
-      // Update completed steps
       const newCompletedSteps = [...completedSteps];
       newCompletedSteps[currentStepIndex] = true;
       setCompletedSteps(newCompletedSteps);
 
-      // Store the results in form data
       setFormData(prev => ({
         ...prev,
         [currentStepId]: results,
@@ -273,34 +272,48 @@ const FormStepper: React.FC = () => {
   };
 
   const handleStepClick = (index: number) => {
-    // Allow clicking on completed steps or the next available step
     if (completedSteps[index] || index === 0 || (index > 0 && completedSteps[index - 1])) {
       setCurrentStepIndex(index);
     }
   };
 
-  // Modal state for dependent activities
-  const [modalOpen, setModalOpen] = useState<boolean>(false);
+  // Modal state for dependent activities.
+  const [activityModalOpen, setActivityModalOpen] = useState<boolean>(false);
   const [currentDependencyType, setCurrentDependencyType] = useState<'prerequisite' | 'parallel' | 'successive' | null>(null);
   const [currentActivityIndex, setCurrentActivityIndex] = useState<number | null>(null);
 
-  const openModalForType = (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => {
+  const openActivityModalForType = (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => {
     setCurrentDependencyType(dependencyType);
     setCurrentActivityIndex(index);
-    setModalOpen(true);
+    setActivityModalOpen(true);
   };
 
-  // Dependent activity creation callback
+  // Modal state for dependent milestones.
+  const [milestoneModalOpen, setMilestoneModalOpen] = useState<boolean>(false);
+  const openMilestoneModal = () => {
+    setMilestoneModalOpen(true);
+  };
+
+  // Dependent creation callbacks.
   const handleDependentActivityCreate = (activity: any) => {
     console.log("Dependent activity created:", activity);
-    // Here you can update your formData or state accordingly.
+    // Update state as needed.
+  };
+
+  const handleDependentMilestoneCreate = (milestone: any) => {
+    console.log("Dependent milestone created:", milestone);
+    // Update state as needed.
   };
 
   // Determine the component to render for the current step.
-  // If the current step is activities, pass the openModalForType callback.
-  const CurrentStepComponent = FORM_STEPS[currentStepIndex].id === 'activities'
-    ? FORM_STEPS[currentStepIndex].component as React.FC<{ openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void }>
-    : FORM_STEPS[currentStepIndex].component;
+  const CurrentStepComponent = (() => {
+    if (currentStepId === 'activities') {
+      return FORM_STEPS[currentStepIndex].component as React.FC<{ openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void }>;
+    } else if (currentStepId === 'milestones') {
+      return FORM_STEPS[currentStepIndex].component as React.FC<{ openMilestoneModal: () => void }>;
+    }
+    return FORM_STEPS[currentStepIndex].component;
+  })();
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -370,8 +383,10 @@ const FormStepper: React.FC = () => {
         <FormProvider {...methods}>
           <form onSubmit={methods.handleSubmit(onSubmitStep)}>
             {currentStepId === 'activities'
-              ? <CurrentStepComponent openModalForType={openModalForType} />
-              : <CurrentStepComponent />
+              ? <CurrentStepComponent openModalForType={openActivityModalForType} />
+              : currentStepId === 'milestones'
+                ? <CurrentStepComponent openMilestoneModal={openMilestoneModal} />
+                : <CurrentStepComponent />
             }
             {/* Navigation Buttons */}
             <div className="mt-6 flex justify-between">
@@ -399,12 +414,18 @@ const FormStepper: React.FC = () => {
         </FormProvider>
       </div>
       
-      {/* Render the dependent activity modal at the stepper level */}
-      {modalOpen && currentDependencyType && (
+      {/* Render dependent modals at the stepper level */}
+      {activityModalOpen && currentDependencyType && (
         <DependentActivityModal
           dependencyType={currentDependencyType}
-          onClose={() => setModalOpen(false)}
+          onClose={() => setActivityModalOpen(false)}
           onCreate={handleDependentActivityCreate}
+        />
+      )}
+      {milestoneModalOpen && (
+        <DependentMilestoneModal
+          onClose={() => setMilestoneModalOpen(false)}
+          onCreate={handleDependentMilestoneCreate}
         />
       )}
     </div>

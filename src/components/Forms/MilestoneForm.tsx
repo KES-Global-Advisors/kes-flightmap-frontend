@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { useFormContext, useFieldArray, useForm } from 'react-hook-form';
+import React, { useEffect } from 'react';
+import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
-import { StrategicGoal, Workstream } from '../../types/model';
+import { StrategicGoal, Workstream, Milestone } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
@@ -13,142 +13,15 @@ export type MilestoneFormData = {
     deadline: string;
     status: 'not_started' | 'in_progress' | 'completed';
     strategic_goals: number[];
-    dependencies?: number[]; // IDs of dependent milestones
+    dependencies?: number[];
   }[];
 };
 
-type Milestone = {
-  id: number;
-  name: string;
+type MilestoneFormProps = {
+  openMilestoneModal: () => void;
 };
 
-type DependentMilestoneModalProps = {
-  onClose: () => void;
-  onCreate: (milestone: Milestone) => void;
-};
-
-// Modal for creating a dependent milestone and sending it to the backend.
-const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClose, onCreate }) => {
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
-  const { register, handleSubmit, reset } = useForm<{
-    workstream: number;
-    name: string;
-    description?: string;
-    deadline: string;
-    status: 'not_started' | 'in_progress' | 'completed';
-    strategic_goals: number[];
-  }>();
-
-  const onSubmit = async (data: {
-    name: string;
-    description?: string;
-    deadline: string;
-    status: 'not_started' | 'in_progress' | 'completed';
-    strategic_goals: number[];
-  }) => {
-    // Create payload without workstream; this milestone will be created solely as a dependency.
-    const payload = {
-      name: data.name,
-      deadline: data.deadline,
-      status: data.status,
-      description: data.description || '',
-      strategic_goals: data.strategic_goals || [],
-    };
-
-    try {
-      const response = await fetch('http://127.0.0.1:8000/milestones/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to create dependent milestone');
-      }
-      const newMilestone = await response.json();
-      onCreate(newMilestone);
-      reset();
-      onClose();
-    } catch (error) {
-      console.error(error);
-      // Optionally, display an error message to the user.
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white p-4 rounded-md shadow-lg w-1/2">
-        <h3 className="text-lg font-medium mb-4">Create Dependent Milestone</h3>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Name</label>
-            <input
-              {...register('name')}
-              type="text"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            />
-          </div>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Description</label>
-            <textarea
-              {...register('description')}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            />
-          </div>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Deadline</label>
-            <input
-              {...register('deadline')}
-              type="date"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            />
-          </div>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Status</label>
-            <select
-              {...register('status')}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            >
-              <option value="not_started">Not Started</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-            </select>
-          </div>
-          {/* Strategic Goals MultiSelect in the modal remains as a basic multi-select for now */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Strategic Goals</label>
-            {loadingGoals ? (
-              <p>Loading strategic goals...</p>
-            ) : errorGoals ? (
-              <p>Error: {errorGoals}</p>
-            ) : (
-              <select
-                {...register('strategic_goals')}
-                multiple
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-              >
-                {strategicGoals.map((goal) => (
-                  <option key={goal.id} value={goal.id}>
-                    {goal.goal_text}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className="mt-4 flex justify-end space-x-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-300 rounded-md">
-              Cancel
-            </button>
-            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md">
-              Create
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-export const MilestoneForm: React.FC = () => {
+const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal }) => {
   const { register, control, watch, setValue } = useFormContext<MilestoneFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
@@ -157,27 +30,14 @@ export const MilestoneForm: React.FC = () => {
   
   const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream>('http://127.0.0.1:8000/workstreams/');
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
-  // Fetched milestones used to populate dependent milestone options
   const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone>('http://127.0.0.1:8000/milestones/');
 
-  // Build options for strategic goals
-  const strategicGoalOptions = strategicGoals
-    ? strategicGoals.map(goal => ({ label: goal.goal_text, value: goal.id }))
-    : [];
+  const strategicGoalOptions = strategicGoals ? strategicGoals.map(goal => ({ label: goal.goal_text, value: goal.id })) : [];
 
-  // Build dependency options by combining fetched milestones and any that were created as dependencies in the modal.
-  const [dependentMilestones, setDependentMilestones] = useState<Milestone[]>([]);
   const dependencyOptions = [
-    ...(fetchedMilestones ? fetchedMilestones.map(ms => ({ label: ms.name, value: ms.id })) : []),
-    ...dependentMilestones.map(ms => ({ label: ms.name, value: ms.id }))
+    ...(fetchedMilestones ? fetchedMilestones.map(ms => ({ label: ms.name, value: ms.id })) : [])
   ];
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const handleDependentMilestoneCreate = (milestone: Milestone) => {
-    setDependentMilestones((prev) => [...prev, milestone]);
-  };
-  
   // Add a new empty milestone entry
   const addMilestone = () => {
     append({
@@ -197,7 +57,6 @@ export const MilestoneForm: React.FC = () => {
     }
   }, [fields.length]);
 
-  // Helper function to update MultiSelect values in the form state
   const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
     setValue(`milestones.${index}.${fieldName}`, selectedValues);
   };
@@ -298,7 +157,7 @@ export const MilestoneForm: React.FC = () => {
               </select>
             </div>
             
-            {/* Strategic Goals Field using MultiSelect */}
+            {/* Strategic Goals MultiSelect */}
             <div>
               <MultiSelect
                 label="Strategic Goals"
@@ -313,7 +172,7 @@ export const MilestoneForm: React.FC = () => {
               />
             </div>
             
-            {/* Dependent Milestones Field using MultiSelect */}
+            {/* Dependent Milestones MultiSelect */}
             <div>
               <MultiSelect
                 label="Dependent Milestones"
@@ -329,7 +188,7 @@ export const MilestoneForm: React.FC = () => {
               <div className="mt-2">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={openMilestoneModal}
                   className="text-indigo-600 hover:text-indigo-800 underline"
                 >
                   Create dependent Milestone
@@ -339,13 +198,6 @@ export const MilestoneForm: React.FC = () => {
           </div>
         </div>
       ))}
-      
-      {isModalOpen && (
-        <DependentMilestoneModal
-          onClose={() => setIsModalOpen(false)}
-          onCreate={handleDependentMilestoneCreate}
-        />
-      )}
     </div>
   );
 };
