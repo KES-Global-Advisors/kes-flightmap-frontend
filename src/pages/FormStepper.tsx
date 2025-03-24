@@ -295,14 +295,19 @@ const FormStepper: React.FC = () => {
   };
 
   // Dependent creation callbacks.
+  const [dependentActivities, setDependentActivities] = useState<Activity[]>([]);
+
   const handleDependentActivityCreate = (activity: any) => {
     console.log("Dependent activity created:", activity);
-    // Update state as needed.
+    setDependentActivities(prev => [...prev, activity]);
   };
+
+
+  const [dependentMilestones, setDependentMilestones] = useState<Milestone[]>([]);
 
   const handleDependentMilestoneCreate = (milestone: any) => {
     console.log("Dependent milestone created:", milestone);
-    // Update state as needed.
+    setDependentMilestones(prev => [...prev, milestone]);
   };
 
   // Determine the component to render for the current step.
@@ -310,7 +315,7 @@ const FormStepper: React.FC = () => {
     if (currentStepId === 'activities') {
       return FORM_STEPS[currentStepIndex].component as React.FC<{ openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void }>;
     } else if (currentStepId === 'milestones') {
-      return FORM_STEPS[currentStepIndex].component as React.FC<{ openMilestoneModal: () => void }>;
+      return FORM_STEPS[currentStepIndex].component as React.FC<{ openMilestoneModal: () => void; dependentMilestones: Milestone[]; onDependentMilestoneCreate: (milestone: Milestone) => void }>;
     }
     return FORM_STEPS[currentStepIndex].component;
   })();
@@ -383,9 +388,13 @@ const FormStepper: React.FC = () => {
         <FormProvider {...methods}>
           <form onSubmit={methods.handleSubmit(onSubmitStep)}>
             {currentStepId === 'activities'
-              ? <CurrentStepComponent openModalForType={openActivityModalForType} />
+              ? <CurrentStepComponent openModalForType={openActivityModalForType} dependentActivities={dependentActivities} />
               : currentStepId === 'milestones'
-                ? <CurrentStepComponent openMilestoneModal={openMilestoneModal} />
+                ? <CurrentStepComponent 
+                      openMilestoneModal={openMilestoneModal}
+                      dependentMilestones={dependentMilestones}
+                      onDependentMilestoneCreate={handleDependentMilestoneCreate}
+                  />
                 : <CurrentStepComponent />
             }
             {/* Navigation Buttons */}

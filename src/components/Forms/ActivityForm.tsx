@@ -29,9 +29,10 @@ export type ActivityFormData = {
 
 type ActivityFormProps = {
   openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void;
+  dependentActivities: Activity[];
 };
 
-export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType }) => {
+export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependentActivities }) => {
   const { register, control, watch, setValue } = useFormContext<ActivityFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
@@ -42,8 +43,14 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType }) 
   const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone>('http://127.0.0.1:8000/milestones/');
   const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity>('http://127.0.0.1:8000/activities/');
 
+    // Merge fetched activities with dependentActivities from props.
+  const mergedActivityOptions = [
+    ...(activities ? activities.map(a => ({ label: a.name, value: a.id })) : []),
+    ...dependentActivities.map(a => ({ label: a.name, value: a.id }))
+  ];
+
   const milestoneOptions = milestones ? milestones.map(m => ({ label: m.name, value: m.id })) : [];
-  const activityOptions = activities ? activities.map(a => ({ label: a.name, value: a.id })) : [];
+  // const activityOptions = activities ? activities.map(a => ({ label: a.name, value: a.id })) : [];
 
   // Add a new empty activity if none exist.
   const addActivity = () => {
@@ -217,7 +224,7 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType }) 
             <div>
               <MultiSelect
                 label="Prerequisite Activities"
-                options={activityOptions}
+                options={mergedActivityOptions}
                 value={watch(`activities.${index}.prerequisite_activities`) || []}
                 onChange={(newValue) =>
                   handleMultiSelectChange(index, 'prerequisite_activities', newValue)
@@ -240,7 +247,7 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType }) 
             <div>
               <MultiSelect
                 label="Parallel Activities"
-                options={activityOptions}
+                options={mergedActivityOptions}
                 value={watch(`activities.${index}.parallel_activities`) || []}
                 onChange={(newValue) =>
                   handleMultiSelectChange(index, 'parallel_activities', newValue)
@@ -263,7 +270,7 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType }) 
             <div>
               <MultiSelect
                 label="Successive Activities"
-                options={activityOptions}
+                options={mergedActivityOptions}
                 value={watch(`activities.${index}.successive_activities`) || []}
                 onChange={(newValue) =>
                   handleMultiSelectChange(index, 'successive_activities', newValue)

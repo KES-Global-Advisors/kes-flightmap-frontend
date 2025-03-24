@@ -19,9 +19,11 @@ export type MilestoneFormData = {
 
 type MilestoneFormProps = {
   openMilestoneModal: () => void;
+  // Pass dependent milestones from the parent (FormStepper)
+  dependentMilestones: Milestone[];
 };
 
-const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal }) => {
+const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, dependentMilestones }) => {
   const { register, control, watch, setValue } = useFormContext<MilestoneFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
@@ -34,11 +36,13 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal }) => 
 
   const strategicGoalOptions = strategicGoals ? strategicGoals.map(goal => ({ label: goal.goal_text, value: goal.id })) : [];
 
+  // Merge fetched milestones with dependent milestones passed from the parent.
   const dependencyOptions = [
-    ...(fetchedMilestones ? fetchedMilestones.map(ms => ({ label: ms.name, value: ms.id })) : [])
+    ...(fetchedMilestones ? fetchedMilestones.map(ms => ({ label: ms.name, value: ms.id })) : []),
+    ...dependentMilestones.map(ms => ({ label: ms.name, value: ms.id }))
   ];
 
-  // Add a new empty milestone entry
+  // Add a new empty milestone entry.
   const addMilestone = () => {
     append({
       workstream: 0,
