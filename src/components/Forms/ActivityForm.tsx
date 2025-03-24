@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useFormContext, useForm, useFieldArray } from 'react-hook-form';
+import React, { useEffect } from 'react';
+import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Workstream, Milestone, Activity } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
-// Import the new MultiSelect component
 import { MultiSelect } from './Utils/MultiSelect';
 
 export type ActivityFormData = {
@@ -28,128 +27,11 @@ export type ActivityFormData = {
   }[];
 };
 
-type DependentActivityModalProps = {
-  dependencyType: 'prerequisite' | 'parallel' | 'successive';
-  onClose: () => void;
-  onCreate: (activity: Activity) => void;
+type ActivityFormProps = {
+  openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void;
 };
 
-const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
-  dependencyType,
-  onClose,
-  onCreate,
-}) => {
-    const { register, handleSubmit, reset } = useForm<{
-      name: string;
-      status: 'not_started' | 'in_progress' | 'completed';
-      priority: 1 | 2 | 3;
-      target_start_date: string;
-      target_end_date: string;
-    }>();
-  
-    const onSubmit = async (data: {
-      name: string;
-      status: 'not_started' | 'in_progress' | 'completed';
-      priority: 1 | 2 | 3;
-      target_start_date: string;
-      target_end_date: string;
-    }) => {
-      const payload = {
-        name: data.name,
-        status: data.status,
-        priority: data.priority,
-        target_start_date: data.target_start_date,
-        target_end_date: data.target_end_date,
-      };
-  
-      try {
-        const response = await fetch('http://127.0.0.1:8000/activities/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!response.ok) {
-          throw new Error('Failed to create dependent activity');
-        }
-        const newActivity = await response.json();
-        onCreate(newActivity);
-        reset();
-        onClose();
-      } catch (error) {
-        console.error(error);
-      }
-    };
-  // The modal form remains unchanged
-  // You can add your modal implementation here
-  // For brevity, this example uses a placeholder
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white p-4 rounded-md shadow-lg w-1/2">
-        <h3 className="text-lg font-medium mb-4">
-          Create New {dependencyType.charAt(0).toUpperCase() + dependencyType.slice(1)} Activity
-        </h3>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Name</label>
-            <input
-              {...register('name')}
-              type="text"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            />
-          </div>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Target Start Date</label>
-            <input
-              {...register('target_start_date')}
-              type="date"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            />
-          </div>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Target End Date</label>
-            <input
-              {...register('target_end_date')}
-              type="date"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            />
-          </div>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Status</label>
-            <select
-              {...register('status')}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            >
-              <option value="not_started">Not Started</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-            </select>
-          </div>
-          <div className="mt-2">
-            <label className="block text-sm font-medium">Priority</label>
-            <select
-              {...register('priority')}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-            >
-              <option value={1}>High</option>
-              <option value={2}>Medium</option>
-              <option value={3}>Low</option>
-            </select>
-          </div>
-          <div className="mt-4 flex justify-end space-x-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-300 rounded-md">
-              Cancel
-            </button>
-            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md">
-              Create
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-export const ActivityForm: React.FC = () => {
+export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType }) => {
   const { register, control, watch, setValue } = useFormContext<ActivityFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
@@ -160,40 +42,10 @@ export const ActivityForm: React.FC = () => {
   const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone>('http://127.0.0.1:8000/milestones/');
   const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity>('http://127.0.0.1:8000/activities/');
 
-  // Build options arrays for MultiSelect fields
   const milestoneOptions = milestones ? milestones.map(m => ({ label: m.name, value: m.id })) : [];
   const activityOptions = activities ? activities.map(a => ({ label: a.name, value: a.id })) : [];
 
-  const [dependentActivities, setDependentActivities] = useState<{
-    prerequisite: Activity[];
-    parallel: Activity[];
-    successive: Activity[];
-  }>({
-    prerequisite: [],
-    parallel: [],
-    successive: [],
-  });
-
-  const [modalOpen, setModalOpen] = useState<boolean>(false);
-  const [currentDependencyType, setCurrentDependencyType] = useState<'prerequisite' | 'parallel' | 'successive' | null>(null);
-  const [currentActivityIndex, setCurrentActivityIndex] = useState<number | null>(null);
-
-  const handleDependentActivityCreate = (activity: Activity) => {
-    if (currentDependencyType && currentActivityIndex !== null) {
-      setDependentActivities((prev) => ({
-        ...prev,
-        [currentDependencyType]: [...prev[currentDependencyType], activity],
-      }));
-    }
-  };
-
-  const openModalForType = (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => {
-    setCurrentDependencyType(dependencyType);
-    setCurrentActivityIndex(index);
-    setModalOpen(true);
-  };
-
-  // Add a new empty activity to the form
+  // Add a new empty activity if none exist.
   const addActivity = () => {
     append({
       workstream: undefined,
@@ -222,14 +74,12 @@ export const ActivityForm: React.FC = () => {
     }
   }, [fields.length]);
 
-  // Helper to update multiselect values in the form state
   const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
     setValue(`activities.${index}.${fieldName}`, selectedValues);
   };
 
   return (
     <div className="space-y-8">
-      {/* Header and add activity button */}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold">Activities</h2>
         <button
@@ -244,7 +94,6 @@ export const ActivityForm: React.FC = () => {
 
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-          {/* Activity header with remove button */}
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Activity {index + 1}</h3>
             {fields.length > 1 && (
@@ -304,7 +153,6 @@ export const ActivityForm: React.FC = () => {
               )}
             </div>
 
-            {/* Warning if both milestone and workstream are selected */}
             {watch(`activities.${index}.milestone`) && watch(`activities.${index}.workstream`) && (
               <p className="text-red-500 text-sm mt-1">
                 An activity should not be both under a milestone and directly under a workstream!
@@ -435,7 +283,6 @@ export const ActivityForm: React.FC = () => {
               </div>
             </div>
             
-            {/* Milestone Connection Fields using MultiSelect */}
             <div>
               <MultiSelect
                 label="Supported Milestones"
@@ -523,13 +370,6 @@ export const ActivityForm: React.FC = () => {
           </div>
         </div>
       ))}
-      {modalOpen && currentDependencyType && (
-        <DependentActivityModal
-          dependencyType={currentDependencyType}
-          onClose={() => setModalOpen(false)}
-          onCreate={handleDependentActivityCreate}
-        />
-      )}
     </div>
   );
 };

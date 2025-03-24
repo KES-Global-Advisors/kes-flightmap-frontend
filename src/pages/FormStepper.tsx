@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Check } from 'lucide-react';
@@ -10,6 +10,7 @@ import { ProgramForm, ProgramFormData } from '../components/Forms/ProgramForm';
 import { WorkstreamForm, WorkstreamFormData } from '../components/Forms/WorkstreamForm';
 import { MilestoneForm, MilestoneFormData } from '../components/Forms/MilestoneForm';
 import { ActivityForm, ActivityFormData } from '../components/Forms/ActivityForm';
+import DependentActivityModal from '../components/Forms/Utils/DependentActivityModal';
 
 // Allowed step IDs.
 type StepId =
@@ -58,6 +59,7 @@ const FormStepper: React.FC = () => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [formData, setFormData] = useState<FormDataMap>({});
   const [showSuccess, setShowSuccess] = useState(false);
+  const [completedSteps, setCompletedSteps] = useState<boolean[]>(Array(FORM_STEPS.length).fill(false));
 
   // Get current step id.
   const currentStepId = FORM_STEPS[currentStepIndex].id;
@@ -66,6 +68,11 @@ const FormStepper: React.FC = () => {
   const methods = useForm<AllFormData>({
     defaultValues: formData[currentStepId] || {},
   });
+
+  // Reset form when step changes
+  useEffect(() => {
+    methods.reset(formData[currentStepId] || {});
+  }, [currentStepIndex, formData, currentStepId, methods]);
 
   // Retrieve access token.
   const accessToken = sessionStorage.getItem('accessToken');
@@ -234,7 +241,12 @@ const FormStepper: React.FC = () => {
         results.push(result);
       }
 
-      // Optionally store the last created object or the entire array in state.
+      // Update completed steps
+      const newCompletedSteps = [...completedSteps];
+      newCompletedSteps[currentStepIndex] = true;
+      setCompletedSteps(newCompletedSteps);
+
+      // Store the results in form data
       setFormData(prev => ({
         ...prev,
         [currentStepId]: results,
@@ -244,6 +256,7 @@ const FormStepper: React.FC = () => {
         setShowSuccess(true);
         setFormData({});
         setCurrentStepIndex(0);
+        setCompletedSteps(Array(FORM_STEPS.length).fill(false));
         setTimeout(() => setShowSuccess(false), 3000);
       } else {
         setCurrentStepIndex(prev => prev + 1);
@@ -259,7 +272,35 @@ const FormStepper: React.FC = () => {
     }
   };
 
-  const CurrentStepComponent = FORM_STEPS[currentStepIndex].component;
+  const handleStepClick = (index: number) => {
+    // Allow clicking on completed steps or the next available step
+    if (completedSteps[index] || index === 0 || (index > 0 && completedSteps[index - 1])) {
+      setCurrentStepIndex(index);
+    }
+  };
+
+  // Modal state for dependent activities
+  const [modalOpen, setModalOpen] = useState<boolean>(false);
+  const [currentDependencyType, setCurrentDependencyType] = useState<'prerequisite' | 'parallel' | 'successive' | null>(null);
+  const [currentActivityIndex, setCurrentActivityIndex] = useState<number | null>(null);
+
+  const openModalForType = (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => {
+    setCurrentDependencyType(dependencyType);
+    setCurrentActivityIndex(index);
+    setModalOpen(true);
+  };
+
+  // Dependent activity creation callback
+  const handleDependentActivityCreate = (activity: any) => {
+    console.log("Dependent activity created:", activity);
+    // Here you can update your formData or state accordingly.
+  };
+
+  // Determine the component to render for the current step.
+  // If the current step is activities, pass the openModalForType callback.
+  const CurrentStepComponent = FORM_STEPS[currentStepIndex].id === 'activities'
+    ? FORM_STEPS[currentStepIndex].component as React.FC<{ openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void }>
+    : FORM_STEPS[currentStepIndex].component;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -274,21 +315,48 @@ const FormStepper: React.FC = () => {
         <div className="flex items-center justify-between">
           {FORM_STEPS.map((step, index) => (
             <React.Fragment key={step.id}>
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  index <= currentStepIndex ? 'text-white' : 'text-gray-500'
-                }`}
-                style={{
-                  backgroundColor: index <= currentStepIndex ? themeColor : '#e5e7eb'
-                }}
-              >
-                {index < currentStepIndex ? <Check className="w-5 h-5" /> : <span>{index + 1}</span>}
+              <div className="flex flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => handleStepClick(index)}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    completedSteps[index]
+                      ? 'text-white'
+                      : index === currentStepIndex
+                      ? 'text-white'
+                      : index === 0 || (index > 0 && completedSteps[index - 1])
+                      ? 'text-gray-500 hover:bg-gray-100'
+                      : 'text-gray-400 cursor-not-allowed'
+                  } transition-all duration-200`}
+                  disabled={!(completedSteps[index] || index === 0 || (index > 0 && completedSteps[index - 1]))}
+                  style={{
+                    backgroundColor: completedSteps[index]
+                      ? themeColor
+                      : index === currentStepIndex
+                      ? themeColor
+                      : '#e5e7eb',
+                    cursor: completedSteps[index] || index === 0 || (index > 0 && completedSteps[index - 1])
+                      ? 'pointer'
+                      : 'not-allowed',
+                  }}
+                >
+                  {completedSteps[index] ? <Check className="w-5 h-5" /> : <span>{index + 1}</span>}
+                </button>
+                <span 
+                  className={`text-xs mt-2 ${
+                    index === currentStepIndex ? 'font-semibold' : 'text-gray-500'
+                  }`}
+                >
+                  {step.label}
+                </span>
               </div>
               {index < FORM_STEPS.length - 1 && (
                 <div
                   className="flex-1 h-0.5"
                   style={{
-                    backgroundColor: index < currentStepIndex ? themeColor : '#e5e7eb'
+                    backgroundColor: 
+                      completedSteps[index] ? themeColor : 
+                      index < currentStepIndex ? themeColor : '#e5e7eb'
                   }}
                 />
               )}
@@ -301,7 +369,10 @@ const FormStepper: React.FC = () => {
       <div className="bg-white rounded-lg shadow-md p-6">
         <FormProvider {...methods}>
           <form onSubmit={methods.handleSubmit(onSubmitStep)}>
-            <CurrentStepComponent />
+            {currentStepId === 'activities'
+              ? <CurrentStepComponent openModalForType={openModalForType} />
+              : <CurrentStepComponent />
+            }
             {/* Navigation Buttons */}
             <div className="mt-6 flex justify-between">
               <button
@@ -327,6 +398,15 @@ const FormStepper: React.FC = () => {
           </form>
         </FormProvider>
       </div>
+      
+      {/* Render the dependent activity modal at the stepper level */}
+      {modalOpen && currentDependencyType && (
+        <DependentActivityModal
+          dependencyType={currentDependencyType}
+          onClose={() => setModalOpen(false)}
+          onCreate={handleDependentActivityCreate}
+        />
+      )}
     </div>
   );
 };
