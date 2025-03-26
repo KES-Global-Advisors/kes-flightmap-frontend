@@ -1,4 +1,4 @@
-// cSpell:ignore workstream workstreams roadmaps
+// cSpell:ignore workstream workstreams roadmaps Renderable
 import React, { useState, useContext, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
@@ -315,6 +315,9 @@ const FormStepper: React.FC = () => {
     return FORM_STEPS[currentStepIndex].component;
   })();
 
+  // Assert that in this branch the component doesn't require props.
+  const RenderableComponent = CurrentStepComponent as React.FC;
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {showSuccess && (
@@ -397,7 +400,7 @@ const FormStepper: React.FC = () => {
             )}
 
             {currentStepId !== 'activities' && currentStepId !== 'milestones' && (
-              <CurrentStepComponent />
+              <RenderableComponent />
             )}
             {/* Navigation Buttons */}
             <div className="mt-6 flex justify-between">
