@@ -89,6 +89,7 @@ const Settings: React.FC = () => {
     };
 
     fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount
 
   // Update the theme immediately as the user interacts
@@ -182,17 +183,6 @@ const Settings: React.FC = () => {
       toast.error('Failed to delete user. Please try again.');
     }
   };
-
-  // Format date for display
-  // const formatDate = (dateString: string) => {
-  //   return new Date(dateString).toLocaleDateString('en-US', {
-  //     year: 'numeric',
-  //     month: 'short',
-  //     day: 'numeric',
-  //     hour: '2-digit',
-  //     minute: '2-digit'
-  //   });
-  // };
 
   if (loading) {
     return (
@@ -341,14 +331,6 @@ const Settings: React.FC = () => {
                             <h4 className="text-sm font-medium text-gray-500">Phone</h4>
                             <p className="mt-1">{currentUser.phone_number || 'Not provided'}</p>
                           </div>
-                          {/* <div>
-                            <h4 className="text-sm font-medium text-gray-500">Member Since</h4>
-                            <p className="mt-1">{formatDate(currentUser.date_joined)}</p>
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-500">Last Login</h4>
-                            <p className="mt-1">{formatDate(currentUser.last_login)}</p>
-                          </div> */}
                         </div>
                         <div className="border-t border-gray-200 pt-6 mt-6">
                           <h3 className="text-lg font-medium mb-4">Security Settings</h3>
@@ -358,16 +340,6 @@ const Settings: React.FC = () => {
                           >
                             Change Password
                           </Link>
-                          {/* <div className="mt-4">
-                            <h4 className="text-sm font-medium text-gray-500 mb-2">Two-Factor Authentication</h4>
-                            <div className="flex items-center">
-                              <div className="relative inline-block w-10 mr-2 align-middle select-none">
-                                <input type="checkbox" id="toggle" className="opacity-0 absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" />
-                                <label htmlFor="toggle" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
-                              </div>
-                              <span className="text-sm text-gray-700">Disabled</span>
-                            </div>
-                          </div> */}
                         </div>
                       </div>
                     )}

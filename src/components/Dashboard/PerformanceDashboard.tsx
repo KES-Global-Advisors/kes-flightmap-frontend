@@ -5,7 +5,7 @@ import { PerformanceMetrics } from '@/types/dashboard';
 interface PerformanceDashboardProps {
   data: PerformanceMetrics | null;
   loading: boolean;
-  error: any;
+  error: unknown;
 }
 
 const PerformanceDashboard: React.FC<PerformanceDashboardProps> = ({ data, loading, error }) => {

@@ -1,3 +1,4 @@
+// cSpell:ignore workstream workstreams roadmaps
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { RoadmapData } from '@/types/roadmap';
