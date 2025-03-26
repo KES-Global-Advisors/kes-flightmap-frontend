@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Strategy } from '../../types/model';
@@ -19,23 +19,24 @@ export const StrategicGoalForm: React.FC = () => {
     name: "goals"
   });
   
-  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy>('http://127.0.0.1:8000/strategies/');
+  // Fetch an array of strategies
+  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>('http://127.0.0.1:8000/strategies/');
 
-  // Add a new empty strategic goal
-  const addGoal = () => {
+  // Wrap addGoal in useCallback so it can be safely added to useEffect dependencies.
+  const addGoal = useCallback(() => {
     append({
       strategy: 0,
       category: 'business',
       goal_text: ""
     });
-  };
+  }, [append]);
 
-  // Add an initial goal if the array is empty
+  // Add an initial goal if the array is empty.
   React.useEffect(() => {
     if (fields.length === 0) {
       addGoal();
     }
-  }, [fields.length]);
+  }, [fields.length, addGoal]);
 
   return (
     <div className="space-y-8">
@@ -80,7 +81,7 @@ export const StrategicGoalForm: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a strategy</option>
-                  {strategies.map((strategy) => (
+                  {(strategies || []).map((strategy: Strategy) => (
                     <option key={strategy.id} value={strategy.id}>
                       {strategy.name}
                     </option>

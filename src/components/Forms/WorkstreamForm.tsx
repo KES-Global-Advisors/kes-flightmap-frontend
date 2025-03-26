@@ -1,4 +1,6 @@
-import React, { useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// cSpell:ignore workstream workstreams
+import React, { useEffect, useCallback } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
 import { SketchPicker } from 'react-color';
 import useFetch from '../../hooks/UseFetch';
@@ -27,14 +29,15 @@ export const WorkstreamForm: React.FC = () => {
     name: "workstreams"
   });
   
-  const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program>('http://127.0.0.1:8000/programs/');
-  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User>('http://127.0.0.1:8000/users/');
+  // Ensure we fetch arrays so .map is available.
+  const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program[]>('http://127.0.0.1:8000/programs/');
+  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>('http://127.0.0.1:8000/users/');
 
-  // Map users to options for MultiSelect fields
-  const userOptions = users ? users.map(u => ({ label: u.username, value: u.id })) : [];
+  // Map users to options for MultiSelect fields.
+  const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
-  // Add a new workstream
-  const addWorkstream = () => {
+  // Add a new workstream.
+  const addWorkstream = useCallback(() => {
     append({
       program: 0,
       name: "",
@@ -46,17 +49,21 @@ export const WorkstreamForm: React.FC = () => {
       organizational_goals: [],
       color: "#0000FF"
     });
-  };
+  }, [append]);
 
   useEffect(() => {
     if (fields.length === 0) {
       addWorkstream();
     }
-  }, [fields.length]);
+  }, [fields.length, addWorkstream]);
 
-  // Update multi-select values
-  const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
-    setValue(`workstreams.${index}.${fieldName}`, selectedValues);
+  // Update multi-select values converting to numbers.
+  const handleMultiSelectChange = (
+    index: number,
+    fieldName: string,
+    selectedValues: (string | number)[]
+  ) => {
+    setValue(`workstreams.${index}.${fieldName}` as any, selectedValues.map(val => Number(val)));
   };
 
   return (
@@ -103,7 +110,7 @@ export const WorkstreamForm: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a program</option>
-                  {programs.map(program => (
+                  {programs?.map((program: Program) => (
                     <option key={program.id} value={program.id}>
                       {program.name}
                     </option>
@@ -183,7 +190,7 @@ export const WorkstreamForm: React.FC = () => {
                 placeholder="Select team members..."
               />
             </div>
-            {/* Improvement Targets and Organizational Goals remain as text inputs */}
+            {/* Improvement Targets and Organizational Goals */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Improvement Targets (comma separated)</label>
               <input

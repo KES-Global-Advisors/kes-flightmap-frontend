@@ -1,3 +1,4 @@
+// cSpell:ignore workstream workstreams roadmaps
 import React, { useEffect } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
@@ -27,7 +28,7 @@ export type ActivityFormData = {
   }[];
 };
 
-type ActivityFormProps = {
+export type ActivityFormProps = {
   openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void;
   dependentActivities: Activity[];
 };
@@ -39,18 +40,18 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
     name: "activities"
   });
 
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream>('http://127.0.0.1:8000/workstreams/');
-  const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone>('http://127.0.0.1:8000/milestones/');
-  const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity>('http://127.0.0.1:8000/activities/');
+  // Ensure that activities and milestones are arrays so .map is available.
+  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>('http://127.0.0.1:8000/workstreams/');
+  const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>('http://127.0.0.1:8000/milestones/');
+  const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>('http://127.0.0.1:8000/activities/');
 
-    // Merge fetched activities with dependentActivities from props.
+  // Merge fetched activities with dependentActivities from props.
   const mergedActivityOptions = [
-    ...(activities ? activities.map(a => ({ label: a.name, value: a.id })) : []),
-    ...dependentActivities.map(a => ({ label: a.name, value: a.id }))
+    ...(activities ? activities.map((a: Activity) => ({ label: a.name, value: a.id })) : []),
+    ...dependentActivities.map((a: Activity) => ({ label: a.name, value: a.id }))
   ];
 
-  const milestoneOptions = milestones ? milestones.map(m => ({ label: m.name, value: m.id })) : [];
-  // const activityOptions = activities ? activities.map(a => ({ label: a.name, value: a.id })) : [];
+  const milestoneOptions = milestones ? milestones.map((m: Milestone) => ({ label: m.name, value: m.id })) : [];
 
   // Add a new empty activity if none exist.
   const addActivity = () => {
@@ -79,10 +80,16 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
     if (fields.length === 0) {
       addActivity();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields.length]);
 
-  const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
-    setValue(`activities.${index}.${fieldName}`, selectedValues);
+  // Convert incoming selected values (string|number)[] to number[]
+  const handleMultiSelectChange = (
+    index: number,
+    fieldName: keyof ActivityFormData['activities'][0],
+    selectedValues: (string | number)[]
+  ) => {
+    setValue(`activities.${index}.${fieldName}` as const, selectedValues.map(val => Number(val)));
   };
 
   return (
@@ -129,7 +136,7 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a workstream</option>
-                  {workstreams.map((ws) => (
+                  {workstreams?.map((ws: Workstream) => (
                     <option key={ws.id} value={ws.id}>
                       {ws.name}
                     </option>
@@ -151,7 +158,7 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">No milestone</option>
-                  {milestones.map((m) => (
+                  {milestones?.map((m: Milestone) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>

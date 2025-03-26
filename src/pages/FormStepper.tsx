@@ -1,3 +1,4 @@
+// cSpell:ignore workstream workstreams roadmaps
 import React, { useState, useContext, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
@@ -12,6 +13,8 @@ import MilestoneForm, { MilestoneFormData } from '../components/Forms/MilestoneF
 import { ActivityForm, ActivityFormData } from '../components/Forms/ActivityForm';
 import DependentActivityModal from '../components/Forms/Utils/DependentActivityModal';
 import DependentMilestoneModal from '../components/Forms/Utils/DependentMilestoneModal';
+import { Activity, Milestone } from '../types/model';
+
 
 // Allowed step IDs.
 type StepId =
@@ -79,7 +82,7 @@ const FormStepper: React.FC = () => {
   const accessToken = sessionStorage.getItem('accessToken');
 
   // Transformation helper: returns an array of objects with flattened fields.
-  const transformData = (stepId: StepId, data: AllFormData): any[] => {
+  const transformData = (stepId: StepId, data: AllFormData): unknown[] => {
     switch (stepId) {
       case 'roadmaps': {
         const { name, description, owner } = data as RoadmapFormData;
@@ -147,13 +150,13 @@ const FormStepper: React.FC = () => {
             : workstream.team_members,
           improvement_targets:
             typeof workstream.improvement_targets === 'string'
-              ? workstream.improvement_targets.split(',').map(s => s.trim()).filter(Boolean)
+              ? (workstream.improvement_targets as string).split(',').map((s: string) => s.trim()).filter(Boolean)
               : Array.isArray(workstream.improvement_targets)
               ? workstream.improvement_targets.flat()
               : workstream.improvement_targets,
           organizational_goals:
             typeof workstream.organizational_goals === 'string'
-              ? workstream.organizational_goals.split(',').map(s => s.trim()).filter(Boolean)
+              ? (workstream.organizational_goals as string).split(',').map((s: string) => s.trim()).filter(Boolean)
               : Array.isArray(workstream.organizational_goals)
               ? workstream.organizational_goals.flat()
               : workstream.organizational_goals,
@@ -225,9 +228,9 @@ const FormStepper: React.FC = () => {
   const onSubmitStep = async (data: AllFormData) => {
     const isLastStep = currentStepIndex === FORM_STEPS.length - 1;
     const payloadArray = transformData(currentStepId, data);
+    const results: unknown[] = [];
 
     try {
-      const results = [];
       for (const item of payloadArray) {
         const response = await fetch(`http://127.0.0.1:8000/${currentStepId}/`, {
           method: 'POST',
@@ -280,7 +283,7 @@ const FormStepper: React.FC = () => {
   // Modal state for dependent activities.
   const [activityModalOpen, setActivityModalOpen] = useState<boolean>(false);
   const [currentDependencyType, setCurrentDependencyType] = useState<'prerequisite' | 'parallel' | 'successive' | null>(null);
-  const [currentActivityIndex, setCurrentActivityIndex] = useState<number | null>(null);
+  const [, setCurrentActivityIndex] = useState<number | null>(null);
 
   const openActivityModalForType = (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => {
     setCurrentDependencyType(dependencyType);
@@ -296,27 +299,19 @@ const FormStepper: React.FC = () => {
 
   // Dependent creation callbacks.
   const [dependentActivities, setDependentActivities] = useState<Activity[]>([]);
-
-  const handleDependentActivityCreate = (activity: any) => {
+  const handleDependentActivityCreate = (activity: Activity) => {
     console.log("Dependent activity created:", activity);
     setDependentActivities(prev => [...prev, activity]);
   };
 
-
   const [dependentMilestones, setDependentMilestones] = useState<Milestone[]>([]);
-
-  const handleDependentMilestoneCreate = (milestone: any) => {
+  const handleDependentMilestoneCreate = (milestone: Milestone) => {
     console.log("Dependent milestone created:", milestone);
     setDependentMilestones(prev => [...prev, milestone]);
   };
 
   // Determine the component to render for the current step.
   const CurrentStepComponent = (() => {
-    if (currentStepId === 'activities') {
-      return FORM_STEPS[currentStepIndex].component as React.FC<{ openModalForType: (dependencyType: 'prerequisite' | 'parallel' | 'successive', index: number) => void }>;
-    } else if (currentStepId === 'milestones') {
-      return FORM_STEPS[currentStepIndex].component as React.FC<{ openMilestoneModal: () => void; dependentMilestones: Milestone[]; onDependentMilestoneCreate: (milestone: Milestone) => void }>;
-    }
     return FORM_STEPS[currentStepIndex].component;
   })();
 
@@ -387,16 +382,23 @@ const FormStepper: React.FC = () => {
       <div className="bg-white rounded-lg shadow-md p-6">
         <FormProvider {...methods}>
           <form onSubmit={methods.handleSubmit(onSubmitStep)}>
-            {currentStepId === 'activities'
-              ? <CurrentStepComponent openModalForType={openActivityModalForType} dependentActivities={dependentActivities} />
-              : currentStepId === 'milestones'
-                ? <CurrentStepComponent 
-                      openMilestoneModal={openMilestoneModal}
-                      dependentMilestones={dependentMilestones}
-                      onDependentMilestoneCreate={handleDependentMilestoneCreate}
-                  />
-                : <CurrentStepComponent />
-            }
+            {currentStepId === 'activities' && (
+              <ActivityForm
+                openModalForType={openActivityModalForType}
+                dependentActivities={dependentActivities}
+              />
+            )}
+
+            {currentStepId === 'milestones' && (
+              <MilestoneForm
+                openMilestoneModal={openMilestoneModal}
+                dependentMilestones={dependentMilestones}
+              />
+            )}
+
+            {currentStepId !== 'activities' && currentStepId !== 'milestones' && (
+              <CurrentStepComponent />
+            )}
             {/* Navigation Buttons */}
             <div className="mt-6 flex justify-between">
               <button

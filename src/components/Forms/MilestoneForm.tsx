@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+// cSpell:ignore workstream workstreams
+import React, { useEffect, useCallback } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Workstream, Milestone } from '../../types/model';
@@ -14,12 +15,12 @@ export type MilestoneFormData = {
     status: 'not_started' | 'in_progress' | 'completed';
     strategic_goals: number[];
     dependencies?: number[];
+    [key: string]: unknown;
   }[];
 };
 
-type MilestoneFormProps = {
+export type MilestoneFormProps = {
   openMilestoneModal: () => void;
-  // Pass dependent milestones from the parent (FormStepper)
   dependentMilestones: Milestone[];
 };
 
@@ -30,20 +31,23 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
     name: "milestones"
   });
   
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream>('http://127.0.0.1:8000/workstreams/');
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
-  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone>('http://127.0.0.1:8000/milestones/');
+  // Ensure we fetch arrays so .map is available.
+  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>('http://127.0.0.1:8000/workstreams/');
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
+  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>('http://127.0.0.1:8000/milestones/');
 
-  const strategicGoalOptions = strategicGoals ? strategicGoals.map(goal => ({ label: goal.goal_text, value: goal.id })) : [];
+  // Explicitly type the map callbacks so that TS knows the parameter types.
+  const strategicGoalOptions = strategicGoals
+    ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))
+    : [];
 
-  // Merge fetched milestones with dependent milestones passed from the parent.
   const dependencyOptions = [
-    ...(fetchedMilestones ? fetchedMilestones.map(ms => ({ label: ms.name, value: ms.id })) : []),
-    ...dependentMilestones.map(ms => ({ label: ms.name, value: ms.id }))
+    ...(fetchedMilestones ? fetchedMilestones.map((ms: Milestone) => ({ label: ms.name, value: ms.id })) : []),
+    ...dependentMilestones.map((ms: Milestone) => ({ label: ms.name, value: ms.id }))
   ];
 
-  // Add a new empty milestone entry.
-  const addMilestone = () => {
+  // Wrap addMilestone in useCallback and include it in the dependency array.
+  const addMilestone = useCallback(() => {
     append({
       workstream: 0,
       name: "",
@@ -53,16 +57,21 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
       strategic_goals: [],
       dependencies: []
     });
-  };
+  }, [append]);
 
   useEffect(() => {
     if (fields.length === 0) {
       addMilestone();
     }
-  }, [fields.length]);
+  }, [fields.length, addMilestone]);
 
-  const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
-    setValue(`milestones.${index}.${fieldName}`, selectedValues);
+  // Convert any incoming (string | number) array to number[] before saving.
+  const handleMultiSelectChange = (
+    index: number,
+    fieldName: string,
+    selectedValues: (string | number)[]
+  ) => {
+    setValue(`milestones.${index}.${fieldName}` as `milestones.${number}.${string}`, selectedValues.map(val => Number(val)));
   };
 
   return (
@@ -106,11 +115,11 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
                 <p>Error: {errorWorkstreams}</p>
               ) : (
                 <select
-                  {...register(`milestones.${index}.workstream` as const)}
+                  {...register(`milestones.${index}.workstream` as never)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a workstream</option>
-                  {workstreams.map((ws) => (
+                  {workstreams?.map((ws: Workstream) => (
                     <option key={ws.id} value={ws.id}>
                       {ws.name}
                     </option>
@@ -123,7 +132,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             <div>
               <label className="block text-sm font-medium text-gray-700">Name</label>
               <input
-                {...register(`milestones.${index}.name` as const)}
+                {...register(`milestones.${index}.name` as never)}
                 type="text"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
@@ -133,7 +142,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             <div>
               <label className="block text-sm font-medium text-gray-700">Description</label>
               <textarea
-                {...register(`milestones.${index}.description` as const)}
+                {...register(`milestones.${index}.description` as never)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
@@ -142,7 +151,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             <div>
               <label className="block text-sm font-medium text-gray-700">Deadline</label>
               <input
-                {...register(`milestones.${index}.deadline` as const)}
+                {...register(`milestones.${index}.deadline` as never)}
                 type="date"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
@@ -152,7 +161,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             <div>
               <label className="block text-sm font-medium text-gray-700">Status</label>
               <select
-                {...register(`milestones.${index}.status` as const)}
+                {...register(`milestones.${index}.status` as never)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               >
                 <option value="not_started">Not Started</option>

@@ -1,3 +1,4 @@
+// cSpell:ignore workstream workstreams roadmaps Gantt hoverable
 import React, { useState, useEffect, MouseEvent, useRef } from 'react';
 import { RoadmapData } from '@/types/roadmap';
 import { useAuth } from '@/contexts/UserContext';
@@ -227,6 +228,7 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
       }
     });
     setExpandedItems(expanded);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   // Expand/collapse toggling
@@ -306,7 +308,7 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
         }
       }
     } else {
-      let currentDate = new Date(minDate);
+      const currentDate = new Date(minDate);
       while (currentDate <= maxDate) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const month = currentDate.getMonth();
@@ -364,6 +366,12 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
 
   // Modified toggleTaskComplete: works for both activities and milestones
   const toggleTaskComplete = async (itemId: string, isDoubleClick: boolean) => {
+    // If there's no user, bail early or handle differently
+    if (!user) {
+      console.warn("No user logged in, skipping updates");
+      return;
+    }
+
     const updated = await Promise.all(
       tasks.map(async t => {
         if (t.id === itemId && (t.level === 'activity' || t.level === 'milestone')) {

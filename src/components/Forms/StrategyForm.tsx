@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+// cSpell:ignore roadmaps
+import React, { useCallback, useEffect } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Roadmap, User } from '../../types/model';
@@ -25,14 +26,15 @@ export const StrategyForm: React.FC = () => {
     name: "strategies"
   });
   
-  const { data: roadmaps, loading: loadingRoadmaps, error: errorRoadmaps } = useFetch<Roadmap>('http://127.0.0.1:8000/roadmaps/');
-  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User>('http://127.0.0.1:8000/users/');
+  // Fetch arrays for roadmaps and users.
+  const { data: roadmaps, loading: loadingRoadmaps, error: errorRoadmaps } = useFetch<Roadmap[]>('http://127.0.0.1:8000/roadmaps/');
+  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>('http://127.0.0.1:8000/users/');
 
-  // Helper: map users to MultiSelect options
-  const userOptions = users ? users.map(u => ({ label: u.username, value: u.id })) : [];
+  // Map fetched users to MultiSelect options. Explicitly type the callback parameter.
+  const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
-  // Add a new empty strategy
-  const addStrategy = () => {
+  // Wrap addStrategy in useCallback for stable reference.
+  const addStrategy = useCallback(() => {
     append({
       roadmap: 0,
       name: "",
@@ -43,14 +45,14 @@ export const StrategyForm: React.FC = () => {
       strategy_leads: [],
       communication_leads: []
     });
-  };
+  }, [append]);
 
-  // Add an initial strategy if the array is empty
+  // Add an initial strategy if the array is empty.
   useEffect(() => {
     if (fields.length === 0) {
       addStrategy();
     }
-  }, [fields.length]);
+  }, [fields.length, addStrategy]);
 
   return (
     <div className="space-y-8">
@@ -65,7 +67,7 @@ export const StrategyForm: React.FC = () => {
           Add Strategy
         </button>
       </div>
-
+      
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
           <div className="flex justify-between items-center mb-6">
@@ -96,7 +98,7 @@ export const StrategyForm: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a roadmap</option>
-                  {roadmaps.map((roadmap) => (
+                  {(roadmaps || []).map((roadmap: Roadmap) => (
                     <option key={roadmap.id} value={roadmap.id}>
                       {roadmap.name}
                     </option>
@@ -152,7 +154,7 @@ export const StrategyForm: React.FC = () => {
                 options={userOptions}
                 value={watch(`strategies.${index}.executive_sponsors`) || []}
                 onChange={(newValue) =>
-                  setValue(`strategies.${index}.executive_sponsors`, newValue)
+                  setValue(`strategies.${index}.executive_sponsors`, newValue.map(val => Number(val)))
                 }
                 isLoading={loadingUsers}
                 error={errorUsers}
@@ -167,7 +169,7 @@ export const StrategyForm: React.FC = () => {
                 options={userOptions}
                 value={watch(`strategies.${index}.strategy_leads`) || []}
                 onChange={(newValue) =>
-                  setValue(`strategies.${index}.strategy_leads`, newValue)
+                  setValue(`strategies.${index}.strategy_leads`, newValue.map(val => Number(val)))
                 }
                 isLoading={loadingUsers}
                 error={errorUsers}
@@ -182,7 +184,7 @@ export const StrategyForm: React.FC = () => {
                 options={userOptions}
                 value={watch(`strategies.${index}.communication_leads`) || []}
                 onChange={(newValue) =>
-                  setValue(`strategies.${index}.communication_leads`, newValue)
+                  setValue(`strategies.${index}.communication_leads`, newValue.map(val => Number(val)))
                 }
                 isLoading={loadingUsers}
                 error={errorUsers}

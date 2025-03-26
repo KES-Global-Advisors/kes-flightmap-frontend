@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+// cSpell:ignore workstream workstreams
+import React, { useEffect, useCallback } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Strategy, User } from '../../types/model';
@@ -19,6 +20,8 @@ export type ProgramFormData = {
   }[];
 };
 
+type ProgramField = keyof ProgramFormData["programs"][number];
+
 export const ProgramForm: React.FC = () => {
   const { register, control, watch, setValue } = useFormContext<ProgramFormData>();
   const { fields, append, remove } = useFieldArray({
@@ -26,16 +29,19 @@ export const ProgramForm: React.FC = () => {
     name: "programs"
   });
   
-  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy>('http://127.0.0.1:8000/strategies/');
-  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User>('http://127.0.0.1:8000/users/');
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
+  // Fetch arrays instead of a single object.
+  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>('http://127.0.0.1:8000/strategies/');
+  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>('http://127.0.0.1:8000/users/');
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
 
-  // Map fetched users and strategic goals to options
-  const userOptions = users ? users.map(u => ({ label: u.username, value: u.id })) : [];
-  const strategicGoalOptions = strategicGoals ? strategicGoals.map(goal => ({ label: goal.goal_text, value: goal.id })) : [];
+  // Map fetched users and strategic goals to options.
+  const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
+  const strategicGoalOptions = strategicGoals
+    ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))
+    : [];
 
-  // Add a new program
-  const addProgram = () => {
+  // Wrap addProgram in useCallback for stable reference.
+  const addProgram = useCallback(() => {
     append({
       strategy: 0,
       name: "",
@@ -47,17 +53,22 @@ export const ProgramForm: React.FC = () => {
       key_improvement_targets: [],
       key_organizational_goals: []
     });
-  };
+  }, [append]);
 
   useEffect(() => {
     if (fields.length === 0) {
       addProgram();
     }
-  }, [fields.length]);
+  }, [fields.length, addProgram]);
 
-  // Helper to update multi-select fields
-  const handleMultiSelectChange = (index: number, fieldName: string, selectedValues: number[]) => {
-    setValue(`programs.${index}.${fieldName}`, selectedValues);
+  // Helper to update multi-select fields;
+  // Convert incoming (string|number)[] values to number[].
+  const handleMultiSelectChange = (
+    index: number,
+    fieldName: ProgramField,
+    selectedValues: (string | number)[]
+  ) => {
+    setValue(`programs.${index}.${fieldName}` as const, selectedValues.map(val => Number(val)));
   };
 
   return (
@@ -104,7 +115,7 @@ export const ProgramForm: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a strategy</option>
-                  {strategies.map(strategy => (
+                  {strategies?.map((strategy: Strategy) => (
                     <option key={strategy.id} value={strategy.id}>
                       {strategy.name}
                     </option>
@@ -139,7 +150,7 @@ export const ProgramForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
-            {/* MultiSelect for Users */}
+            {/* MultiSelect for Executive Sponsors */}
             <div>
               <MultiSelect
                 label="Executive Sponsors"

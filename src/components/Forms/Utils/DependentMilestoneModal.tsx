@@ -2,12 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { useForm } from 'react-hook-form';
 import useFetch from '../../../hooks/UseFetch';
-import { StrategicGoal } from '../../../types/model';
+import { StrategicGoal, Milestone } from '../../../types/model';
 import { MultiSelect } from './MultiSelect';
 
 export type DependentMilestoneModalProps = {
   onClose: () => void;
-  onCreate: (milestone: { id: number; name: string }) => void;
+  onCreate: (milestone: Milestone) => void;
 };
 
 type FormValues = {
@@ -19,12 +19,14 @@ type FormValues = {
 };
 
 const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClose, onCreate }) => {
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal>('http://127.0.0.1:8000/strategic-goals/');
+  // Changed type parameter to StrategicGoal[] so that .map is available.
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
   
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<FormValues>();
 
+  // Explicitly type the callback parameter to avoid implicit any.
   const strategicGoalOptions = strategicGoals
-    ? strategicGoals.map(goal => ({ label: goal.goal_text, value: goal.id }))
+    ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))
     : [];
 
   const onSubmit = async (data: FormValues) => {
@@ -36,7 +38,7 @@ const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClo
       status: data.status,
       description: data.description || '',
       strategic_goals: data.strategic_goals || [],
-      workstream: null,
+      workstream: null, // cSpell:ignore workstream
     };
 
     try {
@@ -111,7 +113,8 @@ const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClo
               label="Strategic Goals"
               options={strategicGoalOptions}
               value={watch('strategic_goals') || []}
-              onChange={(newValue) => setValue('strategic_goals', newValue)}
+              // Convert newValue to number[] so that it matches FormValues type.
+              onChange={(newValue) => setValue('strategic_goals', newValue.map(val => Number(val)))}
               isLoading={loadingGoals}
               error={errorGoals}
               placeholder="Select strategic goals..."

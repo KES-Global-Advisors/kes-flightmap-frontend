@@ -1,5 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// cSpell:ignore workstream workstreams roadmaps Flightmap
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
+import type { DefaultLinkObject } from "d3-shape";
 import { RoadmapData } from "@/types/roadmap";
 
 // Utility components
@@ -16,7 +19,8 @@ import { getTooltipContent } from "./FlightmapUtils/getTooltip";
 /**
  * Checks if a node has an ancestor milestone that is completed.
  */
-function hasAncestorCompletedMilestone(d: d3.HierarchyNode<any>): boolean {
+function hasAncestorCompletedMilestone(d: d3.HierarchyNode<any> | null): boolean {
+  if (!d) return false;
   let current = d.parent;
   while (current) {
     if (current.data.type === "milestone" && current.data.status === "completed") {
@@ -47,7 +51,7 @@ function getNodeColor(d: d3.HierarchyNode<any>): string {
 
   // For milestones/activities, inherit parent's workstream color.
   let workstreamColor: string | null = null;
-  let current = d;
+  let current = d.parent;
   while (current) {
     if (current.data.type === "workstream" && current.data.color) {
       workstreamColor = current.data.color;
@@ -162,7 +166,9 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
       .on("zoom", (event) => {
         container.attr("transform", event.transform);
       });
-    svgEl.call(zoomRef.current);
+    svgEl.call(zoomRef.current as unknown as (
+      selection: d3.Selection<SVGSVGElement | null, unknown, null, undefined>
+    ) => void);
 
     // Build hierarchy from the Roadmap data.
     const hierarchyData = buildHierarchy(data);
@@ -179,20 +185,17 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
     let xMin = Infinity, xMax = -Infinity;
     let yMin = Infinity, yMax = -Infinity;
     root.each((d) => {
-      if (d.x < xMin) xMin = d.x;
-      if (d.x > xMax) xMax = d.x;
-      if (d.y < yMin) yMin = d.y;
-      if (d.y > yMax) yMax = d.y;
+      if (d.x !== undefined && d.x < xMin) xMin = d.x;
+      if (d.x !== undefined && d.x > xMax) xMax = d.x;
+      if (d.y !== undefined && d.y < yMin) yMin = d.y;
+      if (d.y !== undefined && d.y > yMax) yMax = d.y;
     });
     xMin -= 50; xMax += 50;
     yMin -= 50; yMax += 200;
     container.attr("transform", `translate(${margin.left - yMin}, ${margin.top - xMin})`);
 
     // Link generator (horizontal).
-    const linkGenerator = d3
-      .linkHorizontal<{ x: number; y: number }>()
-      .x((d) => d.y)
-      .y((d) => d.x);
+    const linkGenerator = d3.linkHorizontal();
 
     // 1) Draw hierarchical links (behind everything).
     const linksGroup = container.append("g").attr("class", "links");
@@ -204,9 +207,9 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
       .attr("class", "link")
       .attr("d", (d) =>
         linkGenerator({
-          source: { x: d.source.x, y: d.source.y },
-          target: { x: d.target.x, y: d.target.y },
-        }) as string
+          source: [d.source.y, d.source.x],
+          target: [d.target.y, d.target.x],
+        } as DefaultLinkObject) ?? ""
       )
       .attr("fill", "none")
       .attr("stroke", "#ccc");
@@ -216,7 +219,9 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
     const milestoneNodeMap: { [key: number]: { x: number; y: number } } = {};
     root.descendants().forEach((d) => {
       if (d.data.type === "milestone" && d.data.id) {
-        milestoneNodeMap[d.data.id] = { x: d.x, y: d.y };
+        if (d.x !== undefined && d.y !== undefined) {
+          milestoneNodeMap[d.data.id] = { x: d.x, y: d.y };
+        }
       }
     });
 
@@ -244,7 +249,7 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
           const target = milestoneNodeMap[targetId];
           if (target) {
             extraLinks.push({
-              source: { x: activityX, y: activityY },
+              source: { x: activityX ?? 0, y: activityY ?? 0 },
               target: target,
               activityId: d.data.id,
               milestoneId: targetId,
@@ -264,9 +269,9 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
       .attr("class", "extra-link")
       .attr("d", (d) =>
         linkGenerator({
-          source: d.source,
-          target: d.target,
-        }) as string
+          source: [d.source.y, d.source.x],
+          target: [d.target.y, d.target.x],
+        } as DefaultLinkObject) ?? ""
       )
       .attr("fill", "none")
       .attr("stroke", "#888")
@@ -421,7 +426,7 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
           .attr("stroke-width", 1);
 
         // Optional status indicator
-        const half = Math.min(halfWidth, halfHeight);
+        // const half = Math.min(halfWidth, halfHeight);
         if (d.data.status) {
           const statusStroke = getStatusColor(d.data.status);
           d3.select(this)
@@ -472,7 +477,7 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
       if (d.data.type === "workstream") {
         d3.select(this)
           .style("cursor", "pointer")
-          .on("click", function(event, d) {
+          .on("click", function(_event: MouseEvent, d: any) {
             if (activeWorkstreamFilter && activeWorkstreamFilter.id === d.data.id) {
               activeWorkstreamFilter = null;
               d3.selectAll(".node")
@@ -666,7 +671,7 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
                 .duration(500)
                 .style("opacity", 1);
             } else {
-              activeFilter = filterKey;
+              activeFilter = filterKey ?? null;
               d3.selectAll(".node")
                 .transition()
                 .duration(500)
@@ -709,7 +714,7 @@ const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
             d3.select(svgRef.current)
               .transition()
               .duration(500)
-              .call(zoomRef.current.transform, d3.zoomIdentity);
+              .call(zoomRef.current?.transform as any, d3.zoomIdentity);
           }
         }}
         className="absolute bottom-4 right-4 p-2 bg-white rounded shadow hover:bg-gray-50 transition-colors"
