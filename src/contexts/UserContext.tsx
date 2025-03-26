@@ -4,6 +4,7 @@ import { jwtDecode } from 'jwt-decode';
 import { JwtPayload } from '@/types/auth';
 
 export type User = {
+  id: number;
   name: string;
   username: string;
   email: string;
@@ -28,6 +29,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (token) {
         try {
           const decoded: { 
+            id: number;
             name: string;
             email: string;
             username: string;
@@ -35,6 +37,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           } = jwtDecode(token);
           
           setUser({
+            id: decoded.id,
             name: decoded.name,
             email: decoded.email,
             username: decoded.username,

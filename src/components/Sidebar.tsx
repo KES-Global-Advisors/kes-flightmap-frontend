@@ -3,11 +3,8 @@ import { Link } from 'react-router-dom';
 import { 
   Settings, 
   Home, 
-  Users, 
   FolderOpen, 
-  Calendar, 
   FileText, 
-  BarChart,
   ChevronLeft,
   ChevronRight 
 } from 'lucide-react';
@@ -21,12 +18,8 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { name: 'Dashboard', icon: <Home size={20} />, url: '/dashboard' },
-  { name: 'Team', icon: <Users size={20} />, url: '/team' },
   { name: 'Roadmaps', icon: <FolderOpen size={20} />, url: '/roadmaps' },
-  { name: 'Create Roadmaps', icon: <FolderOpen size={20} />, url: '/create-roadmap' },
-  { name: 'Calendar', icon: <Calendar size={20} />, url: '/calendar' },
-  { name: 'Documents', icon: <FileText size={20} />, url: '/documents' },
-  { name: 'Reports', icon: <BarChart size={20} />, url: '/reports' },
+  { name: 'Create Roadmaps', icon: <FileText size={20} />, url: '/create-roadmap' },
 ];
 
 

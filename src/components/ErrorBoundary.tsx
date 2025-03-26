@@ -37,26 +37,3 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export default ErrorBoundary;
-
-
-// import ErrorBoundary from './ErrorBoundary';
-
-// function App() {
-//   return (
-//     <ErrorBoundary fallback={<GlobalErrorPage />}>
-//       <AuthProvider>
-//         {/* Existing app structure */}
-//       </AuthProvider>
-//     </ErrorBoundary>
-//   );
-// }
-
-// // Component-specific usage
-// <Route 
-//   path="/reset-password" 
-//   element={
-//     <ErrorBoundary>
-//       <PasswordReset />
-//     </ErrorBoundary>
-//   }
-// />

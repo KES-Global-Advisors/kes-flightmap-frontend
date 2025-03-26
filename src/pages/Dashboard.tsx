@@ -1,99 +1,87 @@
-// Dashboard page
 import { useContext } from 'react';
 import {
   EmployeeContribution,
   StrategicAlignment,
-  TimelineEvent,
   FullDashboardResponse,
   TrendData,
   RiskMetric,
   WorkloadDistribution,
+  PerformanceMetrics,
 } from '@/types/dashboard';
 import SummaryCard from '@/components/Dashboard/SummaryCard';
-import Timeline from '@/components/Dashboard/Timeline';
-import PerformanceChart from '@/components/Dashboard/PerformanceChart';
-import DashboardFilters from '@/components/Dashboard/DashboardFilters';
 import TrendChart from '@/components/Dashboard/TrendChart';
 import RiskAssessment from '@/components/Dashboard/RiskAssessment';
 import ResourceAllocation from '@/components/Dashboard/ResourceAllocation';
+import PerformanceDashboard from '@/components/Dashboard/PerformanceDashboard';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import useFetch from '@/hooks/UseFetch';
 
 const Dashboard = () => {
   const { themeColor } = useContext(ThemeContext);
 
-  // Fetch core dashboard data
+  // Fetch core dashboard data with optional refetch methods (if provided by your hook)
   const { 
     data: dashboardData, 
     loading: summaryLoading, 
-    error: summaryError 
+    error: summaryError,
   } = useFetch<FullDashboardResponse>('http://127.0.0.1:8000/dashboard/');
 
   const { 
     data: contributions, 
     loading: contributionsLoading, 
-    error: contributionsError 
+    error: contributionsError,
   } = useFetch<EmployeeContribution[]>('http://127.0.0.1:8000/contributions/');
 
   const { 
     data: alignment, 
     loading: alignmentLoading, 
-    error: alignmentError 
+    error: alignmentError,
   } = useFetch<StrategicAlignment>('http://127.0.0.1:8000/strategic-alignment/');
-
-  // Modified timeline fetch to handle "no roadmap" case
-  const { 
-    data: timelineEvents, 
-    loading: timelineLoading,
-    error: timelineError,
-    status: timelineStatus 
-  } = useFetch<TimelineEvent[]>('http://127.0.0.1:8000/roadmaps/4/timeline/');
 
   const { 
     data: trendData, 
     loading: trendLoading, 
-    error: trendError 
+    error: trendError,
   } = useFetch<TrendData[]>('http://127.0.0.1:8000/dashboard/trends/');
 
   const { 
     data: risks, 
     loading: risksLoading, 
-    error: risksError 
+    error: risksError,
   } = useFetch<RiskMetric[]>('http://127.0.0.1:8000/dashboard/risks/');
 
   const { 
     data: workloads, 
     loading: workloadsLoading, 
-    error: workloadsError 
+    error: workloadsError,
   } = useFetch<WorkloadDistribution[]>('http://127.0.0.1:8000/dashboard/workloads/');
 
-  // Handle loading state
-  if (
-    summaryLoading || 
-    contributionsLoading || 
-    alignmentLoading || 
-    timelineLoading || 
-    trendLoading || 
-    risksLoading || 
-    workloadsLoading
-  ) {
-    return(
+  const { 
+    data: performanceMetrics, 
+    loading: performanceLoading, 
+    error: performanceError,
+  } = useFetch<PerformanceMetrics>('http://127.0.0.1:8000/dashboard/performance/');
+
+  // Aggregate loading states
+  const isLoading = summaryLoading || contributionsLoading || alignmentLoading
+                   || trendLoading || risksLoading || workloadsLoading || performanceLoading;
+
+  // Aggregate error states (treat timeline 404 as non-critical)
+  const errorOccurred = summaryError || contributionsError || alignmentError ||
+                        trendError || risksError || workloadsError || performanceError;
+
+  if (isLoading) {
+    return (
       <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4" style={{ borderColor: themeColor }}></div>
+        <div 
+          className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4"
+          style={{ borderColor: themeColor }}
+        ></div>
       </div>
     );
   }
 
-  // Handle critical errors (excluding timeline "no roadmap" case)
-  if (
-    summaryError || 
-    contributionsError || 
-    alignmentError || 
-    trendError || 
-    risksError || 
-    workloadsError ||
-    (timelineError && timelineStatus !== 404)  // Only treat non-404 timeline errors as critical
-  ) {
+  if (errorOccurred) {
     return (
       <div className="text-red-600 p-4">
         Error loading dashboard data. Please try again later.
@@ -101,15 +89,7 @@ const Dashboard = () => {
     );
   }
 
-  // Handle case where critical data hasn't been loaded yet
-  if (
-    !dashboardData || 
-    !contributions || 
-    !alignment || 
-    !trendData || 
-    !risks || 
-    !workloads
-  ) {
+  if (!dashboardData || !contributions || !alignment || !trendData || !risks || !workloads) {
     return <div>No data available</div>;
   }
 
@@ -117,9 +97,9 @@ const Dashboard = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Advanced Filtering Section */}
-      <div className="mb-8">
-        <DashboardFilters onFilterChange={(filters) => console.log('Filters applied:', filters)} />
+      {/* Dashboard Header */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
       </div>
 
       {/* Summary Cards */}
@@ -151,63 +131,34 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         {/* Left Column */}
         <div className="space-y-8">
-          {/* Timeline Section with "no roadmap" handling */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-bold mb-4">Project Timeline</h2>
-            {timelineStatus === 404 ? (
-              <div className="text-gray-500 text-center py-4">
-                No roadmap available for this project.
-              </div>
-            ) : (
-              <Timeline events={timelineEvents || []} />
-            )}
-          </div>
-
-          {/* Rest of the left column components */}
+          {/* Progress Trends */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Progress Trends</h2>
             <TrendChart data={trendData} />
           </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-bold mb-4">Team Performance</h2>
-            <PerformanceChart data={contributions} />
-          </div>
+          
+          {/* Performance Dashboard */}
+          <PerformanceDashboard 
+            data={performanceMetrics} 
+            loading={performanceLoading} 
+            error={performanceError} 
+          />
         </div>
 
         {/* Right Column */}
         <div className="space-y-8">
+          {/* Risk Assessment */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Risk Assessment</h2>
             <RiskAssessment risks={risks} />
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-bold mb-4">Strategic Alignment</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {alignment.goals.map(goal => (
-                <div key={goal.id} className="border p-4 rounded">
-                  <h3 className="font-semibold">{goal.text}</h3>
-                  <div className="mt-2">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-blue-600 rounded-full h-2"
-                        style={{ width: `${(goal.completed_milestones / goal.total_milestones) * 100}%` }}
-                      />
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      {goal.completed_milestones} / {goal.total_milestones} milestones
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
+          {/* Resource Allocation */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Resource Allocation</h2>
             <ResourceAllocation workloads={workloads} />
           </div>
+          
         </div>
       </div>
     </div>

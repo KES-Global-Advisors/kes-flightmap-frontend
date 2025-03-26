@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/UserContext';
-import { Bell, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { ThemeContext } from '@/contexts/ThemeContext'; // Adjust the path as needed
+import { ThemeContext } from '@/contexts/ThemeContext';
+import Notifications from './Notifications/Notifications'; 
 
 const Header = () => {
   const navigate = useNavigate();
@@ -51,15 +52,7 @@ const Header = () => {
       <div className="flex h-16 items-center justify-end px-4 sm:px-6 lg:px-8">      
         <div className="flex items-center gap-4">
           {/* Notifications remain unchanged */}
-          <button
-            type="button"
-            className={`relative rounded-full p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-${themeColor}`}
-          >
-            <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-xs text-white flex items-center justify-center">
-              3
-            </span>
-            <Bell className="h-6 w-6" />
-          </button>
+          <Notifications />
 
           {/* User menu */}
           <div className="relative" ref={menuRef}>
@@ -82,18 +75,11 @@ const Header = () => {
             </button>
   
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+              <div className="absolute z-10 right-0 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
                 <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100">
                   <p className="font-medium truncate">{user.name}</p>
                   <p className="text-gray-500 truncate">{user.email}</p>
                 </div>
-                <Link
-                  to="/profile"
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  onClick={handleNavigation}
-                >
-                  Your Profile
-                </Link>
                 <Link
                   to="/settings"
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
