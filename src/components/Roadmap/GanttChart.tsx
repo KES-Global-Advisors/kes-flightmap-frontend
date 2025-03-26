@@ -11,7 +11,7 @@ export interface GanttItem {
   name: string;
   level: 'strategy' | 'program' | 'workstream' | 'milestone' | 'activity';
   parent: string | null;
-  startDate: Date;
+  startDate: Date | null;
   endDate: Date;
   status: string;
   progress: number;
@@ -32,7 +32,7 @@ interface GanttChartProps {
   data: RoadmapData;
 }
 
-function formatDate(date: Date) {
+function formatDate(date: Date): string {
   return date.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -40,10 +40,66 @@ function formatDate(date: Date) {
   });
 }
 
-function getDurationInDays(start: Date, end: Date) {
+function getDurationInDays(start: Date | null, end: Date): number | '-' {
+  if (!start) return '-';
   const oneDay = 1000 * 60 * 60 * 24;
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / oneDay));
 }
+
+const CustomCheckbox = ({
+  status,
+  onSingleClick,
+  onDoubleClick,
+}: {
+  status: string;
+  onSingleClick: () => void;
+  onDoubleClick: () => void;
+}) => {
+  const getCheckboxStyle = () => {
+    switch (status) {
+      case 'completed':
+        return 'bg-blue-500 border-blue-500';
+      case 'in_progress':
+        return 'bg-gray-300 border-gray-300';
+      default:
+        return 'bg-white border-gray-300';
+    }
+  };
+
+  return (
+    <div
+      onClick={(e) => {
+        e.preventDefault();
+        onSingleClick();
+      }}
+      onDoubleClick={(e) => {
+        e.preventDefault();
+        onDoubleClick();
+      }}
+      className={`
+        w-4 h-4 border-2 rounded cursor-pointer 
+        flex items-center justify-center
+        ${getCheckboxStyle()}
+      `}
+    >
+      {(status === 'completed' || status === 'in_progress') && (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d={
+              status === 'completed'
+                ? "M5 13l4 4L19 7"
+                : "M12 8v4m0 4h.01"
+            }
+          />
+        </svg>
+      )}
+    </div>
+  );
+};
+
 
 const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
   const [tasks, setTasks] = useState<GanttItem[]>([]);
@@ -61,175 +117,133 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
   const clickTimeoutRef = useRef<number | null>(null);
 
   // --- STEP 1: Flatten the roadmap data into a single tasks array ---
-  const processData = () => {
-    const items: GanttItem[] = [];
-    
+  const processData = (): GanttItem[] => {
+    const itemMap = new Map<string, GanttItem>();
+  
     data.strategies.forEach(strategy => {
-      // Strategy
-      items.push({
+      const strat: GanttItem = {
         id: `s-${strategy.id}`,
         name: strategy.name,
         level: 'strategy',
         parent: null,
-        startDate: new Date('2024-01-01'),
+        startDate: null,
         endDate: new Date(strategy.time_horizon),
         status: 'not_started',
         progress: 0,
         checked: false,
         tagline: strategy.tagline || '',
         vision: strategy.vision || ''
-      });
-
-      // Programs
+      };
+      itemMap.set(strat.id, strat);
+  
       strategy.programs.forEach(program => {
-        items.push({
+        const prog: GanttItem = {
           id: `p-${program.id}`,
           name: program.name,
           level: 'program',
-          parent: `s-${strategy.id}`,
-          startDate: new Date('2024-01-01'),
+          parent: strat.id,
+          startDate: null,
           endDate: new Date(program.time_horizon),
           status: 'not_started',
           progress: program.progress?.percentage || 0,
           checked: false,
           vision: program.vision || ''
-        });
-
-        // Workstreams
-        if (program.workstreams) {
-          program.workstreams.forEach(workstream => {
-            items.push({
-              id: `w-${workstream.id}`,
-              name: workstream.name,
-              level: 'workstream',
-              parent: `p-${program.id}`,
-              startDate: new Date('2024-01-01'),
-              endDate: workstream.time_horizon
-                ? new Date(workstream.time_horizon)
-                : new Date('2024-12-31'),
-              status: 'not_started',
-              progress: workstream.progress_summary
-                ? (workstream.progress_summary.completed_milestones /
-                  (workstream.progress_summary.total_milestones || 1)) * 100
-                : 0,
-              checked: false,
-              vision: workstream.vision || ''
+        };
+        itemMap.set(prog.id, prog);
+  
+        program.workstreams?.forEach(workstream => {
+          const ws: GanttItem = {
+            id: `w-${workstream.id}`,
+            name: workstream.name,
+            level: 'workstream',
+            parent: prog.id,
+            startDate: null,
+            endDate: workstream.time_horizon ? new Date(workstream.time_horizon) : new Date('2024-12-31'),
+            status: 'not_started',
+            progress: workstream.progress_summary?.completed_milestones / (workstream.progress_summary?.total_milestones || 1) * 100,
+            checked: false,
+            vision: workstream.vision || ''
+          };
+          itemMap.set(ws.id, ws);
+  
+          workstream.milestones?.forEach(milestone => {
+            const end = milestone.deadline ? new Date(milestone.deadline) : new Date('2024-12-31');
+            const start = new Date(end);
+            start.setMonth(end.getMonth() - 2);
+  
+            const ms: GanttItem = {
+              id: `m-${milestone.id}`,
+              name: milestone.name,
+              level: 'milestone',
+              parent: ws.id,
+              startDate: start,
+              endDate: end,
+              status: milestone.status || 'not_started',
+              progress: milestone.current_progress || 0,
+              checked: milestone.status === 'completed',
+              description: milestone.description || ''
+            };
+            itemMap.set(ms.id, ms);
+  
+            milestone.activities?.forEach(activity => {
+              if (!activity.target_start_date || !activity.target_end_date) return;
+              const act: GanttItem = {
+                id: `a-${activity.id}`,
+                name: activity.name,
+                level: 'activity',
+                parent: ms.id,
+                startDate: new Date(activity.target_start_date),
+                endDate: new Date(activity.target_end_date),
+                status: activity.status || 'not_started',
+                progress: activity.status === 'completed' ? 100 : activity.status === 'in_progress' ? 50 : 0,
+                checked: activity.status === 'completed',
+                isOverdue: activity.is_overdue,
+                completedDate: activity.completed_date
+              };
+              itemMap.set(act.id, act);
             });
-
-            // Milestones (and their nested activities)
-            if (workstream.milestones) {
-              workstream.milestones.forEach(milestone => {
-                const endDate = milestone.deadline
-                  ? new Date(milestone.deadline)
-                  : new Date('2024-12-31');
-                const startDate = new Date(endDate);
-                startDate.setMonth(endDate.getMonth() - 2);
-
-                // Add the milestone
-                items.push({
-                  id: `m-${milestone.id}`,
-                  name: milestone.name,
-                  level: 'milestone',
-                  parent: `w-${workstream.id}`,
-                  startDate,
-                  endDate,
-                  status: milestone.status || 'not_started',
-                  progress: milestone.current_progress || 0,
-                  checked: milestone.status === 'completed',
-                  description: milestone.description || ''
-                });
-
-                // Check if milestone contains nested activities
-                if (milestone.activities) {
-                  milestone.activities.forEach(activity => {
-                    if (!activity.target_start_date || !activity.target_end_date) return;
-                    items.push({
-                      id: `a-${activity.id}`,
-                      name: activity.name,
-                      level: 'activity',
-                      parent: `m-${milestone.id}`,
-                      startDate: new Date(activity.target_start_date),
-                      endDate: new Date(activity.target_end_date),
-                      status: activity.status || 'not_started',
-                      progress:
-                        activity.status === 'completed'
-                          ? 100
-                          : activity.status === 'in_progress'
-                          ? 50
-                          : 0,
-                      checked: activity.status === 'completed',
-                      isOverdue: activity.is_overdue,
-                      completedDate: activity.completed_date,
-                      target_start_date: activity.target_start_date,
-                      target_end_date: activity.target_end_date,
-                      priority: activity.priority,
-                      delayDays: activity.delay_days,
-                      actualDuration: activity.actual_duration
-                    });
-                  });
-                }
-              });
-            }
-
-            // Additionally, process any activities directly on the workstream level.
-            if (workstream.activities) {
-              workstream.activities.forEach(activity => {
-                if (!activity.target_start_date || !activity.target_end_date) return;
-                // Avoid duplicate if already attached to a milestone.
-                if (items.some(t => t.id === `a-${activity.id}`)) return;
-                const startDate = new Date(activity.target_start_date);
-                const endDate = new Date(activity.target_end_date);
-
-                items.push({
-                  id: `a-${activity.id}`,
-                  name: activity.name,
-                  level: 'activity',
-                  parent: activity.milestone
-                    ? `m-${activity.milestone}`
-                    : `w-${workstream.id}`,
-                  startDate,
-                  endDate,
-                  status: activity.status || 'not_started',
-                  progress:
-                    activity.status === 'completed'
-                      ? 100
-                      : activity.status === 'in_progress'
-                      ? 50
-                      : 0,
-                  checked: activity.status === 'completed',
-                  isOverdue: activity.is_overdue,
-                  completedDate: activity.completed_date,
-                  target_start_date: activity.target_start_date,
-                  target_end_date: activity.target_end_date,
-                  priority: activity.priority,
-                  delayDays: activity.delay_days,
-                  actualDuration: activity.actual_duration
-                });
-              });
+          });
+  
+          workstream.activities?.forEach(activity => {
+            if (!activity.target_start_date || !activity.target_end_date) return;
+            const id = `a-${activity.id}`;
+            if (!itemMap.has(id)) {
+              const act: GanttItem = {
+                id,
+                name: activity.name,
+                level: 'activity',
+                parent: activity.milestone ? `m-${activity.milestone}` : ws.id,
+                startDate: new Date(activity.target_start_date),
+                endDate: new Date(activity.target_end_date),
+                status: activity.status || 'not_started',
+                progress: activity.status === 'completed' ? 100 : activity.status === 'in_progress' ? 50 : 0,
+                checked: activity.status === 'completed',
+                isOverdue: activity.is_overdue,
+                completedDate: activity.completed_date
+              };
+              itemMap.set(id, act);
             }
           });
-        }
+        });
       });
     });
-
-    return items;
+  
+    return Array.from(itemMap.values());
   };
-
-  // --- STEP 2: On mount, flatten data + set default expansions ---
+  
   useEffect(() => {
-    const flattened = processData();
-    setTasks(flattened);
-
-    // Expand strategies and programs by default
-    const expanded: { [key: string]: boolean } = {};
-    flattened.forEach(item => {
+    const uniqueTasks = processData();
+    setTasks(uniqueTasks);
+  
+    const expanded: Record<string, boolean> = {};
+    uniqueTasks.forEach(item => {
       if (item.level === 'strategy' || item.level === 'program') {
         expanded[item.id] = true;
       }
     });
     setExpandedItems(expanded);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+  
 
   // Expand/collapse toggling
   const toggleExpand = (itemId: string) => {
@@ -256,7 +270,11 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
 
   // Time range for timeline rendering
   const getTimeRange = () => {
-    const startDates = tasks.map(t => t.startDate);
+    // Filter out null startDates
+    const validStartDates = tasks
+      .filter(t => t.startDate !== null)
+      .map(t => t.startDate as Date);
+    const startDates = validStartDates.length > 0 ? validStartDates : tasks.map(t => t.endDate);
     const endDates = tasks.map(t => t.endDate);
     const minDate = new Date(Math.min(...startDates.map(d => d.getTime())));
     const maxDate = new Date(Math.max(...endDates.map(d => d.getTime())));
@@ -484,8 +502,10 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
         onMouseLeave={handleMouseLeave}
       >
         {visibleItems.map(item => {
-          const durationDays = getDurationInDays(item.startDate, item.endDate);
+          const durationDays = item.startDate ? getDurationInDays(item.startDate, item.endDate) : '-';
           const isOverdue = item.endDate < today && item.status !== 'completed';
+          // For timeline bar, use startDate if available, otherwise fall back to endDate
+          const barStartDate = item.startDate ?? item.endDate;
 
           return (
             <div key={item.id} className="flex border-b border-gray-100 hover:bg-gray-50">
@@ -501,15 +521,21 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
                     </button>
                   )}
                   {(item.level === 'activity' || item.level === 'milestone') && (
-                    <div onClick={() => handleCheckboxClick(item.id)} className="mr-2 cursor-pointer">
-                      <input type="checkbox" readOnly checked={item.checked} />
+                    <div className="mr-2">
+                      <CustomCheckbox 
+                        status={item.status}
+                        onSingleClick={() => handleCheckboxClick(item.id)}
+                        onDoubleClick={() => handleCheckboxClick(item.id)}
+                      />
                     </div>
                   )}
                   <div className="text-sm truncate" style={{ maxWidth: '120px' }}>{item.name}</div>
                 </div>
 
-                <div className="w-2/12 flex items-center justify-center text-sm">{durationDays} days</div>
-                <div className="w-2/12 flex items-center justify-center text-sm">{formatDate(item.startDate)}</div>
+                <div className="w-2/12 flex items-center justify-center text-sm">{durationDays === '-' ? '-' : `${durationDays} days`}</div>
+                <div className="w-2/12 flex items-center justify-center text-sm">
+                  {item.startDate ? formatDate(item.startDate) : '-'}
+                </div>
                 <div className="w-2/12 flex items-center justify-center text-sm">{formatDate(item.endDate)}</div>
                 <div className="w-2/12 flex items-center justify-center text-sm">{Math.round(item.progress)}%</div>
               </div>
@@ -527,8 +553,8 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
                 <div
                   className="absolute top-1/2 -translate-y-1/2 h-3 rounded"
                   style={{
-                    left: `${calculatePosition(item.startDate, timeRange.minDate, timeRange.maxDate)}%`,
-                    width: `${calculateWidth(item.startDate, item.endDate, timeRange.minDate, timeRange.maxDate)}%`,
+                    left: `${calculatePosition(barStartDate, timeRange.minDate, timeRange.maxDate)}%`,
+                    width: `${calculateWidth(barStartDate, item.endDate, timeRange.minDate, timeRange.maxDate)}%`,
                     backgroundColor: getStatusColor(item.status, isOverdue),
                     opacity: 0.8,
                   }}
