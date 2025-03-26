@@ -90,26 +90,3 @@
     additional_milestones: number[];
   };
   
-  // Additional helper types for form handling
-//   type RoadmapFormData = Omit<Roadmap, 'id' | 'created_at' | 'updated_at'>;
-//   type StrategyFormData = Omit<Strategy, 'id'>;
-//   type StrategicGoalFormData = Omit<StrategicGoal, 'id'>;
-//   type ProgramFormData = Omit<Program, 'id'>;
-//   type WorkstreamFormData = Omit<Workstream, 'id'>;
-//   type MilestoneFormData = Omit<Milestone, 'id'>;
-//   type ActivityFormData = Omit<Activity, 'id'>;
-  
-//   // Response types for API calls
-//   type ApiResponse<T> = {
-//     data: T;
-//     message?: string;
-//     error?: string;
-//   };
-  
-//   // Generic type for paginated responses
-//   type PaginatedResponse<T> = {
-//     count: number;
-//     next: string | null;
-//     previous: string | null;
-//     results: T[];
-//   };

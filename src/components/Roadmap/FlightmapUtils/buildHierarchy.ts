@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { RoadmapData } from "@/types/roadmap";
 
 export function buildHierarchy(data: RoadmapData): any {

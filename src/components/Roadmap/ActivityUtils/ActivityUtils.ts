@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // ActivityUtils.ts
 import { Activity } from '@/types/roadmap';
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export const getTooltipContent = (d: any): string => {
     const type = d.data.type;
     if (type === "roadmap") {

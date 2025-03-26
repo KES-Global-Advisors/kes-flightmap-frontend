@@ -23,6 +23,7 @@
     workstream: number;
     supported_milestones: number[];
     additional_milestones: number[];
+    actual_duration: number | null | undefined;
   }
   
   export interface Milestone {

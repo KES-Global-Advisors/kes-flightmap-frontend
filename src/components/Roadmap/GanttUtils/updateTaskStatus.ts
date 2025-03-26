@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { GanttItem } from '../GanttChart';
 
 export async function updateTaskStatus(item: GanttItem) {
