@@ -7,6 +7,8 @@ export function getCookie(name: string): string {
         return cookie.split('=')[1];
       }
     }
-    return '';
+    
+    // fallback: read from localStorage if cookie not present
+    return localStorage.getItem(name) ?? '';
   }
   
