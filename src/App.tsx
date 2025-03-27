@@ -77,9 +77,30 @@ function App() {
     useEffect(() => {
       fetch(`${API}/users/csrf/`, {
         method: 'GET',
-        credentials: 'include', // allows setting the csrftoken cookie
-      }).catch(err => console.error('Failed to get CSRF cookie:', err));
+        credentials: 'include', // lets Django set csrftoken cookie
+      })
+        .then(res => res.json())
+        .then(data => {
+          // Persist token client‑side so getCookie() finds it
+          localStorage.setItem('csrftoken', data.csrfToken);
+    
+          // Also set the cookie for Django’s validation (Secure & cross‑site)
+          document.cookie = `csrftoken=${data.csrfToken}; Path=/; Secure; SameSite=None`;
+        })
+        .catch(err => console.error('Failed to get CSRF cookie:', err));
     }, []);
+    
+    // useEffect(() => {
+    //   fetch(`${API}    // useEffect(() => {
+    //   fetch(`${API}/users/csrf/`, {
+    //     method: 'GET',
+    //     credentials: 'include', // allows setting the csrftoken cookie
+    //   }).catch(err => console.error('Failed to get CSRF cookie:', err));
+    // }, []);/users/csrf/`, {
+    //     method: 'GET',
+    //     credentials: 'include', // allows setting the csrftoken cookie
+    //   }).catch(err => console.error('Failed to get CSRF cookie:', err));
+    // }, []);
   
   return (
     <>
