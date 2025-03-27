@@ -14,7 +14,7 @@ const PasswordUpdate = () => {
   const { themeColor } = useContext(ThemeContext);
   const navigate = useNavigate();
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
 
   const validatePassword = (password: string) => {
     const errors = [];

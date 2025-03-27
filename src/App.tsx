@@ -70,7 +70,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   return <Layout>{children}</Layout>
 }
 
-const API = process.env.REACT_APP_API_BASE_URL;
+const API = import.meta.env.VITE_API_BASE_URL;
 
 function App() {
     // Fetch the CSRF cookie once on mount

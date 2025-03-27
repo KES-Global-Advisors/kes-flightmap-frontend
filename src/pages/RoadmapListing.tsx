@@ -174,7 +174,7 @@ const RoadmapListing: React.FC = () => {
   const { themeColor } = useContext(ThemeContext);
   const [selectedRoadmap, setSelectedRoadmap] = useState<RoadmapData | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
 
   const {
     data: roadmaps,

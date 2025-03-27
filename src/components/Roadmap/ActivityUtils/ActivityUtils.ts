@@ -2,7 +2,7 @@
 // ActivityUtils.ts
 import { Activity } from '@/types/roadmap';
 
-const API = process.env.REACT_APP_API_BASE_URL;
+const API = import.meta.env.VITE_API_BASE_URL;
 const accessToken = sessionStorage.getItem('accessToken');
 
 

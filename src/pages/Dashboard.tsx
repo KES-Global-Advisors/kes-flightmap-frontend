@@ -18,7 +18,7 @@ import useFetch from '@/hooks/UseFetch';
 
 const Dashboard = () => {
   const { themeColor } = useContext(ThemeContext);
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
 
   // Fetch core dashboard data with optional refetch methods (if provided by your hook)
   const { 
