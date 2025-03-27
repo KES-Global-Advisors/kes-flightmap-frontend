@@ -11,6 +11,8 @@ const PasswordReset = () => {
   const { themeColor } = useContext(ThemeContext);
   const navigate = useNavigate();
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const getCsrfToken = () => {
     return document.cookie
       .split('; ')
@@ -25,12 +27,12 @@ const PasswordReset = () => {
     setMessage("");
     
     try {
-      await axios.get('http://127.0.0.1:8000/users/csrf/', {
+      await axios.get(`${API}/users/csrf/`, {
         withCredentials: true
       });
       
       const response = await axios.post(
-        'http://127.0.0.1:8000/users/password-reset/',
+        `${API}/users/password-reset/`,
         { email },
         {
           headers: {

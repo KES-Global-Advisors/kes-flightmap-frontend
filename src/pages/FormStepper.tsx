@@ -15,6 +15,7 @@ import DependentActivityModal from '../components/Forms/Utils/DependentActivityM
 import DependentMilestoneModal from '../components/Forms/Utils/DependentMilestoneModal';
 import { Activity, Milestone } from '../types/model';
 
+const API = process.env.REACT_APP_API_BASE_URL;
 
 // Allowed step IDs.
 type StepId =
@@ -232,7 +233,7 @@ const FormStepper: React.FC = () => {
 
     try {
       for (const item of payloadArray) {
-        const response = await fetch(`http://127.0.0.1:8000/${currentStepId}/`, {
+        const response = await fetch(`${API}/${currentStepId}/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

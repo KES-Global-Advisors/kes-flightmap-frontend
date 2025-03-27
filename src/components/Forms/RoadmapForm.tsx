@@ -3,6 +3,8 @@ import { useFormContext } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { User } from '../../types/model';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 export type RoadmapFormData = {
   name: string;
   description?: string;
@@ -12,7 +14,7 @@ export type RoadmapFormData = {
 export const RoadmapForm: React.FC = () => {
   const { register } = useFormContext<RoadmapFormData>();
   // Fetch an array of users instead of a single User.
-  const { data: users, loading, error } = useFetch<User[]>('http://127.0.0.1:8000/users/');
+  const { data: users, loading, error } = useFetch<User[]>(`${API}/users/`);
 
   return (
     <div className="space-y-4">

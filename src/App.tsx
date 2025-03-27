@@ -70,10 +70,12 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   return <Layout>{children}</Layout>
 }
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 function App() {
     // Fetch the CSRF cookie once on mount
     useEffect(() => {
-      fetch('http://127.0.0.1:8000/users/csrf/', {
+      fetch(`${API}/users/csrf/`, {
         method: 'GET',
         credentials: 'include', // allows setting the csrftoken cookie
       }).catch(err => console.error('Failed to get CSRF cookie:', err));

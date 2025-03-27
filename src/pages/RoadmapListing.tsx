@@ -174,17 +174,18 @@ const RoadmapListing: React.FC = () => {
   const { themeColor } = useContext(ThemeContext);
   const [selectedRoadmap, setSelectedRoadmap] = useState<RoadmapData | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const API = process.env.REACT_APP_API_BASE_URL;
 
   const {
     data: roadmaps,
     loading,
     error,
-  } = useFetch<RoadmapData[]>('http://127.0.0.1:8000/roadmaps/');
+  } = useFetch<RoadmapData[]>(`${API}/roadmaps/`);
 
   const handleDelete = async (id: number) => {
     try {
       const accessToken = sessionStorage.getItem('accessToken');
-      const response = await fetch(`http://127.0.0.1:8000/roadmaps/${id}/`, {
+      const response = await fetch(`${API}/roadmaps/${id}/`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${accessToken}`,

@@ -2,16 +2,16 @@
 import { GanttItem } from '../GanttChart';
 
 export async function updateTaskStatus(item: GanttItem) {
-  const BASE_URL = 'http://localhost:8000';
+  const API = process.env.REACT_APP_API_BASE_URL;
   const accessToken = sessionStorage.getItem('accessToken');
   // Extract the numeric ID from the item.id (e.g. "a-13" becomes 13)
   const numericId = parseInt(item.id.split('-')[1]);
   let url = '';
 
   if (item.level === 'activity') {
-    url = `${BASE_URL}/activities/${numericId}/`;
+    url = `${API}/activities/${numericId}/`;
   } else if (item.level === 'milestone') {
-    url = `${BASE_URL}/milestones/${numericId}/`;
+    url = `${API}/milestones/${numericId}/`;
   } else {
     return;
   }

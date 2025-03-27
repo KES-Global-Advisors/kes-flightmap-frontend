@@ -14,6 +14,8 @@ const PasswordUpdate = () => {
   const { themeColor } = useContext(ThemeContext);
   const navigate = useNavigate();
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const validatePassword = (password: string) => {
     const errors = [];
     if (password.length < 12) errors.push("Minimum 12 characters");
@@ -42,7 +44,7 @@ const PasswordUpdate = () => {
 
     try {
       const response = await axios.post(
-        `http://127.0.0.1:8000/users/password-update/${uidb64}/${token}/`,
+        `${API}/users/password-update/${uidb64}/${token}/`,
         { password },
         {
           headers: {

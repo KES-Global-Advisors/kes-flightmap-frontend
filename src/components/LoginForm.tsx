@@ -45,10 +45,12 @@ const LoginForm = () => {
     }, timeout);
   };
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   const handleLogout = async () => {
     try {
       const cookieToken = getCookie('csrftoken')
-      await fetch('http://127.0.0.1:8000/users/logout/', {
+      await fetch(`${API}/users/logout/`, {
         method: 'POST',
         headers: {
           'X-CSRFToken': cookieToken,
@@ -69,7 +71,7 @@ const LoginForm = () => {
   const refreshToken = async () => {
     try {
       const cookieToken = getCookie('csrftoken')
-      const response = await fetch('http://127.0.0.1:8000/users/refresh/', {
+      const response = await fetch(`${API}/users/refresh/`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -105,7 +107,7 @@ const LoginForm = () => {
     
     try {
       const cookieToken = getCookie('csrftoken')
-      const response = await fetch('http://127.0.0.1:8000/users/login/', {
+      const response = await fetch(`${API}/users/login/`, {
         method: 'POST',
         // Update handleSubmit headers:
         headers: { 

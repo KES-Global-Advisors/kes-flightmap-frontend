@@ -2,7 +2,7 @@
 // ActivityUtils.ts
 import { Activity } from '@/types/roadmap';
 
-const BASE_URL = 'http://localhost:8000';
+const API = process.env.REACT_APP_API_BASE_URL;
 const accessToken = sessionStorage.getItem('accessToken');
 
 
@@ -11,7 +11,7 @@ const accessToken = sessionStorage.getItem('accessToken');
  * If the new status is "completed", it sets the completed_date to today's date.
  */
 export async function updateActivityStatus(activity: Activity) {
-  const url = `${BASE_URL}/activities/${activity.id}/`;
+  const url = `${API}/activities/${activity.id}/`;
   const payload: any = { status: activity.status };
 
   if (activity.status === 'completed') {
@@ -46,7 +46,7 @@ export async function updateActivityStatus(activity: Activity) {
  * This payload includes the activity id and the user's id.
  */
 export async function sendActivityContribution(activity: Activity, user: { id: number }) {
-  const url = `${BASE_URL}/activity-contributors/`;
+  const url = `${API}/activity-contributors/`;
   try {
     const response = await fetch(url, {
       method: 'POST',
