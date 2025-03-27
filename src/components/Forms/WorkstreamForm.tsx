@@ -8,6 +8,8 @@ import { Program, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 export type WorkstreamFormData = {
   workstreams: {
     program: number;
@@ -30,8 +32,8 @@ export const WorkstreamForm: React.FC = () => {
   });
   
   // Ensure we fetch arrays so .map is available.
-  const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program[]>('http://127.0.0.1:8000/programs/');
-  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>('http://127.0.0.1:8000/users/');
+  const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program[]>(`${API}/programs/`);
+  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
 
   // Map users to options for MultiSelect fields.
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];

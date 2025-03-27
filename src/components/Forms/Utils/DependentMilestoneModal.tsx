@@ -5,6 +5,8 @@ import useFetch from '../../../hooks/UseFetch';
 import { StrategicGoal, Milestone } from '../../../types/model';
 import { MultiSelect } from './MultiSelect';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 export type DependentMilestoneModalProps = {
   onClose: () => void;
   onCreate: (milestone: Milestone) => void;
@@ -20,7 +22,7 @@ type FormValues = {
 
 const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClose, onCreate }) => {
   // Changed type parameter to StrategicGoal[] so that .map is available.
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
   
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<FormValues>();
 
@@ -42,7 +44,7 @@ const DependentMilestoneModal: React.FC<DependentMilestoneModalProps> = ({ onClo
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/milestones/', {
+      const response = await fetch(`${API}/milestones/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

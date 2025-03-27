@@ -7,10 +7,12 @@ import axios from 'axios';
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [themeColor, setThemeColor] = useState<string>('#3B82F6');
 
+  const API = process.env.REACT_APP_API_BASE_URL;
+
   // Fetch the theme from the backend on app startup
   useEffect(() => {
     axios
-      .get('/api/theme/')
+      .get(`${API}/theme/`)
       .then((response) => {
         setThemeColor(response.data.theme_color);
         // Also set CSS variables to prevent any flash of default color

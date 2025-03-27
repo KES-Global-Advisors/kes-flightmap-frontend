@@ -17,6 +17,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
 }
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -77,7 +79,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     try {
-      await fetch('http://127.0.0.1:8000/users/logout/', {
+      await fetch(`${API}/users/logout/`, {
         method: 'POST',
         headers: {
           'X-CSRFToken': document.cookie

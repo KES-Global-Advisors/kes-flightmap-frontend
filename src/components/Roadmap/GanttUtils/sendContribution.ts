@@ -3,15 +3,15 @@ import { User } from '@/contexts/UserContext';
   
   export async function sendContribution(item: GanttItem,  user: User) {
     console.log(user);
-    const BASE_URL = 'http://localhost:8000';
+    const API = process.env.REACT_APP_API_BASE_URL;
       const accessToken = sessionStorage.getItem('accessToken');
       let url = '';
       // Determine the correct endpoint and payload key based on item level.
       const numericId = parseInt(item.id.split('-')[1]);
       if (item.level === 'activity') {
-        url = `${BASE_URL}/activity-contributors/`;
+        url = `${API}/activity-contributors/`;
       } else if (item.level === 'milestone') {
-        url = `${BASE_URL}/milestone-contributors/`;
+        url = `${API}/milestone-contributors/`;
       } else {
         return; // No contribution is sent for other levels.
       }

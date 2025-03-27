@@ -6,6 +6,8 @@ import { StrategicGoal, Workstream, Milestone } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 export type MilestoneFormData = {
   milestones: {
     workstream: number;
@@ -32,9 +34,9 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   });
   
   // Ensure we fetch arrays so .map is available.
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>('http://127.0.0.1:8000/workstreams/');
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
-  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>('http://127.0.0.1:8000/milestones/');
+  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
+  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
 
   // Explicitly type the map callbacks so that TS knows the parameter types.
   const strategicGoalOptions = strategicGoals

@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { Activity } from '../../../types/model';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 type DependentActivityModalProps = {
   dependencyType: 'prerequisite' | 'parallel' | 'successive';
   onClose: () => void;
@@ -69,7 +71,7 @@ const DependentActivityModal: React.FC<DependentActivityModalProps> = ({
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/activities/', {
+      const response = await fetch(`${API}/activities/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

@@ -6,6 +6,8 @@ import { StrategicGoal, Strategy, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 export type ProgramFormData = {
   programs: {
     strategy: number;
@@ -30,9 +32,9 @@ export const ProgramForm: React.FC = () => {
   });
   
   // Fetch arrays instead of a single object.
-  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>('http://127.0.0.1:8000/strategies/');
-  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>('http://127.0.0.1:8000/users/');
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
+  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>(`${API}/strategies/`);
+  const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
 
   // Map fetched users and strategic goals to options.
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];

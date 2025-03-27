@@ -37,6 +37,8 @@ const Settings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [userToDelete, setUserToDelete] = useState<number | null>(null);
+  const API = process.env.REACT_APP_API_BASE_URL;
+
 
   // Get theme data from global context
   const { themeColor, setThemeColor } = useContext(ThemeContext);
@@ -70,9 +72,9 @@ const Settings: React.FC = () => {
       try {
         setLoading(true);
         const [currentUserRes, usersRes, rolesRes] = await Promise.all([
-          axiosInstance.get('http://127.0.0.1:8000/users/me/'),
-          axiosInstance.get('http://127.0.0.1:8000/users/'),
-          axiosInstance.get('http://127.0.0.1:8000/users/roles/')
+          axiosInstance.get(`${API}/users/me/`),
+          axiosInstance.get(`${API}/users/`),
+          axiosInstance.get(`${API}/users/roles/`)
         ]);
         
         setCurrentUser(currentUserRes.data);
@@ -103,7 +105,7 @@ const Settings: React.FC = () => {
   const handleColorChangeComplete = (color: ColorResult) => {
     const newColor = color.hex;
     axios
-      .patch('http://127.0.0.1:8000/theme/', { theme_color: newColor })
+      .patch(`${API}/theme/`, { theme_color: newColor })
       .then((response) => {
         console.log('Theme updated on the backend:', response.data);
       })
@@ -139,7 +141,7 @@ const Settings: React.FC = () => {
     if (!currentUser) return;
     
     try {
-      const res = await axiosInstance.patch(`http://127.0.0.1:8000/users/${currentUser.id}/update/`, editForm);
+      const res = await axiosInstance.patch(`${API}/users/${currentUser.id}/update/`, editForm);
       setCurrentUser({ ...currentUser, ...res.data });
       setIsEditing(false);
       toast.success('Profile updated successfully!');
@@ -152,7 +154,7 @@ const Settings: React.FC = () => {
   // Handle role change
   const handleRoleChange = async (userId: number, newRole: string) => {
     try {
-      await axiosInstance.patch(`http://127.0.0.1:8000/users/assign-role/${userId}/`, { role: newRole });
+      await axiosInstance.patch(`${API}/users/assign-role/${userId}/`, { role: newRole });
       setUsers(users.map(user => user.id === userId ? { ...user, role: newRole } : user));
       if (currentUser && currentUser.id === userId) {
         setCurrentUser({ ...currentUser, role: newRole });
@@ -174,7 +176,7 @@ const Settings: React.FC = () => {
     if (!userToDelete) return;
     
     try {
-      await axiosInstance.delete(`http://127.0.0.1:8000/users/${userToDelete}/`);
+      await axiosInstance.delete(`${API}/users/${userToDelete}/`);
       setUsers(users.filter(user => user.id !== userToDelete));
       setShowDeleteModal(false);
       setUserToDelete(null);

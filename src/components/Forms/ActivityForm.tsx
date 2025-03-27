@@ -6,6 +6,8 @@ import { Workstream, Milestone, Activity } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 export type ActivityFormData = {
   activities: {
     workstream?: number;
@@ -41,9 +43,9 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
   });
 
   // Ensure that activities and milestones are arrays so .map is available.
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>('http://127.0.0.1:8000/workstreams/');
-  const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>('http://127.0.0.1:8000/milestones/');
-  const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>('http://127.0.0.1:8000/activities/');
+  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
+  const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
+  const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>(`${API}/activities/`);
 
   // Merge fetched activities with dependentActivities from props.
   const mergedActivityOptions = [

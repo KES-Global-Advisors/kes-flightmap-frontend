@@ -18,49 +18,50 @@ import useFetch from '@/hooks/UseFetch';
 
 const Dashboard = () => {
   const { themeColor } = useContext(ThemeContext);
+  const API = process.env.REACT_APP_API_BASE_URL;
 
   // Fetch core dashboard data with optional refetch methods (if provided by your hook)
   const { 
     data: dashboardData, 
     loading: summaryLoading, 
     error: summaryError,
-  } = useFetch<FullDashboardResponse>('http://127.0.0.1:8000/dashboard/');
+  } = useFetch<FullDashboardResponse>(`${API}/dashboard/`);
 
   const { 
     data: contributions, 
     loading: contributionsLoading, 
     error: contributionsError,
-  } = useFetch<EmployeeContribution[]>('http://127.0.0.1:8000/contributions/');
+  } = useFetch<EmployeeContribution[]>(`${API}/contributions/`);
 
   const { 
     data: alignment, 
     loading: alignmentLoading, 
     error: alignmentError,
-  } = useFetch<StrategicAlignment>('http://127.0.0.1:8000/strategic-alignment/');
+  } = useFetch<StrategicAlignment>(`${API}/strategic-alignment/`);
 
   const { 
     data: trendData, 
     loading: trendLoading, 
     error: trendError,
-  } = useFetch<TrendData[]>('http://127.0.0.1:8000/dashboard/trends/');
+  } = useFetch<TrendData[]>(`${API}/dashboard/trends/`);
 
   const { 
     data: risks, 
     loading: risksLoading, 
     error: risksError,
-  } = useFetch<RiskMetric[]>('http://127.0.0.1:8000/dashboard/risks/');
+  } = useFetch<RiskMetric[]>(`${API}/dashboard/risks/`);
 
   const { 
     data: workloads, 
     loading: workloadsLoading, 
     error: workloadsError,
-  } = useFetch<WorkloadDistribution[]>('http://127.0.0.1:8000/dashboard/workloads/');
+  } = useFetch<WorkloadDistribution[]>(`${API}/dashboard/workloads/`);
 
   const { 
     data: performanceMetrics, 
     loading: performanceLoading, 
     error: performanceError,
-  } = useFetch<PerformanceMetrics>('http://127.0.0.1:8000/dashboard/performance/');
+  } = useFetch<PerformanceMetrics>(`${API}/dashboard/performance/`);
 
   // Aggregate loading states
   const isLoading = summaryLoading || contributionsLoading || alignmentLoading

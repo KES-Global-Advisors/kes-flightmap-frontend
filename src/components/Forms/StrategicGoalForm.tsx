@@ -4,6 +4,8 @@ import useFetch from '../../hooks/UseFetch';
 import { Strategy } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 
+const API = process.env.REACT_APP_API_BASE_URL;
+
 export type StrategicGoalFormData = {
   goals: {
     strategy: number;
@@ -20,7 +22,7 @@ export const StrategicGoalForm: React.FC = () => {
   });
   
   // Fetch an array of strategies
-  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>('http://127.0.0.1:8000/strategies/');
+  const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>(`${API}/strategies/`);
 
   // Wrap addGoal in useCallback so it can be safely added to useEffect dependencies.
   const addGoal = useCallback(() => {

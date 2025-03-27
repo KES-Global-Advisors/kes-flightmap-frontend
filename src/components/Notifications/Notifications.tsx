@@ -5,14 +5,14 @@ import axiosInstance from '@/hooks/axiosInstance';
 import NotificationsDrawer, { Notification } from './NotificationsDrawer';
 
 const Notifications: React.FC = () => {
-const BASE_URL = 'http://localhost:8000';
+  const API = process.env.REACT_APP_API_BASE_URL;
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Mark all notifications as read.
   const markAllAsRead = async () => {
     try {
-      await axiosInstance.post(`${BASE_URL}/notifications/mark-all-read/`);
+      await axiosInstance.post(`${API}/notifications/mark-all-read/`);
       // Update local notifications state after marking as read.
       const updated = notifications.map((n) => ({ ...n, read: true }));
       setNotifications(updated);
@@ -24,7 +24,7 @@ const BASE_URL = 'http://localhost:8000';
   // Function to clear notifications
   const clearNotifications = async () => {
     try {
-      await axiosInstance.delete(`${BASE_URL}/notifications/clear/`);
+      await axiosInstance.delete(`${API}/notifications/clear/`);
       // Optionally, clear your local notifications state
       setNotifications([]);
     } catch (error) {
@@ -38,7 +38,7 @@ const BASE_URL = 'http://localhost:8000';
     if (!accessToken) {
       return;
     }
-    const eventSource = new EventSource(`${BASE_URL}/notifications/sse/?token=${accessToken}`);
+    const eventSource = new EventSource(`${API}/notifications/sse/?token=${accessToken}`);
     eventSource.onmessage = (event) => {
       const newNotification = JSON.parse(event.data);
       setNotifications((prev) => [newNotification, ...prev]);
