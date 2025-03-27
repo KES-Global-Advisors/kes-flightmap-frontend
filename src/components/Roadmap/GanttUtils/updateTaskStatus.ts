@@ -2,7 +2,7 @@
 import { GanttItem } from '../GanttChart';
 
 export async function updateTaskStatus(item: GanttItem) {
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
   const accessToken = sessionStorage.getItem('accessToken');
   // Extract the numeric ID from the item.id (e.g. "a-13" becomes 13)
   const numericId = parseInt(item.id.split('-')[1]);

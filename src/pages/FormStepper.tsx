@@ -15,7 +15,7 @@ import DependentActivityModal from '../components/Forms/Utils/DependentActivityM
 import DependentMilestoneModal from '../components/Forms/Utils/DependentMilestoneModal';
 import { Activity, Milestone } from '../types/model';
 
-const API = process.env.REACT_APP_API_BASE_URL;
+const API = import.meta.env.VITE_API_BASE_URL;
 
 // Allowed step IDs.
 type StepId =

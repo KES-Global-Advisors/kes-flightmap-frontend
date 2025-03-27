@@ -5,7 +5,7 @@ import axiosInstance from '@/hooks/axiosInstance';
 import NotificationsDrawer, { Notification } from './NotificationsDrawer';
 
 const Notifications: React.FC = () => {
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 

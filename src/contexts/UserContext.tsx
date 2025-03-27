@@ -17,7 +17,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
 }
 
-const API = process.env.REACT_APP_API_BASE_URL;
+const API = import.meta.env.VITE_API_BASE_URL;
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 

@@ -3,7 +3,7 @@ import { User } from '@/contexts/UserContext';
   
   export async function sendContribution(item: GanttItem,  user: User) {
     console.log(user);
-    const API = process.env.REACT_APP_API_BASE_URL;
+    const API = import.meta.env.VITE_API_BASE_URL;
       const accessToken = sessionStorage.getItem('accessToken');
       let url = '';
       // Determine the correct endpoint and payload key based on item level.

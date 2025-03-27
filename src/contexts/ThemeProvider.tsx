@@ -7,7 +7,7 @@ import axios from 'axios';
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [themeColor, setThemeColor] = useState<string>('#3B82F6');
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
 
   // Fetch the theme from the backend on app startup
   useEffect(() => {

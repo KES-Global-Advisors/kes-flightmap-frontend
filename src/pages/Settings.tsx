@@ -37,7 +37,7 @@ const Settings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [userToDelete, setUserToDelete] = useState<number | null>(null);
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
 
 
   // Get theme data from global context

@@ -3,8 +3,7 @@ import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Strategy } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
-
-const API = process.env.REACT_APP_API_BASE_URL;
+const API = import.meta.env.VITE_API_BASE_URL;
 
 export type StrategicGoalFormData = {
   goals: {

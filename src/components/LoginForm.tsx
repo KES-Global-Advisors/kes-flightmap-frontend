@@ -45,7 +45,7 @@ const LoginForm = () => {
     }, timeout);
   };
 
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
 
   const handleLogout = async () => {
     try {

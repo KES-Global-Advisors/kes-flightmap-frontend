@@ -34,7 +34,7 @@ const RegisterForm = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   // const [csrfToken, setCsrfToken] = useState('');
-  const API = process.env.REACT_APP_API_BASE_URL;
+  const API = import.meta.env.VITE_API_BASE_URL;
 
 
   const validateForm = (): boolean => {
