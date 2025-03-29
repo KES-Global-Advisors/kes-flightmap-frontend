@@ -1,15 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Strategy, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
-const API = import.meta.env.VITE_API_BASE_URL;
-
 export type ProgramFormData = {
   programs: {
+    id?: number;
     strategy: number;
     name: string;
     vision?: string;
@@ -22,7 +22,7 @@ export type ProgramFormData = {
   }[];
 };
 
-type ProgramField = keyof ProgramFormData["programs"][number];
+const API = import.meta.env.VITE_API_BASE_URL;
 
 export const ProgramForm: React.FC = () => {
   const { register, control, watch, setValue } = useFormContext<ProgramFormData>();
@@ -31,18 +31,35 @@ export const ProgramForm: React.FC = () => {
     name: "programs"
   });
   
-  // Fetch arrays instead of a single object.
+  // State for existing programs for per-item editing.
+  const [existingPrograms, setExistingPrograms] = useState<any[]>([]);
+  const accessToken = sessionStorage.getItem('accessToken');
+  useEffect(() => {
+    fetch(`${API}/programs/`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken || ''}`,
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const items = Array.isArray(data) ? data : (data.results || []);
+        setExistingPrograms(items);
+      })
+      .catch((err) => console.error("Error fetching programs", err));
+  }, [API, accessToken]);
+
+  // Fetch strategies, users, and strategic goals.
   const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>(`${API}/strategies/`);
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
 
-  // Map fetched users and strategic goals to options.
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
   const strategicGoalOptions = strategicGoals
     ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))
     : [];
 
-  // Wrap addProgram in useCallback for stable reference.
   const addProgram = useCallback(() => {
     append({
       strategy: 0,
@@ -63,14 +80,26 @@ export const ProgramForm: React.FC = () => {
     }
   }, [fields.length, addProgram]);
 
-  // Helper to update multi-select fields;
-  // Convert incoming (string|number)[] values to number[].
-  const handleMultiSelectChange = (
-    index: number,
-    fieldName: ProgramField,
-    selectedValues: (string | number)[]
-  ) => {
-    setValue(`programs.${index}.${fieldName}` as const, selectedValues.map(val => Number(val)));
+  const handleExistingSelect = (index: number, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value;
+    if (id) {
+      const selected = existingPrograms.find((p) => p.id.toString() === id);
+      if (selected) {
+        setValue(`programs.${index}`, selected);
+      }
+    } else {
+      setValue(`programs.${index}`, {
+        strategy: 0,
+        name: "",
+        vision: "",
+        time_horizon: "",
+        executive_sponsors: [],
+        program_leads: [],
+        workforce_sponsors: [],
+        key_improvement_targets: [],
+        key_organizational_goals: []
+      });
+    }
   };
 
   return (
@@ -89,6 +118,19 @@ export const ProgramForm: React.FC = () => {
 
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          {/* Existing Program Dropdown */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700">Select existing Program (Edit existing records)</label>
+            <select onChange={(e) => handleExistingSelect(index, e)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+              <option value="">New Program</option>
+              {existingPrograms.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Program {index + 1}</h3>
             {fields.length > 1 && (
@@ -117,7 +159,7 @@ export const ProgramForm: React.FC = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
                   <option value="">Select a strategy</option>
-                  {strategies?.map((strategy: Strategy) => (
+                  {(strategies || []).map((strategy: Strategy) => (
                     <option key={strategy.id} value={strategy.id}>
                       {strategy.name}
                     </option>
@@ -158,9 +200,7 @@ export const ProgramForm: React.FC = () => {
                 label="Executive Sponsors"
                 options={userOptions}
                 value={watch(`programs.${index}.executive_sponsors`) || []}
-                onChange={(newValue) =>
-                  handleMultiSelectChange(index, 'executive_sponsors', newValue)
-                }
+                onChange={(newValue) => setValue(`programs.${index}.executive_sponsors`, newValue.map(val => Number(val)))}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select executive sponsors..."
@@ -171,9 +211,7 @@ export const ProgramForm: React.FC = () => {
                 label="Program Leads"
                 options={userOptions}
                 value={watch(`programs.${index}.program_leads`) || []}
-                onChange={(newValue) =>
-                  handleMultiSelectChange(index, 'program_leads', newValue)
-                }
+                onChange={(newValue) => setValue(`programs.${index}.program_leads`, newValue.map(val => Number(val)))}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select program leads..."
@@ -184,23 +222,18 @@ export const ProgramForm: React.FC = () => {
                 label="Workforce Sponsors"
                 options={userOptions}
                 value={watch(`programs.${index}.workforce_sponsors`) || []}
-                onChange={(newValue) =>
-                  handleMultiSelectChange(index, 'workforce_sponsors', newValue)
-                }
+                onChange={(newValue) => setValue(`programs.${index}.workforce_sponsors`, newValue.map(val => Number(val)))}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select workforce sponsors..."
               />
             </div>
-            {/* MultiSelect for Strategic Goals */}
             <div>
               <MultiSelect
                 label="Key Improvement Targets"
                 options={strategicGoalOptions}
                 value={watch(`programs.${index}.key_improvement_targets`) || []}
-                onChange={(newValue) =>
-                  handleMultiSelectChange(index, 'key_improvement_targets', newValue)
-                }
+                onChange={(newValue) => setValue(`programs.${index}.key_improvement_targets`, newValue.map(val => Number(val)))}
                 isLoading={loadingGoals}
                 error={errorGoals}
                 placeholder="Select key improvement targets..."
@@ -211,9 +244,7 @@ export const ProgramForm: React.FC = () => {
                 label="Key Organizational Goals"
                 options={strategicGoalOptions}
                 value={watch(`programs.${index}.key_organizational_goals`) || []}
-                onChange={(newValue) =>
-                  handleMultiSelectChange(index, 'key_organizational_goals', newValue)
-                }
+                onChange={(newValue) => setValue(`programs.${index}.key_organizational_goals`, newValue.map(val => Number(val)))}
                 isLoading={loadingGoals}
                 error={errorGoals}
                 placeholder="Select key organizational goals..."

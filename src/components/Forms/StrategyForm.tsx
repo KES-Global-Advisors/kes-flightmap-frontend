@@ -1,5 +1,6 @@
 // cSpell:ignore roadmaps
-import React, { useCallback, useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useCallback, useEffect, useState } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Roadmap, User } from '../../types/model';
@@ -10,6 +11,7 @@ const API = import.meta.env.VITE_API_BASE_URL;
 
 export type StrategyFormData = {
   strategies: {
+    id?: number;
     roadmap: number;
     name: string;
     tagline?: string;
@@ -27,15 +29,33 @@ export const StrategyForm: React.FC = () => {
     control,
     name: "strategies"
   });
-  
+
+  // State for existing strategies (for per-item selection)
+  const [existingStrategies, setExistingStrategies] = useState<any[]>([]);
+  const accessToken = sessionStorage.getItem('accessToken');
+
+  useEffect(() => {
+    fetch(`${API}/strategies/`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken || ''}`,
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const items = Array.isArray(data) ? data : (data.results || []);
+        setExistingStrategies(items);
+      })
+      .catch((err) => console.error("Error fetching strategies", err));
+  }, [API, accessToken]);
+
   // Fetch arrays for roadmaps and users.
   const { data: roadmaps, loading: loadingRoadmaps, error: errorRoadmaps } = useFetch<Roadmap[]>(`${API}/roadmaps/`);
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
 
-  // Map fetched users to MultiSelect options. Explicitly type the callback parameter.
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
-  // Wrap addStrategy in useCallback for stable reference.
   const addStrategy = useCallback(() => {
     append({
       roadmap: 0,
@@ -49,12 +69,35 @@ export const StrategyForm: React.FC = () => {
     });
   }, [append]);
 
-  // Add an initial strategy if the array is empty.
   useEffect(() => {
     if (fields.length === 0) {
       addStrategy();
     }
   }, [fields.length, addStrategy]);
+
+  // Handler for selecting an existing strategy for a specific field array item.
+  const handleExistingSelectForIndex = (index: number, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value;
+    if (id) {
+      const selectedStrategy = existingStrategies.find((s) => s.id.toString() === id);
+      if (selectedStrategy) {
+        // Update the field array item; note that we merge the selected strategy (which contains an id) into the form.
+        setValue(`strategies.${index}`, selectedStrategy);
+      }
+    } else {
+      // Reset to default empty values if "New" is selected.
+      setValue(`strategies.${index}`, {
+        roadmap: 0,
+        name: "",
+        tagline: "",
+        vision: "",
+        time_horizon: "",
+        executive_sponsors: [],
+        strategy_leads: [],
+        communication_leads: []
+      });
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -72,6 +115,21 @@ export const StrategyForm: React.FC = () => {
       
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          {/* Existing record dropdown for this strategy */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700">
+              Select existing Strategy (Edit existing records)
+            </label>
+            <select onChange={(e) => handleExistingSelectForIndex(index, e)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+              <option value="">New Strategy</option>
+              {existingStrategies.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name || s.tagline || `Strategy ${s.id}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Strategy {index + 1}</h3>
             {fields.length > 1 && (
@@ -155,9 +213,7 @@ export const StrategyForm: React.FC = () => {
                 label="Executive Sponsors"
                 options={userOptions}
                 value={watch(`strategies.${index}.executive_sponsors`) || []}
-                onChange={(newValue) =>
-                  setValue(`strategies.${index}.executive_sponsors`, newValue.map(val => Number(val)))
-                }
+                onChange={(newValue) => setValue(`strategies.${index}.executive_sponsors`, newValue.map(val => Number(val)))}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select executive sponsors..."
@@ -170,9 +226,7 @@ export const StrategyForm: React.FC = () => {
                 label="Strategy Leads"
                 options={userOptions}
                 value={watch(`strategies.${index}.strategy_leads`) || []}
-                onChange={(newValue) =>
-                  setValue(`strategies.${index}.strategy_leads`, newValue.map(val => Number(val)))
-                }
+                onChange={(newValue) => setValue(`strategies.${index}.strategy_leads`, newValue.map(val => Number(val)))}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select strategy leads..."
@@ -185,9 +239,7 @@ export const StrategyForm: React.FC = () => {
                 label="Communication Leads"
                 options={userOptions}
                 value={watch(`strategies.${index}.communication_leads`) || []}
-                onChange={(newValue) =>
-                  setValue(`strategies.${index}.communication_leads`, newValue.map(val => Number(val)))
-                }
+                onChange={(newValue) => setValue(`strategies.${index}.communication_leads`, newValue.map(val => Number(val)))}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select communication leads..."

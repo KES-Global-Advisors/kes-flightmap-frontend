@@ -1,29 +1,50 @@
-import React, { useCallback } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useCallback, useEffect, useState } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Strategy } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
-const API = import.meta.env.VITE_API_BASE_URL;
 
 export type StrategicGoalFormData = {
   goals: {
+    id?: number;
     strategy: number;
     category: 'business' | 'organizational';
     goal_text: string;
   }[];
 };
 
+const API = import.meta.env.VITE_API_BASE_URL;
+
 export const StrategicGoalForm: React.FC = () => {
-  const { register, control } = useFormContext<StrategicGoalFormData>();
+  const { register, control, setValue } = useFormContext<StrategicGoalFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: "goals"
   });
   
-  // Fetch an array of strategies
+  // Fetch existing strategic goals for per-item editing.
+  const [existingGoals, setExistingGoals] = useState<any[]>([]);
+  const accessToken = sessionStorage.getItem('accessToken');
+  useEffect(() => {
+    fetch(`${API}/strategic-goals/`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken || ''}`,
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const items = Array.isArray(data) ? data : (data.results || []);
+        setExistingGoals(items);
+      })
+      .catch((err) => console.error("Error fetching strategic goals", err));
+  }, [API, accessToken]);
+
+  // Fetch strategies for the dropdown.
   const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>(`${API}/strategies/`);
 
-  // Wrap addGoal in useCallback so it can be safely added to useEffect dependencies.
   const addGoal = useCallback(() => {
     append({
       strategy: 0,
@@ -32,12 +53,33 @@ export const StrategicGoalForm: React.FC = () => {
     });
   }, [append]);
 
-  // Add an initial goal if the array is empty.
-  React.useEffect(() => {
+  useEffect(() => {
     if (fields.length === 0) {
       addGoal();
     }
   }, [fields.length, addGoal]);
+
+  const handleExistingSelect = (index: number, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value;
+    if (id) {
+      const selected = existingGoals.find((goal) => goal.id.toString() === id);
+      if (selected) {
+        // Ensure the strategy field is a number. If it comes as an object, extract its id.
+        const goalToSet = {
+          ...selected,
+          strategy: typeof selected.strategy === 'object' ? selected.strategy.id : selected.strategy,
+        };
+        setValue(`goals.${index}`, goalToSet);
+      }
+    } else {
+      setValue(`goals.${index}`, {
+        strategy: 0,
+        category: 'business',
+        goal_text: ""
+      });
+    }
+  };
+  
 
   return (
     <div className="space-y-8">
@@ -55,6 +97,19 @@ export const StrategicGoalForm: React.FC = () => {
 
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          {/* Existing Goal Dropdown */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700">Select existing Strategic Goal (Edit existing records)</label>
+            <select onChange={(e) => handleExistingSelect(index, e)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+              <option value="">New Goal</option>
+              {existingGoals.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.goal_text.slice(0, 50)}
+                </option>
+              ))}
+            </select>
+          </div>
+          
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Strategic Goal {index + 1}</h3>
             {fields.length > 1 && (
@@ -116,3 +171,5 @@ export const StrategicGoalForm: React.FC = () => {
     </div>
   );
 };
+
+export default StrategicGoalForm;

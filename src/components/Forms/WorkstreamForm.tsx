@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
 import { SketchPicker } from 'react-color';
 import useFetch from '../../hooks/UseFetch';
@@ -8,10 +8,9 @@ import { Program, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
-const API = import.meta.env.VITE_API_BASE_URL;
-
 export type WorkstreamFormData = {
   workstreams: {
+    id?: number;
     program: number;
     name: string;
     vision?: string;
@@ -24,21 +23,38 @@ export type WorkstreamFormData = {
   }[];
 };
 
-export const WorkstreamForm: React.FC = () => {
+const WorkstreamForm: React.FC = () => {
   const { register, control, watch, setValue } = useFormContext<WorkstreamFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: "workstreams"
   });
   
-  // Ensure we fetch arrays so .map is available.
+  // State for existing workstreams for per-item editing.
+  const [existingWorkstreams, setExistingWorkstreams] = useState<any[]>([]);
+  const accessToken = sessionStorage.getItem('accessToken');
+  const API = import.meta.env.VITE_API_BASE_URL;
+  useEffect(() => {
+    fetch(`${API}/workstreams/`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken || ''}`,
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const items = Array.isArray(data) ? data : (data.results || []);
+        setExistingWorkstreams(items);
+      })
+      .catch((err) => console.error("Error fetching workstreams", err));
+  }, [API, accessToken]);
+
   const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program[]>(`${API}/programs/`);
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
 
-  // Map users to options for MultiSelect fields.
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
-  // Add a new workstream.
   const addWorkstream = useCallback(() => {
     append({
       program: 0,
@@ -59,7 +75,28 @@ export const WorkstreamForm: React.FC = () => {
     }
   }, [fields.length, addWorkstream]);
 
-  // Update multi-select values converting to numbers.
+  const handleExistingSelect = (index: number, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value;
+    if (id) {
+      const selected = existingWorkstreams.find((w) => w.id.toString() === id);
+      if (selected) {
+        setValue(`workstreams.${index}`, selected);
+      }
+    } else {
+      setValue(`workstreams.${index}`, {
+        program: 0,
+        name: "",
+        vision: "",
+        time_horizon: "",
+        workstream_leads: [],
+        team_members: [],
+        improvement_targets: [],
+        organizational_goals: [],
+        color: "#0000FF"
+      });
+    }
+  };
+
   const handleMultiSelectChange = (
     index: number,
     fieldName: string,
@@ -84,6 +121,19 @@ export const WorkstreamForm: React.FC = () => {
       
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          {/* Existing Workstream Dropdown */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700">Select existing Workstream (Edit existing records)</label>
+            <select onChange={(e) => handleExistingSelect(index, e)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+              <option value="">New Workstream</option>
+              {existingWorkstreams.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Workstream {index + 1}</h3>
             {fields.length > 1 && (
@@ -156,10 +206,7 @@ export const WorkstreamForm: React.FC = () => {
                 defaultValue="#0000FF"
                 render={({ field }) => (
                   <div className="mt-1">
-                    <SketchPicker
-                      color={field.value}
-                      onChangeComplete={(color) => field.onChange(color.hex)}
-                    />
+                    <SketchPicker color={field.value} onChangeComplete={(color) => field.onChange(color.hex)} />
                   </div>
                 )}
               />
@@ -170,9 +217,7 @@ export const WorkstreamForm: React.FC = () => {
                 label="Workstream Leads"
                 options={userOptions}
                 value={watch(`workstreams.${index}.workstream_leads`) || []}
-                onChange={(newValue) =>
-                  handleMultiSelectChange(index, 'workstream_leads', newValue)
-                }
+                onChange={(newValue) => handleMultiSelectChange(index, 'workstream_leads', newValue)}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select workstream leads..."
@@ -184,15 +229,13 @@ export const WorkstreamForm: React.FC = () => {
                 label="Team Members"
                 options={userOptions}
                 value={watch(`workstreams.${index}.team_members`) || []}
-                onChange={(newValue) =>
-                  handleMultiSelectChange(index, 'team_members', newValue)
-                }
+                onChange={(newValue) => handleMultiSelectChange(index, 'team_members', newValue)}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select team members..."
               />
             </div>
-            {/* Improvement Targets and Organizational Goals */}
+            {/* Improvement Targets */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Improvement Targets (comma separated)</label>
               <input
@@ -202,6 +245,7 @@ export const WorkstreamForm: React.FC = () => {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               />
             </div>
+            {/* Organizational Goals */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Organizational Goals (comma separated)</label>
               <input

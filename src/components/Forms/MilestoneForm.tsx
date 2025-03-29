@@ -6,10 +6,9 @@ import { StrategicGoal, Workstream, Milestone } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
-const API = import.meta.env.VITE_API_BASE_URL;
-
 export type MilestoneFormData = {
   milestones: {
+    id?: number;
     workstream: number;
     name: string;
     description?: string;
@@ -33,12 +32,11 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
     name: "milestones"
   });
   
-  // Ensure we fetch arrays so .map is available.
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
-  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
+  // Existing records fetch (for dropdown per item)
+  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>('http://127.0.0.1:8000/milestones/');
+  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>('http://127.0.0.1:8000/workstreams/');
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
 
-  // Explicitly type the map callbacks so that TS knows the parameter types.
   const strategicGoalOptions = strategicGoals
     ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))
     : [];
@@ -48,7 +46,6 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
     ...dependentMilestones.map((ms: Milestone) => ({ label: ms.name, value: ms.id }))
   ];
 
-  // Wrap addMilestone in useCallback and include it in the dependency array.
   const addMilestone = useCallback(() => {
     append({
       workstream: 0,
@@ -66,6 +63,28 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
       addMilestone();
     }
   }, [fields.length, addMilestone]);
+
+  // Handler for selecting an existing milestone for a given index.
+  const handleExistingSelect = (index: number, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value;
+    if (id) {
+      const selected = fetchedMilestones?.find((ms: Milestone) => ms.id.toString() === id);
+      if (selected) {
+        setValue(`milestones.${index}`, selected);
+      }
+    } else {
+      // Reset to default empty milestone
+      setValue(`milestones.${index}`, {
+        workstream: 0,
+        name: "",
+        description: "",
+        deadline: "",
+        status: "not_started",
+        strategic_goals: [],
+        dependencies: []
+      });
+    }
+  };
 
   // Convert any incoming (string | number) array to number[] before saving.
   const handleMultiSelectChange = (
@@ -93,6 +112,18 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
 
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          {/* Dropdown for existing milestone */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700">Select existing Milestone (Edit existing records)</label>
+            <select onChange={(e) => handleExistingSelect(index, e)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+              <option value="">New Milestone</option>
+              {fetchedMilestones?.map((ms: Milestone) => (
+                <option key={ms.id} value={ms.id}>
+                  {ms.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Milestone {index + 1}</h3>
             {fields.length > 1 && (
