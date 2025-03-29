@@ -6,10 +6,9 @@ import { Workstream, Milestone, Activity } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
-const API = import.meta.env.VITE_API_BASE_URL;
-
 export type ActivityFormData = {
   activities: {
+    id?: number;
     workstream?: number;
     milestone?: number;
     name: string;
@@ -35,27 +34,28 @@ export type ActivityFormProps = {
   dependentActivities: Activity[];
 };
 
-export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependentActivities }) => {
+const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependentActivities }) => {
   const { register, control, watch, setValue } = useFormContext<ActivityFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: "activities"
   });
 
-  // Ensure that activities and milestones are arrays so .map is available.
+  const API = import.meta.env.VITE_API_BASE_URL;
+
+  // Fetch existing activities for per-item dropdown
+  const { data: fetchedActivities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>(`${API}/activities/`);
   const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
   const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
-  const { data: activities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>(`${API}/activities/`);
 
-  // Merge fetched activities with dependentActivities from props.
+
   const mergedActivityOptions = [
-    ...(activities ? activities.map((a: Activity) => ({ label: a.name, value: a.id })) : []),
+    ...(fetchedActivities ? fetchedActivities.map((a: Activity) => ({ label: a.name, value: a.id })) : []),
     ...dependentActivities.map((a: Activity) => ({ label: a.name, value: a.id }))
   ];
 
   const milestoneOptions = milestones ? milestones.map((m: Milestone) => ({ label: m.name, value: m.id })) : [];
 
-  // Add a new empty activity if none exist.
   const addActivity = () => {
     append({
       workstream: undefined,
@@ -82,10 +82,40 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
     if (fields.length === 0) {
       addActivity();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields.length]);
 
-  // Convert incoming selected values (string|number)[] to number[]
+  // Handler for selecting an existing activity for a specific row.
+  const handleExistingSelect = (index: number, e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value;
+    if (id) {
+      const selected = fetchedActivities?.find((a: Activity) => a.id.toString() === id);
+      if (selected) {
+        setValue(`activities.${index}`, selected);
+      }
+    } else {
+      setValue(`activities.${index}`, {
+        workstream: undefined,
+        milestone: undefined,
+        name: "",
+        status: "not_started",
+        priority: 2,
+        target_start_date: "",
+        target_end_date: "",
+        prerequisite_activities: [],
+        parallel_activities: [],
+        successive_activities: [],
+        supported_milestones: [],
+        additional_milestones: [],
+        impacted_employee_groups: [],
+        change_leaders: [],
+        development_support: [],
+        external_resources: [],
+        corporate_resources: []
+      });
+    }
+  };
+
+  // Convert selected values to number[]
   const handleMultiSelectChange = (
     index: number,
     fieldName: keyof ActivityFormData['activities'][0],
@@ -110,6 +140,19 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
 
       {fields.map((field, index) => (
         <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+          {/* Existing Activity Dropdown */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700">Select existing Activity (Edit existing records)</label>
+            <select onChange={(e) => handleExistingSelect(index, e)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+              <option value="">New Activity</option>
+              {fetchedActivities?.map((a: Activity) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold">Activity {index + 1}</h3>
             {fields.length > 1 && (
@@ -169,13 +212,14 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
               )}
             </div>
 
+            {/* Existing record check warning */}
             {watch(`activities.${index}.milestone`) && watch(`activities.${index}.workstream`) && (
               <p className="text-red-500 text-sm mt-1">
                 An activity should not be both under a milestone and directly under a workstream!
               </p>
             )}
 
-            {/* Name Field */}
+            {/* Existing record is now handled; continue with other fields */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Name</label>
               <input
@@ -185,7 +229,6 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
               />
             </div>
             
-            {/* Priority Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Priority</label>
               <select
@@ -198,7 +241,6 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
               </select>
             </div>
             
-            {/* Status Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Status</label>
               <select
@@ -211,7 +253,6 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, de
               </select>
             </div>
             
-            {/* Date Fields */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Target Start Date</label>
               <input

@@ -5,20 +5,20 @@ import { User } from '../../types/model';
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-export type RoadmapFormData = {
+export type FlightmapFormData = {
   name: string;
   description?: string;
   owner: number;
 };
 
-export const RoadmapForm: React.FC = () => {
-  const { register } = useFormContext<RoadmapFormData>();
+export const FlightmapForm: React.FC = () => {
+  const { register } = useFormContext<FlightmapFormData>();
   // Fetch an array of users instead of a single User.
   const { data: users, loading, error } = useFetch<User[]>(`${API}/users/`);
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold mb-10">Roadmap Form</h2>
+      <h2 className="text-xl font-bold mb-10">Flightmap Form</h2>
       <div>
         <label className="block text-sm font-medium text-gray-700">Name</label>
         <input

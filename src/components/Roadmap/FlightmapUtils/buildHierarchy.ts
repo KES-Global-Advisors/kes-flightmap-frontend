@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { RoadmapData } from "@/types/roadmap";
+import { FlightmapData } from "@/types/roadmap";
 
-export function buildHierarchy(data: RoadmapData): any {
+export function buildHierarchy(data: FlightmapData): any {
   const mapNode = (node: any, type: string): any => ({
     id: node.id,
     name: node.name,

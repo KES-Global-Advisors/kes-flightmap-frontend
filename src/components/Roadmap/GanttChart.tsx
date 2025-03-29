@@ -1,6 +1,6 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt hoverable
+// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat flightmap
 import React, { useState, useEffect, MouseEvent, useRef } from 'react';
-import { RoadmapData } from '@/types/roadmap';
+import { FlightmapData } from '@/types/roadmap';
 import { useAuth } from '@/contexts/UserContext';
 import { updateTaskStatus } from './GanttUtils/updateTaskStatus';
 import { sendContribution } from './GanttUtils/sendContribution';
@@ -29,7 +29,7 @@ export interface GanttItem {
 }
 
 interface GanttChartProps {
-  data: RoadmapData;
+  data: FlightmapData;
 }
 
 function formatDate(date: Date): string {
