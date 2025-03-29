@@ -18,8 +18,8 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { name: 'Dashboard', icon: <Home size={20} />, url: '/dashboard' },
-  { name: 'Roadmaps', icon: <FolderOpen size={20} />, url: '/roadmaps' },
-  { name: 'Create Roadmaps', icon: <FileText size={20} />, url: '/create-roadmap' },
+  { name: 'Flightmaps', icon: <FolderOpen size={20} />, url: '/flightmaps' },
+  { name: 'Create Flightmaps', icon: <FileText size={20} />, url: '/create-flightmap' },
 ];
 
 

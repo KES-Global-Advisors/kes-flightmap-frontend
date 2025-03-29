@@ -8,7 +8,7 @@ import PasswordReset from './components/PasswordReset'
 import PasswordUpdate from './components/PasswordUpdate'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
-import RoadmapStepper from './pages/FormStepper'
+import FormStepper from './pages/FormStepper'
 import FlightmapListing from './pages/FlightmapListing'
 import { AuthProvider, useAuth } from '@/contexts/UserContext';
 import { ThemeProvider } from '@/contexts/ThemeProvider'
@@ -130,14 +130,14 @@ function App() {
                   <Navigate to="/dashboard" replace />
                 </ProtectedRoute>
               } />
-              <Route path="/roadmaps" element={
+              <Route path="/flightmaps" element={
                 <ProtectedRoute>
                   <FlightmapListing />
                 </ProtectedRoute>
               } />
-              <Route path="/create-roadmap" element={
+              <Route path="/create-flightmap" element={
                 <ProtectedRoute>
-                  <RoadmapStepper />
+                  <FormStepper />
                 </ProtectedRoute>
               } />
               <Route path="/settings" element={
