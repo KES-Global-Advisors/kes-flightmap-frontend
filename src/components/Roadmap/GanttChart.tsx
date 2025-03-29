@@ -1,4 +1,4 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat
+// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat flightmap
 import React, { useState, useEffect, MouseEvent, useRef } from 'react';
 import { FlightmapData } from '@/types/roadmap';
 import { useAuth } from '@/contexts/UserContext';
