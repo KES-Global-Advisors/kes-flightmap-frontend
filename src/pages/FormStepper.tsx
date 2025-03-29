@@ -60,6 +60,7 @@ const FormStepper: React.FC = () => {
   const [formData, setFormData] = useState<FormDataMap>({});
   const [showSuccess, setShowSuccess] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(Array(FORM_STEPS.length).fill(false));
+  const [isSubmitting, setIsSubmitting] = useState(false); // Add loading state
   const API = import.meta.env.VITE_API_BASE_URL;
 
   // Global state for editing single-record forms.
@@ -293,6 +294,8 @@ const FormStepper: React.FC = () => {
   };
 
   const onSubmitStep = async (data: AllFormData) => {
+    setIsSubmitting(true); // Set loading state to true when form is submitted
+    
     const isLastStep = currentStepIndex === FORM_STEPS.length - 1;
     const payloadArray = transformData(currentStepId, data);
     const results: unknown[] = [];
@@ -356,6 +359,8 @@ const FormStepper: React.FC = () => {
       }
     } catch (error) {
       console.error('Error saving form data:', error);
+    } finally {
+      setIsSubmitting(false); // Set loading state back to false after submission completes
     }
   };
 
@@ -399,6 +404,15 @@ const FormStepper: React.FC = () => {
 
   const CurrentStepComponent = FORM_STEPS[currentStepIndex].component;
   const RenderableComponent = CurrentStepComponent as React.FC;
+
+  // If submitting, show loading animation instead of the form
+  if (isSubmitting) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4" style={{ borderColor: themeColor }}></div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -501,7 +515,12 @@ const FormStepper: React.FC = () => {
               >
                 Back
               </button>
-              <button type="submit" style={{ backgroundColor: themeColor, cursor: 'pointer' }} className="text-white px-4 py-2 rounded-md">
+              <button 
+                type="submit" 
+                style={{ backgroundColor: themeColor, cursor: 'pointer' }} 
+                className="text-white px-4 py-2 rounded-md"
+                disabled={isSubmitting}
+              >
                 {currentStepIndex === FORM_STEPS.length - 1 ? 'Finish' : 'Next'}
               </button>
             </div>
