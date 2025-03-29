@@ -1,4 +1,4 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt hoverable
+// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat
 import React, { useState, useEffect, MouseEvent, useRef } from 'react';
 import { RoadmapData } from '@/types/roadmap';
 import { useAuth } from '@/contexts/UserContext';
