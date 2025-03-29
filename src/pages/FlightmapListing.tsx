@@ -1,7 +1,7 @@
 // cSpell:ignore workstream workstreams roadmaps
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
-import { RoadmapData } from '@/types/roadmap';
+import { FlightmapData } from '@/types/roadmap';
 import { useAuth } from '@/contexts/UserContext';
 import Modal from '@/components/Roadmap/Modal';
 import useFetch from '@/hooks/UseFetch';
@@ -58,13 +58,13 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   );
 };
 
-interface RoadmapCardProps {
-  roadmap: RoadmapData;
-  openModal: (roadmap: RoadmapData) => void;
+interface FlightmapCardProps {
+  roadmap: FlightmapData;
+  openModal: (roadmap: FlightmapData) => void;
   onDelete: (id: number) => void;
 }
 
-const RoadmapCard: React.FC<RoadmapCardProps> = ({ roadmap, openModal, onDelete }) => {
+const FlightmapCard: React.FC<FlightmapCardProps> = ({ roadmap, openModal, onDelete }) => {
   const { themeColor } = useContext(ThemeContext);
   const { user } = useAuth();
 
@@ -120,7 +120,7 @@ const RoadmapCard: React.FC<RoadmapCardProps> = ({ roadmap, openModal, onDelete 
                   className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 flex items-center gap-2"
                 >
                   <Trash2 className="w-4 h-4" />
-                  Delete Roadmap
+                  Delete Flightmap
                 </button>
               </div>
             </div>
@@ -170,9 +170,9 @@ const RoadmapCard: React.FC<RoadmapCardProps> = ({ roadmap, openModal, onDelete 
   );
 };
 
-const RoadmapListing: React.FC = () => {
+const FlightmapListing: React.FC = () => {
   const { themeColor } = useContext(ThemeContext);
-  const [selectedRoadmap, setSelectedRoadmap] = useState<RoadmapData | null>(null);
+  const [selectedRoadmap, setSelectedRoadmap] = useState<FlightmapData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const API = import.meta.env.VITE_API_BASE_URL;
 
@@ -180,7 +180,7 @@ const RoadmapListing: React.FC = () => {
     data: roadmaps,
     loading,
     error,
-  } = useFetch<RoadmapData[]>(`${API}/roadmaps/`);
+  } = useFetch<FlightmapData[]>(`${API}/roadmaps/`);
 
   const handleDelete = async (id: number) => {
     try {
@@ -229,7 +229,7 @@ const RoadmapListing: React.FC = () => {
     );
   }
 
-  const openModal = (roadmap: RoadmapData) => {
+  const openModal = (roadmap: FlightmapData) => {
     setSelectedRoadmap(roadmap);
     setShowModal(true);
   };
@@ -241,10 +241,10 @@ const RoadmapListing: React.FC = () => {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-6">Roadmaps</h1>
+      <h1 className="text-2xl font-bold mb-6">Flightmaps</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {roadmaps.map((roadmap) => (
-          <RoadmapCard 
+          <FlightmapCard 
             key={roadmap.id} 
             roadmap={roadmap} 
             openModal={openModal}
@@ -263,4 +263,4 @@ const RoadmapListing: React.FC = () => {
   );
 };
 
-export default RoadmapListing;
+export default FlightmapListing;

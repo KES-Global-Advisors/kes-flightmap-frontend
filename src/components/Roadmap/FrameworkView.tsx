@@ -1,13 +1,13 @@
 import React, { useEffect } from 'react';
 import {
-  RoadmapData,
+  FlightmapData,
   Strategy,
   Program,
   Workstream,
 } from '@/types/roadmap';
 
 interface FrameworkViewProps {
-  data: RoadmapData;
+  data: FlightmapData;
 }
 
 const FrameworkView: React.FC<FrameworkViewProps> = ({ data }) => {

@@ -129,7 +129,7 @@ export type StrategicGoal = {
   goal_text: string;
 };
 
-export interface RoadmapData {
+export interface FlightmapData {
   id: number;
   name: string;
   description: string;

@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// cSpell:ignore workstream workstreams roadmaps Renderable
+// cSpell:ignore workstream workstreams flightmaps Renderable flightmap
 import React, { useState, useContext, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Check } from 'lucide-react';
 
-import { RoadmapForm, RoadmapFormData } from '../components/Forms/RoadmapForm';
+import { FlightmapForm, FlightmapFormData } from '../components/Forms/FlightmapForm';
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
 import { StrategicGoalForm, StrategicGoalFormData } from '../components/Forms/StrategicGoalForm';
 import { ProgramForm, ProgramFormData } from '../components/Forms/ProgramForm';
@@ -17,7 +17,7 @@ import DependentMilestoneModal from '../components/Forms/Utils/DependentMileston
 import { Activity, Milestone } from '../types/model';
 
 type StepId =
-  | 'roadmaps'
+  | 'flightmaps'
   | 'strategies'
   | 'strategic-goals'
   | 'programs'
@@ -26,7 +26,7 @@ type StepId =
   | 'activities';
 
 interface FormDataMap {
-  roadmaps?: RoadmapFormData;
+  flightmaps?: FlightmapFormData;
   strategies?: StrategyFormData;
   'strategic-goals'?: StrategicGoalFormData;
   programs?: ProgramFormData;
@@ -36,7 +36,7 @@ interface FormDataMap {
 }
 
 type AllFormData =
-  | RoadmapFormData
+  | FlightmapFormData
   | StrategyFormData
   | StrategicGoalFormData
   | ProgramFormData
@@ -45,7 +45,7 @@ type AllFormData =
   | ActivityFormData;
 
 const FORM_STEPS = [
-  { id: 'roadmaps' as StepId, label: 'Roadmap', component: RoadmapForm },
+  { id: 'flightmaps' as StepId, label: 'Flightmap', component: FlightmapForm },
   { id: 'strategies' as StepId, label: 'Strategy', component: StrategyForm },
   { id: 'strategic-goals' as StepId, label: 'Strategic Goal', component: StrategicGoalForm },
   { id: 'programs' as StepId, label: 'Program', component: ProgramForm },
@@ -78,9 +78,9 @@ const FormStepper: React.FC = () => {
 
   const accessToken = sessionStorage.getItem('accessToken');
 
-  // For single-record forms (like roadmaps) we show a global dropdown.
+  // For single-record forms (like flightmaps) we show a global dropdown.
   useEffect(() => {
-    if (currentStepId === 'roadmaps') {
+    if (currentStepId === 'flightmaps') {
       fetch(`${API}/${currentStepId}/`, {
         headers: {
           'Authorization': `Bearer ${accessToken || ''}`,
@@ -114,8 +114,8 @@ const FormStepper: React.FC = () => {
   // Updated transformData: if an item already has an id, include it.
   const transformData = (stepId: StepId, data: AllFormData): unknown[] => {
     switch (stepId) {
-      case 'roadmaps': {
-        const { name, description, owner } = data as RoadmapFormData;
+      case 'flightmaps': {
+        const { name, description, owner } = data as FlightmapFormData;
         // For single-record form, check global selectedItemId if needed.
         const payload: any = { name, description, owner };
         return [selectedItemId ? { ...payload, id: Number(selectedItemId) } : payload];
@@ -301,7 +301,7 @@ const FormStepper: React.FC = () => {
       for (const item of payloadArray) {
         let url: string;
         let method: string;
-        if (currentStepId === 'roadmaps') {
+        if (currentStepId === 'flightmaps') {
           if (selectedItemId) {
             url = `${API}/${currentStepId}/${selectedItemId}/`;
             method = 'PATCH';
@@ -341,7 +341,7 @@ const FormStepper: React.FC = () => {
         [currentStepId]: results,
       }));
 
-      if (currentStepId === 'roadmaps') {
+      if (currentStepId === 'flightmaps') {
         setSelectedItemId(null);
       }
 
@@ -458,7 +458,7 @@ const FormStepper: React.FC = () => {
       </div>
 
       {/* Global Existing Item Dropdown (only for single-record forms) */}
-      {currentStepId === 'roadmaps' && (
+      {currentStepId === 'flightmaps' && (
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700">
             Select existing {currentStepId.slice(0, -1)}

@@ -9,7 +9,7 @@ import PasswordUpdate from './components/PasswordUpdate'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import RoadmapStepper from './pages/FormStepper'
-import RoadmapListing from './pages/RoadmapListing'
+import FlightmapListing from './pages/FlightmapListing'
 import { AuthProvider, useAuth } from '@/contexts/UserContext';
 import { ThemeProvider } from '@/contexts/ThemeProvider'
 import { ToastContainer } from 'react-toastify';
@@ -89,18 +89,6 @@ function App() {
         })
         .catch(err => console.error('Failed to get CSRF cookie:', err));
     }, []);
-    
-    // useEffect(() => {
-    //   fetch(`${API}    // useEffect(() => {
-    //   fetch(`${API}/users/csrf/`, {
-    //     method: 'GET',
-    //     credentials: 'include', // allows setting the csrftoken cookie
-    //   }).catch(err => console.error('Failed to get CSRF cookie:', err));
-    // }, []);/users/csrf/`, {
-    //     method: 'GET',
-    //     credentials: 'include', // allows setting the csrftoken cookie
-    //   }).catch(err => console.error('Failed to get CSRF cookie:', err));
-    // }, []);
   
   return (
     <>
@@ -144,7 +132,7 @@ function App() {
               } />
               <Route path="/roadmaps" element={
                 <ProtectedRoute>
-                  <RoadmapListing />
+                  <FlightmapListing />
                 </ProtectedRoute>
               } />
               <Route path="/create-roadmap" element={
