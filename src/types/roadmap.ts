@@ -1,89 +1,133 @@
+// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat
+
 /* ------------------------------------------------------------------
    1) Type Definitions
    ------------------------------------------------------------------ */
-   export interface Contributor {
+export interface Contributor {
+  id: number;
+  username?: string;
+  activity?: number;
+  user?: number;
+  milestone?: number;
+}
+
+export interface Activity {
+  id: number;
+  name: string;
+  status: 'not_started' | 'in_progress' | 'completed';
+  priority: number;
+  target_start_date: string;
+  target_end_date: string;
+  completed_date: string | null;
+  delay_days: number;
+  is_overdue: boolean;
+  contributors: Contributor[];
+  milestone: number;
+  workstream: number;
+  supported_milestones: number[];
+  additional_milestones: number[];
+  actual_duration: number | null | undefined;
+  // Additional optional fields from Model.ts:
+  prerequisite_activities?: number[];
+  parallel_activities?: number[];
+  successive_activities?: number[];
+  impacted_employee_groups?: string[];
+  change_leaders?: string[];
+  development_support?: string[];
+  external_resources?: string[];
+  corporate_resources?: string[];
+}
+
+export interface Milestone {
+  id: number;
+  name: string;
+  description: string;
+  status: string;
+  deadline: string;
+  completed_date: string | null;
+  timeframe_category: string;
+  current_progress: number;
+  activities: Activity[];
+  contributors: Contributor[];
+  dependentMilestones?: Milestone[];
+  // Additional optional fields from Model.ts:
+  workstream?: number;
+  strategic_goals?: number[];
+}
+
+export interface Workstream {
+  id: number;
+  name: string;
+  vision: string;
+  time_horizon: string;
+  milestones: Milestone[];
+  activities: Activity[];
+  color: string;
+  contributors: {
     id: number;
-    username?: string;
-    activity?: number;
-    user?: number;
-    milestone?: number;
-  }
-   export interface Activity {
-    id: number;
-    name: string;
-    status: 'not_started' | 'in_progress' | 'completed';
-    priority: number;
-    target_start_date: string;
-    target_end_date: string;
-    completed_date: string | null;
-    delay_days: number;
-    is_overdue: boolean;
-    contributors: Contributor[];
-    milestone: number;
-    workstream: number;
-    supported_milestones: number[];
-    additional_milestones: number[];
-    actual_duration: number | null | undefined;
-  }
-  
-  export interface Milestone {
-    id: number;
-    name: string;
-    description: string;
-    status: string;
-    deadline: string;
-    completed_date: string | null;
-    timeframe_category: string;
-    current_progress: number;
-    activities: Activity[];
-    contributors: Contributor[];
-    dependentMilestones?: Milestone[];
-  }
-  
-  export interface Workstream {
-    id: number;
-    name: string;
-    vision: string;
-    time_horizon: string;
-    milestones: Milestone[];
-    activities: Activity[];
-    color: string;
-    contributors: {
-      id: number;
-      username: string;
-    }[];
-    progress_summary: {
-      total_milestones: number;
-      completed_milestones: number;
-      in_progress_milestones: number;
-    };
-  }
-  
-  export interface Program {
-    id: number;
-    name: string;
-    vision: string;
-    time_horizon: string;
-    workstreams: Workstream[];
-    progress: {
-      percentage: number;
-      total: number;
-      completed: number;
-    };
-  }
-  
-  export interface Strategy {
-    id: number;
-    name: string;
-    tagline: string;
-    vision: string;
-    time_horizon: string;
-    programs: Program[];
-    goal_summary: {
-      business_goals: number;
-      organizational_goals: number;
-    };
-  }
+    username: string;
+  }[];
+  progress_summary: {
+    total_milestones: number;
+    completed_milestones: number;
+    in_progress_milestones: number;
+  };
+  // Additional optional fields from Model.ts:
+  program?: number;
+  workstream_leads?: number[];
+  team_members?: number[];
+  improvement_targets?: string[];
+  organizational_goals?: string[];
+}
+
+export interface Program {
+  id: number;
+  name: string;
+  vision: string;
+  time_horizon: string;
+  workstreams: Workstream[];
+  progress: {
+    percentage: number;
+    total: number;
+    completed: number;
+  };
+  // Additional optional fields from Model.ts:
+  strategy?: number;
+  executive_sponsors?: number[];
+  program_leads?: number[];
+  workforce_sponsors?: number[];
+  key_improvement_targets?: number[];
+  key_organizational_goals?: number[];
+  strategicObjectives?: {
+    business?: string[];
+    organizational?: string[];
+  };
+}
+
+export interface Strategy {
+  id: number;
+  name: string;
+  tagline: string;
+  vision: string;
+  time_horizon: string;
+  programs: Program[];
+  goal_summary: {
+    business_goals: number;
+    organizational_goals: number;
+  };
+  // Additional optional fields from Model.ts:
+  roadmap?: number;
+  executive_sponsors?: number[];
+  strategy_leads?: number[];
+  communication_leads?: number[];
+}
+
+export type StrategicGoal = {
+  id: number;
+  strategy: number; // Reference to Strategy
+  category: 'business' | 'organizational';
+  goal_text: string;
+};
 
 export interface RoadmapData {
   id: number;
@@ -99,3 +143,4 @@ export interface RoadmapData {
     overdue: number;
   };
 }
+

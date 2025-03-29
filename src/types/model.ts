@@ -1,3 +1,4 @@
+// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat
   export type User = {
     id: number;
     name: string;
