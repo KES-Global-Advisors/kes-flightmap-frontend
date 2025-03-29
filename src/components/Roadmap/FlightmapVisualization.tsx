@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
-import { RoadmapData } from "@/types/roadmap";
+import { FlightmapData } from "@/types/roadmap";
 
 // Utility components
 import JSONExportButton from "./FlightmapUtils/JSONExportButton";
@@ -126,7 +126,7 @@ function getLegendColor(
   }
 }
 
-const RoadmapVisualization: React.FC<{ data: RoadmapData }> = ({ data }) => {
+const RoadmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
 

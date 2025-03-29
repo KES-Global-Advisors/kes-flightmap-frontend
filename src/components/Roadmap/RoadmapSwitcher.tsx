@@ -3,10 +3,10 @@ import { useState } from 'react';
 import RoadmapVisualization from './FlightmapVisualization';
 import GanttChart from './GanttChart';
 import FrameworkView from './FrameworkView';
-import { RoadmapData } from '@/types/roadmap';
+import { FlightmapData } from '@/types/roadmap';
 
 interface RoadmapSwitcherProps {
-  roadmap: RoadmapData;
+  roadmap: FlightmapData;
 }
 
 const RoadmapSwitcher: React.FC<RoadmapSwitcherProps> = ({ roadmap }) => {
