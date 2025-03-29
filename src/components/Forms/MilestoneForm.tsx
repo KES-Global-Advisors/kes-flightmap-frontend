@@ -31,11 +31,12 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
     control,
     name: "milestones"
   });
+  const API = import.meta.env.VITE_API_BASE_URL;
   
   // Existing records fetch (for dropdown per item)
-  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>('http://127.0.0.1:8000/milestones/');
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>('http://127.0.0.1:8000/workstreams/');
-  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>('http://127.0.0.1:8000/strategic-goals/');
+  const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
+  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
+  const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
 
   const strategicGoalOptions = strategicGoals
     ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))

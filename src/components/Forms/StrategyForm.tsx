@@ -51,7 +51,7 @@ export const StrategyForm: React.FC = () => {
   }, [API, accessToken]);
 
   // Fetch arrays for roadmaps and users.
-  const { data: roadmaps, loading: loadingRoadmaps, error: errorRoadmaps } = useFetch<Roadmap[]>(`${API}/roadmaps/`);
+  const { data: roadmaps, loading: loadingRoadmaps, error: errorRoadmaps } = useFetch<Roadmap[]>(`${API}/flightmaps/`);
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
 
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
