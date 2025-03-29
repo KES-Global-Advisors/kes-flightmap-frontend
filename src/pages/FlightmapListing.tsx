@@ -1,4 +1,4 @@
-// cSpell:ignore workstream workstreams roadmaps
+// cSpell:ignore workstream workstreams roadmaps flightmaps
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { FlightmapData } from '@/types/roadmap';
@@ -180,12 +180,12 @@ const FlightmapListing: React.FC = () => {
     data: roadmaps,
     loading,
     error,
-  } = useFetch<FlightmapData[]>(`${API}/roadmaps/`);
+  } = useFetch<FlightmapData[]>(`${API}/flightmaps/`);
 
   const handleDelete = async (id: number) => {
     try {
       const accessToken = sessionStorage.getItem('accessToken');
-      const response = await fetch(`${API}/roadmaps/${id}/`, {
+      const response = await fetch(`${API}/flightmaps/${id}/`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
