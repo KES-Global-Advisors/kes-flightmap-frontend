@@ -154,7 +154,7 @@ const FlightmapCard: React.FC<FlightmapCardProps> = ({ roadmap, openModal, onDel
           style={{ backgroundColor: themeColor, cursor: 'pointer' }}
           className="w-full mt-4 text-white px-6 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center group"
         >
-          <span>View Roadmap</span>
+          <span>View Flightmap</span>
           <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
@@ -224,7 +224,7 @@ const FlightmapListing: React.FC = () => {
   if (!roadmaps || !roadmaps.length) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        No roadmaps available.
+        No flightmaps available.
       </div>
     );
   }
