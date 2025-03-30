@@ -1,15 +1,15 @@
 // cSpell:ignore workstream workstreams roadmaps Flightmap Gantt
 import { useState } from 'react';
-import RoadmapVisualization from './FlightmapVisualization';
+import FlightmapVisualization from './FlightmapVisualization';
 import GanttChart from './GanttChart';
 import FrameworkView from './FrameworkView';
 import { FlightmapData } from '@/types/roadmap';
 
-interface RoadmapSwitcherProps {
+interface FlightmapSwitcherProps {
   roadmap: FlightmapData;
 }
 
-const RoadmapSwitcher: React.FC<RoadmapSwitcherProps> = ({ roadmap }) => {
+const FlightmapSwitcher: React.FC<FlightmapSwitcherProps> = ({ roadmap }) => {
   const [viewMode, setViewMode] = useState<'flightmap' | 'gantt' | 'framework' >('flightmap');
 
   return (
@@ -35,11 +35,11 @@ const RoadmapSwitcher: React.FC<RoadmapSwitcherProps> = ({ roadmap }) => {
         </button>
       </div>
 
-      {viewMode === 'flightmap' && <RoadmapVisualization data={roadmap} />}
+      {viewMode === 'flightmap' && <FlightmapVisualization data={roadmap} />}
       {viewMode === 'gantt' && <GanttChart data={roadmap} />}
       {viewMode === 'framework' && <FrameworkView data={roadmap} />}
     </div>
   );
 };
 
-export default RoadmapSwitcher;
+export default FlightmapSwitcher;

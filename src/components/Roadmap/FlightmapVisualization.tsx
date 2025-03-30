@@ -126,7 +126,7 @@ function getLegendColor(
   }
 }
 
-const RoadmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
+const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
 
@@ -730,4 +730,4 @@ const RoadmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
   );
 };
 
-export default RoadmapVisualization;
+export default FlightmapVisualization;

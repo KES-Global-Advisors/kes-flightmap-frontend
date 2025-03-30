@@ -5,7 +5,7 @@ import { FlightmapData } from '@/types/roadmap';
 import { useAuth } from '@/contexts/UserContext';
 import Modal from '@/components/Roadmap/Modal';
 import useFetch from '@/hooks/UseFetch';
-import RoadmapSwitcher from '@/components/Roadmap/RoadmapSwitcher';
+import FlightmapSwitcher from '@/components/Roadmap/FlightmapSwitcher';
 import { ChevronRight, MoreVertical, Trash2, X } from 'lucide-react';
 
 interface ConfirmationDialogProps {
@@ -256,7 +256,7 @@ const FlightmapListing: React.FC = () => {
       {showModal && selectedRoadmap && (
         <Modal onClose={closeModal}>
           <h2 className="text-xl font-bold mb-4">{selectedRoadmap.name}</h2>
-          <RoadmapSwitcher roadmap={selectedRoadmap} />
+          <FlightmapSwitcher roadmap={selectedRoadmap} />
         </Modal>
       )}
     </div>
