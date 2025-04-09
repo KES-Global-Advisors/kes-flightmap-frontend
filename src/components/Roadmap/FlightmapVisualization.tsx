@@ -468,6 +468,8 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       }
     });
 
+    activitiesGroup.lower();
+    
     /**
      * Adds a label along an activity path.
      * @param path - The SVG path element
@@ -512,7 +514,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .append("marker")
       .attr("id", "arrow")
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 28)
+      .attr("refX", 50)
       .attr("refY", 0)
       .attr("markerWidth", 6)
       .attr("markerHeight", 6)
