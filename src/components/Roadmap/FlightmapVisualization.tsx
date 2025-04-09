@@ -15,8 +15,9 @@ import Tooltip from "./FlightmapUtils/Tooltip";
 import { getTooltipContent } from "./FlightmapUtils/getTooltip";
 
 /**
- * getStatusColor:
  * Determines color for status indicators.
+ * @param status - The status of the milestone or activity
+ * @returns A hex color code
  */
 function getStatusColor(status: string): string {
   switch (status) {
@@ -28,30 +29,19 @@ function getStatusColor(status: string): string {
       return "#9ca3af"; // gray
   }
 }
+
 /**
- * Collect workstreams, milestones, and activities from the new parent-child milestone hierarchy.
+ * Extracts workstreams, milestones, and activities from the hierarchical data.
+ * @param data - The raw flightmap data
+ * @returns An object containing workstreams and activities
  */
 function extractMilestonesAndActivities(data: FlightmapData) {
-  // 1. Convert raw data into a hierarchical node structure
   const rootNode = buildHierarchy(data);
-
-  // Maps of objects we discover
   const workstreams: {
-    [id: number]: {
-      id: number;
-      name: string;
-      color: string;
-      milestones: any[];
-    };
+    [id: number]: { id: number; name: string; color: string; milestones: any[] };
   } = {};
   const activities: any[] = [];
 
-  /**
-   * Recursively walk the tree, collecting:
-   * - Workstreams (for the vertical dimension)
-   * - Milestones (grouped by their workstream)
-   * - Activities (attached to each milestone or workstream)
-   */
   function visit(node: any, currentWorkstreamId?: number) {
     if (node.type === "workstream") {
       currentWorkstreamId = node.id;
@@ -62,17 +52,13 @@ function extractMilestonesAndActivities(data: FlightmapData) {
         milestones: [],
       };
     }
-
     if (node.type === "milestone" && currentWorkstreamId && workstreams[currentWorkstreamId]) {
-      // Store the milestone in the correct workstream group
       workstreams[currentWorkstreamId].milestones.push({
         ...node,
         workstreamId: currentWorkstreamId,
       });
     }
-
     if (node.type === "activity" && currentWorkstreamId != null) {
-      // Find the parent milestone in the chain
       let parentMilestoneNode: any = node.parent;
       while (parentMilestoneNode && parentMilestoneNode.type !== "milestone") {
         parentMilestoneNode = parentMilestoneNode.parent;
@@ -82,7 +68,6 @@ function extractMilestonesAndActivities(data: FlightmapData) {
           ...node,
           workstreamId: currentWorkstreamId,
           sourceMilestoneId: parentMilestoneNode.id,
-          // If your code still supports supported_milestones, etc.
           targetMilestoneIds: [
             ...(node.supported_milestones || []),
             ...(node.additional_milestones || []),
@@ -94,36 +79,25 @@ function extractMilestonesAndActivities(data: FlightmapData) {
         });
       }
     }
-
-    // Recurse on children
     if (node.children) {
       node.children.forEach((child: any) => {
-        // Set parent pointer (helps in the loop above)
         child.parent = node;
         visit(child, currentWorkstreamId);
       });
     }
   }
-
   visit(rootNode);
 
-  // 2. Add “virtual” activity edges so that the parent milestone’s activities connect
-  //    to its direct child milestones.
   function linkParentActivities(node: any) {
     if (node.type === "milestone" && node.children) {
-      // Separate out child milestone nodes from child activity nodes
       const childMilestones = node.children.filter((c: any) => c.type === "milestone");
       const milestoneActivities = node.children.filter((c: any) => c.type === "activity");
-
-      // For each child milestone, create an activity connection from each parent's activity
       childMilestones.forEach((childMilestone: any) => {
         milestoneActivities.forEach((activityNode: any) => {
-          // Only create a line if we haven’t done so already
           activities.push({
-            ...activityNode, // copy the fields from the existing activity
+            ...activityNode,
             sourceMilestoneId: node.id,
             targetMilestoneIds: [childMilestone.id],
-            // Because these are parent→child lines, we don’t rely on supported_milestones
             autoConnect: false,
           });
         });
@@ -135,24 +109,18 @@ function extractMilestonesAndActivities(data: FlightmapData) {
   }
   linkParentActivities(rootNode);
 
-  // Return our data arrays
-  return {
-    workstreams: Object.values(workstreams),
-    activities,
-  };
+  return { workstreams: Object.values(workstreams), activities };
 }
 
-
 /**
- * Process milestone deadlines to create timeline markers.
+ * Processes milestone deadlines to create timeline markers.
+ * @param milestones - Array of milestones
+ * @returns Array of unique dates
  */
 function processDeadlines(milestones: any[]) {
-  // Extract all deadline dates.
   const allDeadlines = milestones
     .filter((m) => m.deadline)
     .map((m) => new Date(m.deadline));
-
-  // If no deadlines, generate a default timeline.
   if (allDeadlines.length === 0) {
     const now = new Date();
     const oneMonthLater = new Date(now);
@@ -161,19 +129,17 @@ function processDeadlines(milestones: any[]) {
     twoMonthsLater.setMonth(now.getMonth() + 2);
     return [now, oneMonthLater, twoMonthsLater].sort((a, b) => a.getTime() - b.getTime());
   }
-
-  // Sort and de-duplicate dates.
-  const uniqueDates = Array.from(new Set(allDeadlines.map((d) => d.toISOString().split("T")[0])))
+  const uniqueDates = Array.from(
+    new Set(allDeadlines.map((d) => d.toISOString().split("T")[0]))
+  )
     .map((dateStr) => new Date(dateStr))
     .sort((a, b) => a.getTime() - b.getTime());
-
   return uniqueDates;
 }
 
 const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
-
   const [tooltip, setTooltip] = useState({
     content: "",
     left: 0,
@@ -185,7 +151,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     const svgEl = d3.select(svgRef.current);
     svgEl.selectAll("*").remove();
 
-    // Dimensions and margins.
     const width = window.innerWidth;
     const height = window.innerHeight * 0.8;
     const margin = { top: 40, right: 150, bottom: 30, left: 150 };
@@ -198,54 +163,39 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .attr("viewBox", `0 0 ${width} ${height}`)
       .attr("class", "bg-white");
 
-    const container = svgEl
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+    const container = svgEl.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Zoom behavior.
-    zoomRef.current = d3
-      .zoom()
-      .scaleExtent([0.5, 5])
-      .on("zoom", (event) => {
-        container.attr("transform", event.transform);
-      });
-    svgEl.call(zoomRef.current as unknown as (
-      selection: d3.Selection<SVGSVGElement | null, unknown, null, undefined>
-    ) => void);
+    zoomRef.current = d3.zoom().scaleExtent([0.5, 5]).on("zoom", (event) => {
+      container.attr("transform", event.transform);
+    });
+    svgEl.call(
+      zoomRef.current as unknown as (
+        selection: d3.Selection<SVGSVGElement | null, unknown, null, undefined>
+      ) => void
+    );
 
-    // Extract flightmap data.
     const { workstreams, activities } = extractMilestonesAndActivities(data);
-
-    // Get all milestones.
-    const allMilestones = workstreams.flatMap(ws => ws.milestones);
-
-    // Get timeline markers from deadlines.
+    const allMilestones = workstreams.flatMap((ws) => ws.milestones);
     const timelineMarkers = processDeadlines(allMilestones);
 
-    // Create horizontal scale for timeline.
-    const xScale = d3.scaleTime()
-      .domain([
-        d3.min(timelineMarkers) || new Date(), 
-        d3.max(timelineMarkers) || new Date()
-      ])
+    const xScale = d3
+      .scaleTime()
+      .domain([d3.min(timelineMarkers) || new Date(), d3.max(timelineMarkers) || new Date()])
       .range([0, contentWidth])
       .nice();
 
-    // Create vertical scale for workstreams.
-    const yScale = d3.scalePoint()
-      .domain(workstreams.map(ws => ws.id.toString()))
+    const yScale = d3
+      .scalePoint()
+      .domain(workstreams.map((ws) => ws.id.toString()))
       .range([100, contentHeight - 100])
       .padding(1.0);
 
-    // Map to store milestone coordinates (for connecting activities).
-    const milestoneCoordinates: { [id: number]: { x: number, y: number } } = {};
+    const milestoneCoordinates: { [id: number]: { x: number; y: number } } = {};
 
-    // Draw vertical timeline markers.
+    // Draw timeline markers
     const timelineGroup = container.append("g").attr("class", "timeline");
-    timelineMarkers.forEach(date => {
+    timelineMarkers.forEach((date) => {
       const x = xScale(date);
-
-      // Draw vertical line.
       timelineGroup
         .append("line")
         .attr("x1", x)
@@ -254,8 +204,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .attr("y2", contentHeight)
         .attr("stroke", "#e5e7eb")
         .attr("stroke-width", 1);
-
-      // Add date label.
       timelineGroup
         .append("text")
         .attr("x", x)
@@ -263,15 +211,13 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .attr("text-anchor", "middle")
         .attr("font-size", "12px")
         .attr("fill", "#6b7280")
-        .text(date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }));
+        .text(date.toLocaleDateString(undefined, { month: "short", year: "numeric" }));
     });
 
-    // Draw workstream baselines.
+    // Draw workstreams
     const workstreamGroup = container.append("g").attr("class", "workstreams");
-    workstreams.forEach(workstream => {
+    workstreams.forEach((workstream) => {
       const y = yScale(workstream.id.toString()) || 0;
-
-      // Draw workstream label.
       workstreamGroup
         .append("text")
         .attr("x", -10)
@@ -281,8 +227,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .attr("font-weight", "bold")
         .attr("fill", workstream.color)
         .text(workstream.name);
-
-      // Draw workstream baseline.
       workstreamGroup
         .append("line")
         .attr("x1", 0)
@@ -295,28 +239,23 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .attr("stroke-dasharray", "4 2");
     });
 
-    // Draw milestones.
+    // Draw milestones
     const milestonesGroup = container.append("g").attr("class", "milestones");
-    // Sort milestones in chronological order.
-    const sortedMilestones = allMilestones.slice().sort((a, b) => {
-      const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
-      const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
-      return dateA.getTime() - dateB.getTime();
-    });
+    const sortedMilestones = allMilestones
+      .slice()
+      .sort((a, b) => {
+        const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
+        const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
+        return dateA.getTime() - dateB.getTime();
+      });
 
-    sortedMilestones.forEach(milestone => {
-      const workstreamId = milestone.workstreamId;
-      const workstream = workstreams.find(ws => ws.id === workstreamId);
+    sortedMilestones.forEach((milestone) => {
+      const workstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
       if (!workstream) return;
-
-      // Calculate milestone position.
       const x = milestone.deadline ? xScale(new Date(milestone.deadline)) : 20;
-      const y = yScale(workstreamId.toString()) || 0;
-
-      // Save coordinates for connecting activities.
+      const y = yScale(workstream.id.toString()) || 0;
       milestoneCoordinates[milestone.id] = { x, y };
 
-      // Draw milestone as a circle.
       milestonesGroup
         .append("circle")
         .attr("cx", x)
@@ -344,7 +283,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           setTooltip((prev) => ({ ...prev, visible: false }));
         });
 
-      // Add milestone label inside the circle.
       const textEl = milestonesGroup
         .append("text")
         .attr("x", x)
@@ -356,7 +294,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .text(milestone.name);
       wrapText(textEl, 60);
 
-      // Draw status marker above the milestone.
       if (milestone.status) {
         const statusStroke = getStatusColor(milestone.status);
         milestonesGroup
@@ -395,45 +332,61 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       }
     });
 
-    // Process activities to auto-connect consecutive milestones within each workstream.
-    workstreams.forEach(workstream => {
-      const wsMilestones = workstream.milestones.slice().sort((a, b) => {
-        const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
-        const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
-        return dateA.getTime() - dateB.getTime();
-      });
+    // Auto-connect activities
+    workstreams.forEach((workstream) => {
+      const wsMilestones = workstream.milestones
+        .slice()
+        .sort((a, b) => {
+          const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
+          const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
+          return dateA.getTime() - dateB.getTime();
+        });
       activities
-        .filter(a => a.workstreamId === workstream.id && a.autoConnect)
-        .forEach(activity => {
-          const sourceMilestoneIndex = wsMilestones.findIndex(m => m.id === activity.sourceMilestoneId);
+        .filter((a) => a.workstreamId === workstream.id && a.autoConnect)
+        .forEach((activity) => {
+          const sourceMilestoneIndex = wsMilestones.findIndex(
+            (m) => m.id === activity.sourceMilestoneId
+          );
           if (sourceMilestoneIndex >= 0 && sourceMilestoneIndex < wsMilestones.length - 1) {
             activity.targetMilestoneIds = [wsMilestones[sourceMilestoneIndex + 1].id];
           }
         });
     });
 
-    // Draw activity connections with text labels.
+    // Draw activities
     const activitiesGroup = container.append("g").attr("class", "activities");
-    const linkGenerator = d3.linkHorizontal();
-
-    activities.forEach(activity => {
-      const source = milestoneCoordinates[activity.sourceMilestoneId];
-      if (!source) return;
-
+    const connectionGroups: { [key: string]: any[] } = {};
+    activities.forEach((activity) => {
+      const sourceId = activity.sourceMilestoneId;
       (activity.targetMilestoneIds || []).forEach((targetId: number) => {
-        const target = milestoneCoordinates[targetId];
-        if (!target) return;
+        const key = `${sourceId}-${targetId}`;
+        if (!connectionGroups[key]) {
+          connectionGroups[key] = [];
+        }
+        connectionGroups[key].push(activity);
+      });
+    });
 
-        const workstream = workstreams.find(ws => ws.id === activity.workstreamId);
+    Object.entries(connectionGroups).forEach(([key, groupActivities]) => {
+      const [sourceId, targetId] = key.split("-").map(Number);
+      const source = milestoneCoordinates[sourceId];
+      const target = milestoneCoordinates[targetId];
+      if (!source || !target) return;
+
+      if (groupActivities.length === 1) {
+        const activity = groupActivities[0];
+        const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
         if (!workstream) return;
 
-        // Draw curved line for the activity.
         const path = activitiesGroup
           .append("path")
-          .attr("d", linkGenerator({
-            source: [source.x, source.y],
-            target: [target.x, target.y],
-          } as DefaultLinkObject) ?? "")
+          .attr(
+            "d",
+            d3.linkHorizontal()({
+              source: [source.x, source.y],
+              target: [target.x, target.y],
+            } as DefaultLinkObject) ?? ""
+          )
           .attr("fill", "none")
           .attr("stroke", workstream.color)
           .attr("stroke-width", 1.5)
@@ -457,41 +410,105 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             setTooltip((prev) => ({ ...prev, visible: false }));
           });
 
-        // Add text along the activity path.
-        const pathNode = path.node();
-        if (pathNode && activity.name) {
-          const pathLength = pathNode.getTotalLength();
-          const midpoint = pathNode.getPointAtLength(pathLength / 2);
+        addActivityLabel(path, activity);
+      } else {
+        const centerX = (source.x + target.x) / 2;
+        const centerY = (source.y + target.y) / 2;
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        if (length === 0) return; // Skip if source and target overlap
 
-          // Add background rectangle for readability.
-          activitiesGroup
-            .append("rect")
-            .attr("x", midpoint.x - 60)
-            .attr("y", midpoint.y - 10)
-            .attr("width", 120)
-            .attr("height", 20)
-            .attr("fill", "white")
-            .attr("fill-opacity", 0.8)
-            .attr("rx", 3)
-            .attr("ry", 3);
+        const perpVectorX = -dy / length; // Perpendicular vector (rotated 90° counterclockwise)
+        const perpVectorY = dx / length;
+        const someScale = 50; // Fixed scale for curve offset (adjustable)
 
-          // Add activity description text.
-          const textEl = activitiesGroup
-            .append("text")
-            .attr("x", midpoint.x)
-            .attr("y", midpoint.y)
-            .attr("text-anchor", "middle")
-            .attr("dominant-baseline", "middle")
-            .attr("font-size", "10px")
-            .attr("fill", "#4b5563")
-            .text(activity.name);
-          wrapText(textEl, 110);
-        }
-      });
+        groupActivities.forEach((activity, index) => {
+          const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
+          if (!workstream) return;
+
+          // Calculate offset to distribute curves symmetrically
+          const offset = index - (groupActivities.length - 1) / 2;
+          const controlX = centerX + offset * perpVectorX * someScale;
+          const controlY = centerY + offset * perpVectorY * someScale;
+
+          const pathData = `
+            M ${source.x},${source.y}
+            Q ${controlX},${controlY} ${target.x},${target.y}
+          `;
+
+          const path = activitiesGroup
+            .append("path")
+            .attr("d", pathData)
+            .attr("fill", "none")
+            .attr("stroke", workstream.color)
+            .attr("stroke-width", 1.5)
+            .attr("marker-end", "url(#arrow)")
+            .on("mouseover", (event) => {
+              setTooltip({
+                content: getTooltipContent({ data: activity }),
+                left: event.pageX + 10,
+                top: event.pageY - 28,
+                visible: true,
+              });
+            })
+            .on("mousemove", (event) => {
+              setTooltip((prev) => ({
+                ...prev,
+                left: event.pageX + 10,
+                top: event.pageY - 28,
+              }));
+            })
+            .on("mouseout", () => {
+              setTooltip((prev) => ({ ...prev, visible: false }));
+            });
+
+          addActivityLabel(path, activity);
+        });
+      }
     });
 
-    // Define arrow marker for activity lines.
-    svgEl.append("defs")
+    /**
+     * Adds a label along an activity path.
+     * @param path - The SVG path element
+     * @param activity - The activity data
+     */
+    function addActivityLabel(
+      path: d3.Selection<SVGPathElement, unknown, null, undefined>,
+      activity: any
+    ) {
+      const pathNode = path.node();
+      if (pathNode && activity.name) {
+        const pathLength = pathNode.getTotalLength();
+        const midpoint = pathNode.getPointAtLength(pathLength / 2);
+
+        activitiesGroup
+          .append("rect")
+          .attr("x", midpoint.x - 60)
+          .attr("y", midpoint.y - 10)
+          .attr("width", 170)
+          .attr("height", 20)
+          .attr("fill", "white")
+          .attr("fill-opacity", 0.5)
+          .attr("rx", 3)
+          .attr("ry", 3);
+
+        const textEl = activitiesGroup
+          .append("text")
+          .attr("x", midpoint.x)
+          .attr("y", midpoint.y)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "6px")
+          .attr("fill", "#4b5563")
+          .text(activity.name);
+        wrapText(textEl, 220);
+      }
+    }
+
+    // Define arrow marker
+    svgEl
+      .append("defs")
       .append("marker")
       .attr("id", "arrow")
       .attr("viewBox", "0 -5 10 10")
@@ -504,7 +521,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .attr("d", "M0,-5L10,0L0,5")
       .attr("fill", "#64748b");
 
-    // Add legend.
+    // Add legend
     const legendData = [
       { type: "milestone", label: "Milestone", status: "not_started" },
       { type: "milestone", label: "Completed Milestone", status: "completed" },
@@ -524,7 +541,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .append("g")
       .attr("class", "legend-item")
       .attr("transform", (_, i) => `translate(0, ${i * legendItemHeight})`)
-      .each(function(d) {
+      .each(function (d) {
         const g = d3.select(this);
         const shapeSize = 15;
         if (d.type === "milestone") {
