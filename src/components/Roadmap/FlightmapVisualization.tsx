@@ -536,7 +536,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           .append("circle")
           .attr("cx", x)
           .attr("cy", y)
-          .attr("r", 35)
+          .attr("r", 50)
           .attr("fill", milestone.status === "completed" ? "#ccc" : workstream.color)
           .attr("stroke", milestone.status === "completed" ? "#ccc" : d3.color(workstream.color)?.darker(0.5) + "")
           .attr("stroke-width", 1)
@@ -682,7 +682,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("font-size", "6px")
-          .attr("fill", "#4b5563")
+          .attr("fill", "#000000")
           .text(activity.name);
         wrapText(textEl, 220);
       }
@@ -694,7 +694,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .append("marker")
       .attr("id", "arrow")
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 50)
+      .attr("refX", 68)
       .attr("refY", 0)
       .attr("markerWidth", 6)
       .attr("markerHeight", 6)
@@ -710,12 +710,12 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       { type: "status", label: "In Progress", status: "in_progress" },
       { type: "status", label: "Completed", status: "completed" },
       { type: "status", label: "Not Started", status: "not_started" },
-      { type: "instruction", label: "Drag milestones up/down to reposition" },
+      { type: "instruction", label: "Drag milestones up/down" },
     ];
     const legend = svgEl
       .append("g")
       .attr("class", "legend")
-      .attr("transform", `translate(${width - margin.right + 20}, ${margin.top})`);
+      .attr("transform", `translate(${width - margin.right + -30}, ${margin.top})`);
     const legendItemHeight = 30;
     legend
       .selectAll(".legend-item")
@@ -781,40 +781,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             .style("font-size", "12px")
             .text(d.label);
         });
-  
-      // Add a button to reset node positions
-      const resetButton = svgEl
-        .append("g")
-        .attr("class", "reset-positions-button")
-        .attr("transform", `translate(${width - margin.right + 20}, ${margin.top + (legendData.length + 1) * legendItemHeight})`)
-        .attr("cursor", "pointer")
-        .on("click", () => {
-          // Clear stored positions
-          setMilestonePositions({});
-          // Reload the visualization
-          setTimeout(() => {
-            window.location.reload();
-          }, 100);
-        });
-      
-      resetButton
-        .append("rect")
-        .attr("width", 150)
-        .attr("height", 30)
-        .attr("rx", 3)
-        .attr("ry", 3)
-        .attr("fill", "#e5e7eb")
-        .attr("stroke", "#9ca3af")
-        .attr("stroke-width", 1);
-      
-      resetButton
-        .append("text")
-        .attr("x", 75)
-        .attr("y", 18)
-        .attr("text-anchor", "middle")
-        .attr("font-size", "12px")
-        .attr("fill", "#4b5563")
-        .text("Reset Node Positions");
         
     }, [data, milestonePositions]);
   
