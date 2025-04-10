@@ -144,58 +144,66 @@ function processDeadlines(milestones: any[]) {
  */
 function groupMilestonesByDeadlineAndWorkstream(milestones: any[]) {
   const groups: { [key: string]: any[] } = {};
-  
-  milestones.forEach(milestone => {
+  milestones.forEach((milestone) => {
     if (!milestone.deadline) return;
-    
-    const dateKey = new Date(milestone.deadline).toISOString().split('T')[0];
+    const dateKey = new Date(milestone.deadline).toISOString().split("T")[0];
     const wsKey = milestone.workstreamId;
     const groupKey = `${dateKey}-${wsKey}`;
-    
     if (!groups[groupKey]) {
       groups[groupKey] = [];
     }
-    
     groups[groupKey].push(milestone);
   });
-  
   return groups;
 }
 
 /**
- * Gets the local storage key for milestone positions
- * @param dataId - Unique identifier for the data set
- * @returns Local storage key
+ * Local storage helpers for milestone positions
  */
 function getMilestonePositionsKey(dataId: string): string {
   return `flightmap-milestone-positions-${dataId}`;
 }
 
-/**
- * Loads milestone positions from local storage
- * @param dataId - Unique identifier for the data set
- * @returns Object with milestone positions by ID
- */
 function loadMilestonePositions(dataId: string): { [id: number]: { y: number } } {
   try {
     const storedData = localStorage.getItem(getMilestonePositionsKey(dataId));
     return storedData ? JSON.parse(storedData) : {};
   } catch (e) {
-    console.error('Error loading milestone positions:', e);
+    console.error("Error loading milestone positions:", e);
     return {};
   }
 }
 
-/**
- * Saves milestone positions to local storage
- * @param dataId - Unique identifier for the data set
- * @param positions - Object with milestone positions by ID
- */
 function saveMilestonePositions(dataId: string, positions: { [id: number]: { y: number } }): void {
   try {
     localStorage.setItem(getMilestonePositionsKey(dataId), JSON.stringify(positions));
   } catch (e) {
-    console.error('Error saving milestone positions:', e);
+    console.error("Error saving milestone positions:", e);
+  }
+}
+
+/**
+ * Local storage helpers for workstream positions
+ */
+function getWorkstreamPositionsKey(dataId: string): string {
+  return `flightmap-workstream-positions-${dataId}`;
+}
+
+function loadWorkstreamPositions(dataId: string): { [id: number]: { y: number } } {
+  try {
+    const storedData = localStorage.getItem(getWorkstreamPositionsKey(dataId));
+    return storedData ? JSON.parse(storedData) : {};
+  } catch (e) {
+    console.error("Error loading workstream positions:", e);
+    return {};
+  }
+}
+
+function saveWorkstreamPositions(dataId: string, positions: { [id: number]: { y: number } }): void {
+  try {
+    localStorage.setItem(getWorkstreamPositionsKey(dataId), JSON.stringify(positions));
+  } catch (e) {
+    console.error("Error saving workstream positions:", e);
   }
 }
 
@@ -208,25 +216,25 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     top: 0,
     visible: false,
   });
-  
-  // State to track milestone positions (for persistence)
   const [milestonePositions, setMilestonePositions] = useState<{ [id: number]: { y: number } }>({});
-  
-  // Generate a unique ID for the dataset (for storage purposes)
+  const [workstreamPositions, setWorkstreamPositions] = useState<{ [id: number]: { y: number } }>({});
   const dataId = useRef<string>(`${data.id || new Date().getTime()}`);
 
   // Load saved positions on mount
   useEffect(() => {
-    const savedPositions = loadMilestonePositions(dataId.current);
-    setMilestonePositions(savedPositions);
+    setMilestonePositions(loadMilestonePositions(dataId.current));
+    setWorkstreamPositions(loadWorkstreamPositions(dataId.current));
   }, []);
 
-  // Save positions whenever they change
+  // Save positions when they change
   useEffect(() => {
     if (Object.keys(milestonePositions).length > 0) {
       saveMilestonePositions(dataId.current, milestonePositions);
     }
-  }, [milestonePositions]);
+    if (Object.keys(workstreamPositions).length > 0) {
+      saveWorkstreamPositions(dataId.current, workstreamPositions);
+    }
+  }, [milestonePositions, workstreamPositions]);
 
   useEffect(() => {
     const svgEl = d3.select(svgRef.current);
@@ -249,11 +257,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     zoomRef.current = d3.zoom().scaleExtent([0.5, 5]).on("zoom", (event) => {
       container.attr("transform", event.transform);
     });
-    svgEl.call(
-      zoomRef.current as unknown as (
-        selection: d3.Selection<SVGSVGElement | null, unknown, null, undefined>
-      ) => void
-    );
+    svgEl.call(zoomRef.current as any);
 
     const { workstreams, activities } = extractMilestonesAndActivities(data);
     const allMilestones = workstreams.flatMap((ws) => ws.milestones);
@@ -271,7 +275,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .range([100, contentHeight - 100])
       .padding(1.0);
 
-    // Map to store milestone coordinates
     const milestoneCoordinates: { [id: number]: { x: number; y: number } } = {};
 
     // Draw timeline markers
@@ -296,11 +299,72 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .text(date.toLocaleDateString(undefined, { month: "short", year: "numeric" }));
     });
 
-    // Draw workstreams
+    const activitiesGroup = container.append("g").attr("class", "activities");
     const workstreamGroup = container.append("g").attr("class", "workstreams");
+    const milestonesGroup = container.append("g").attr("class", "milestones");
+
+    // Workstream drag behavior
+    const workstreamDragBehavior = d3
+      .drag<SVGGElement, any>()
+      .on("start", function () {
+        d3.select(this).classed("dragging", true);
+      })
+      .on("drag", function (event, d) {
+        const offset = event.y - d.initialY;
+        d3.select(this).attr("transform", `translate(0, ${offset})`);
+
+        // Move associated milestones
+        milestonesGroup
+          .selectAll(".milestone")
+          .filter((m: any) => m.workstreamId === d.id)
+          .each(function (milestoneData: any) {
+            milestoneCoordinates[milestoneData.id].y += event.dy;
+            const currentTransform = d3.select(this).attr("transform") || "";
+            const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
+            const currentY = match ? parseFloat(match[1]) : 0;
+            d3.select(this).attr("transform", `translate(0, ${currentY + event.dy})`);
+          });
+
+        // Update activity paths
+        updateActivities();
+      })
+      .on("end", function (event, d) {
+        d3.select(this).classed("dragging", false);
+
+        // Save workstream position
+        setWorkstreamPositions((prev) => ({
+          ...prev,
+          [d.id]: { y: event.y },
+        }));
+
+        // Save updated milestone positions
+        const updatedMilestonePositions = { ...milestonePositions };
+        milestonesGroup
+          .selectAll(".milestone")
+          .filter((m: any) => m.workstreamId === d.id)
+          .each(function (milestoneData: any) {
+            updatedMilestonePositions[milestoneData.id] = {
+              y: milestoneCoordinates[milestoneData.id].y,
+            };
+          });
+        setMilestonePositions(updatedMilestonePositions);
+      });
+
+    // Draw workstreams
     workstreams.forEach((workstream) => {
-      const y = yScale(workstream.id.toString()) || 0;
-      workstreamGroup
+      let y = yScale(workstream.id.toString()) || 0;
+      if (workstreamPositions[workstream.id]) {
+        y = workstreamPositions[workstream.id].y;
+      }
+
+      const wsGroup = workstreamGroup
+        .append("g")
+        .datum({ ...workstream, initialY: y })
+        .attr("class", "workstream")
+        .attr("cursor", "ns-resize")
+        .call(workstreamDragBehavior as any);
+
+      wsGroup
         .append("text")
         .attr("x", -10)
         .attr("y", y)
@@ -309,7 +373,8 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .attr("font-weight", "bold")
         .attr("fill", workstream.color)
         .text(workstream.name);
-      workstreamGroup
+
+      wsGroup
         .append("line")
         .attr("x1", 0)
         .attr("y1", y)
@@ -321,25 +386,16 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .attr("stroke-dasharray", "4 2");
     });
 
-    // Group milestones by deadline and workstream
-    const milestoneGroups = groupMilestonesByDeadlineAndWorkstream(allMilestones);
-    
-    // Function to update activities when a milestone is dragged
+    // Function to update activities
     const updateActivities = () => {
       activitiesGroup.selectAll("path").remove();
-      activitiesGroup.selectAll("rect").remove(); 
+      activitiesGroup.selectAll("rect").remove();
       activitiesGroup.selectAll("text").remove();
-      
-      // Redraw all activities
       drawActivities();
     };
-    
-    // Create activities group first so we can access it later
-    const activitiesGroup = container.append("g").attr("class", "activities");
-    
-    // Function to draw activities (extracted so we can call it after dragging)
+
+    // Function to draw activities
     const drawActivities = () => {
-      // Reset and redraw connections
       const connectionGroups: { [key: string]: any[] } = {};
       activities.forEach((activity) => {
         const sourceId = activity.sourceMilestoneId;
@@ -402,17 +458,16 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           const dx = target.x - source.x;
           const dy = target.y - source.y;
           const length = Math.sqrt(dx * dx + dy * dy);
-          if (length === 0) return; // Skip if source and target overlap
+          if (length === 0) return;
 
-          const perpVectorX = -dy / length; // Perpendicular vector (rotated 90° counterclockwise)
+          const perpVectorX = -dy / length;
           const perpVectorY = dx / length;
-          const someScale = 50; // Fixed scale for curve offset (adjustable)
+          const someScale = 50;
 
           groupActivities.forEach((activity, index) => {
             const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
             if (!workstream) return;
 
-            // Calculate offset to distribute curves symmetrically
             const offset = index - (groupActivities.length - 1) / 2;
             const controlX = centerX + offset * perpVectorX * someScale;
             const controlY = centerY + offset * perpVectorY * someScale;
@@ -453,90 +508,65 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         }
       });
     };
-    
-    // Draw milestones with vertical offsets for same date/workstream
-    const milestonesGroup = container.append("g").attr("class", "milestones");
 
-    // Initialize drag behavior for milestones (Y-axis only)
-    const dragBehavior = d3.drag<SVGGElement, any>()
-      .on("start", function() {
-        // Add a class to indicate dragging state
+    // Milestone drag behavior
+    const dragBehavior = d3
+      .drag<SVGGElement, any>()
+      .on("start", function () {
         d3.select(this).classed("dragging", true);
       })
-      .on("drag", function(event, data) {
-        // Only allow vertical (Y-axis) movement
+      .on("drag", function (event, data) {
         const newY = event.y;
-        
-        // Get the milestone ID from the data
-        const milestoneId = data.id;
-        
-        // Update visual position
         d3.select(this).attr("transform", `translate(0, ${event.y - data.initialY})`);
-        
-        // Update stored coordinates
-        if (milestoneCoordinates[milestoneId]) {
-          milestoneCoordinates[milestoneId].y = newY;
-        }
-        
-        // Update connections immediately
+        milestoneCoordinates[data.id].y = newY;
         updateActivities();
       })
-      .on("end", function(event, data) {
-        // Remove dragging class
+      .on("end", function (event, data) {
         d3.select(this).classed("dragging", false);
-        
-        // Save the new position to state for persistence
-        setMilestonePositions(prev => ({
+        setMilestonePositions((prev) => ({
           ...prev,
-          [data.id]: { y: event.y }
+          [data.id]: { y: event.y },
         }));
       });
 
-    Object.values(milestoneGroups).forEach(group => {
-      const maxOffset = 200; // Maximum vertical offset in pixels
+    // Draw milestones
+    const milestoneGroups = groupMilestonesByDeadlineAndWorkstream(allMilestones);
+    Object.values(milestoneGroups).forEach((group) => {
+      const maxOffset = 200;
       const offsetStep = group.length > 1 ? maxOffset / (group.length - 1) : 0;
-      
+
       group.forEach((milestone, index) => {
         const workstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
         if (!workstream) return;
-        
+
         const x = milestone.deadline ? xScale(new Date(milestone.deadline)) : 20;
         let y = yScale(workstream.id.toString()) || 0;
-        
-        // Apply vertical offset for milestones with same deadline in same workstream
+        if (workstreamPositions[workstream.id]) {
+          y = workstreamPositions[workstream.id].y;
+        }
         if (group.length > 1) {
-          // Center the group vertically around the workstream line
           const totalOffset = (group.length - 1) * offsetStep;
           const startOffset = -totalOffset / 2;
-          const verticalOffset = startOffset + (index * offsetStep);
-          y += verticalOffset;
+          y += startOffset + index * offsetStep;
         }
-        
-        // Apply saved position if available
         if (milestonePositions[milestone.id]) {
           y = milestonePositions[milestone.id].y;
         }
-        
-        // Store position for connecting activities
+
         milestoneCoordinates[milestone.id] = { x, y };
-        
-        // Create a group for this milestone (will be used for dragging)
+
         const milestoneGroup = milestonesGroup
           .append("g")
-          .datum({
-            ...milestone,
-            initialY: y  // Store initial Y position for relative movement
-          })
+          .datum({ ...milestone, initialY: y })
           .attr("class", "milestone")
-          .attr("cursor", "ns-resize")  // Indicate vertical dragging
-          .call(dragBehavior as any);  // Apply drag behavior
+          .attr("cursor", "ns-resize")
+          .call(dragBehavior as any);
 
-        // Draw milestone circle
         milestoneGroup
           .append("circle")
           .attr("cx", x)
           .attr("cy", y)
-          .attr("r", 50)
+          .attr("r", 55)
           .attr("fill", milestone.status === "completed" ? "#ccc" : workstream.color)
           .attr("stroke", milestone.status === "completed" ? "#ccc" : d3.color(workstream.color)?.darker(0.5) + "")
           .attr("stroke-width", 1)
@@ -559,7 +589,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             setTooltip((prev) => ({ ...prev, visible: false }));
           });
 
-        // Add milestone name
         const textEl = milestoneGroup
           .append("text")
           .attr("x", x)
@@ -571,7 +600,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           .text(milestone.name);
         wrapText(textEl, 60);
 
-        // Draw connection line to workstream
         const workstreamY = yScale(workstream.id.toString()) || 0;
         milestoneGroup
           .append("line")
@@ -585,7 +613,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           .attr("stroke-opacity", 0.5)
           .attr("stroke-dasharray", "3 2");
 
-        // Add status indicator
         if (milestone.status) {
           const statusStroke = getStatusColor(milestone.status);
           milestoneGroup
@@ -649,7 +676,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     // Draw activities
     drawActivities();
     activitiesGroup.lower();
-    
+
     /**
      * Adds a label along an activity path.
      * @param path - The SVG path element
@@ -682,7 +709,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("font-size", "6px")
-          .attr("fill", "#000000")
+          .attr("fill", "#4b5563")
           .text(activity.name);
         wrapText(textEl, 220);
       }
@@ -694,7 +721,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .append("marker")
       .attr("id", "arrow")
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 68)
+      .attr("refX", 73)
       .attr("refY", 0)
       .attr("markerWidth", 6)
       .attr("markerHeight", 6)
@@ -710,12 +737,12 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       { type: "status", label: "In Progress", status: "in_progress" },
       { type: "status", label: "Completed", status: "completed" },
       { type: "status", label: "Not Started", status: "not_started" },
-      { type: "instruction", label: "Drag milestones up/down" },
+      { type: "instruction", label: "Drag milestones/workstreams" },
     ];
     const legend = svgEl
       .append("g")
       .attr("class", "legend")
-      .attr("transform", `translate(${width - margin.right + -30}, ${margin.top})`);
+      .attr("transform", `translate(${width - margin.right + -50}, ${margin.top})`);
     const legendItemHeight = 30;
     legend
       .selectAll(".legend-item")
@@ -750,67 +777,97 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
               .attr("stroke", getStatusColor(d.status))
               .attr("stroke-width", 1.5)
               .attr("fill", "none");
-            } else if (d.status === "in_progress") {
-              g.append("circle")
-                .attr("cx", shapeSize / 2)
-                .attr("cy", shapeSize / 2)
-                .attr("r", 2)
-                .attr("fill", getStatusColor(d.status));
-            } else {
-              g.append("line")
-                .attr("x1", shapeSize / 2 - 2)
-                .attr("y1", shapeSize / 2)
-                .attr("x2", shapeSize / 2 + 2)
-                .attr("y2", shapeSize / 2)
-                .attr("stroke", getStatusColor(d.status || ""))
-                .attr("stroke-width", 1.5);
-            }
-          } else if (d.type === "instruction") {
-            // Display drag instruction with cursor icon
-            g.append("path")
-              .attr("d", "M3,0 L7,0 M5,-2 L5,2 M3,5 L7,5 M5,3 L5,7")
-              .attr("transform", `translate(${shapeSize / 2 - 5},${shapeSize / 2 - 5})`)
-              .attr("stroke", "#4b5563")
-              .attr("stroke-width", 1.5)
-              .attr("stroke-linecap", "round");
+          } else if (d.status === "in_progress") {
+            g.append("circle")
+              .attr("cx", shapeSize / 2)
+              .attr("cy", shapeSize / 2)
+              .attr("r", 2)
+              .attr("fill", getStatusColor(d.status));
+          } else {
+            g.append("line")
+              .attr("x1", shapeSize / 2 - 2)
+              .attr("y1", shapeSize / 2)
+              .attr("x2", shapeSize / 2 + 2)
+              .attr("y2", shapeSize / 2)
+              .attr("stroke", getStatusColor(d.status || ""))
+              .attr("stroke-width", 1.5);
           }
-          g.append("text")
-            .attr("x", shapeSize + 5)
-            .attr("y", shapeSize / 2 + 4)
-            .attr("fill", "black")
-            .style("font-size", "12px")
-            .text(d.label);
-        });
-        
-    }, [data, milestonePositions]);
-  
-    return (
-      <div className="w-full h-full relative">
-        <svg ref={svgRef}></svg>
-        <Tooltip
-          content={tooltip.content}
-          left={tooltip.left}
-          top={tooltip.top}
-          visible={tooltip.visible}
-        />
-        <button
-          onClick={() => {
-            if (svgRef.current && zoomRef.current) {
-              d3.select(svgRef.current)
-                .transition()
-                .duration(500)
-                .call(zoomRef.current?.transform as any, d3.zoomIdentity);
-            }
-          }}
-          className="absolute bottom-4 right-4 p-2 bg-white rounded shadow hover:bg-gray-50 transition-colors"
-        >
-          Reset View
-        </button>
-        <div className="absolute top-4 left-4 flex flex-col gap-2">
-          <ScreenshotButton svgRef={svgRef} />
-        </div>
+        } else if (d.type === "instruction") {
+          g.append("path")
+            .attr("d", "M3,0 L7,0 M5,-2 L5,2 M3,5 L7,5 M5,3 L5,7")
+            .attr("transform", `translate(${shapeSize / 2 - 5},${shapeSize / 2 - 5})`)
+            .attr("stroke", "#4b5563")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-linecap", "round");
+        }
+        g.append("text")
+          .attr("x", shapeSize + 5)
+          .attr("y", shapeSize / 2 + 4)
+          .attr("fill", "black")
+          .style("font-size", "12px")
+          .text(d.label);
+      });
+
+    // Add a button to reset node positions
+    const resetButton = svgEl
+      .append("g")
+      .attr("class", "reset-positions-button")
+      .attr("transform", `translate(${width - margin.right + -50}, ${margin.top + (legendData.length + 1) * legendItemHeight})`)
+      .attr("cursor", "pointer")
+      .on("click", () => {
+        localStorage.removeItem(getMilestonePositionsKey(dataId.current));
+        localStorage.removeItem(getWorkstreamPositionsKey(dataId.current));
+        setMilestonePositions({});
+        setWorkstreamPositions({});
+      });
+
+    resetButton
+      .append("rect")
+      .attr("width", 150)
+      .attr("height", 30)
+      .attr("rx", 3)
+      .attr("ry", 3)
+      .attr("fill", "#e5e7eb")
+      .attr("stroke", "#9ca3af")
+      .attr("stroke-width", 1);
+
+    resetButton
+      .append("text")
+      .attr("x", 75)
+      .attr("y", 18)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "12px")
+      .attr("fill", "#4b5563")
+      .text("Reset Node Positions");
+  }, [data, milestonePositions, workstreamPositions]);
+
+  return (
+    <div className="w-full h-full relative">
+      <svg ref={svgRef}></svg>
+      <Tooltip
+        content={tooltip.content}
+        left={tooltip.left}
+        top={tooltip.top}
+        visible={tooltip.visible}
+      />
+      <button
+        onClick={() => {
+          if (svgRef.current && zoomRef.current) {
+            d3.select(svgRef.current)
+              .transition()
+              .duration(500)
+              .call(zoomRef.current.transform as any, d3.zoomIdentity);
+          }
+        }}
+        className="absolute bottom-4 right-4 p-2 bg-white rounded shadow hover:bg-gray-50 transition-colors"
+      >
+        Reset View
+      </button>
+      <div className="absolute top-4 left-4 flex flex-col gap-2">
+        <ScreenshotButton svgRef={svgRef} />
       </div>
-    );
-  };
-  
-  export default FlightmapVisualization;
+    </div>
+  );
+};
+
+export default FlightmapVisualization;
