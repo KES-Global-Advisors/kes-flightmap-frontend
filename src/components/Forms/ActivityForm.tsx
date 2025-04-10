@@ -2,7 +2,7 @@
 import React, { useEffect } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
-import { Workstream, Milestone, Activity } from '../../types/model';
+import { Milestone, Activity } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
@@ -45,7 +45,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
 
   // Fetch existing activities for per-item dropdown
   const { data: fetchedActivities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>(`${API}/activities/`);
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
   const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
 
 
@@ -168,28 +167,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
           </div>
           
           <div className="space-y-4">
-            {/* Workstream Field */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Workstream (optional)</label>
-              {loadingWorkstreams ? (
-                <p>Loading workstreams...</p>
-              ) : errorWorkstreams ? (
-                <p>Error: {errorWorkstreams}</p>
-              ) : (
-                <select
-                  {...register(`activities.${index}.workstream` as const)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  <option value="">Select a workstream</option>
-                  {workstreams?.map((ws: Workstream) => (
-                    <option key={ws.id} value={ws.id}>
-                      {ws.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            
             {/* Milestone Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Milestone (optional)</label>
