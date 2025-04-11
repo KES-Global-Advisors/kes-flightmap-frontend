@@ -50,7 +50,7 @@ export interface Milestone {
   activities: Activity[];
   contributors: Contributor[];
   parent_milestone?: number | null;
-  // Additional optional fields from Model.ts:
+  dependencies?: number[]; 
   workstream?: number;
   strategic_goals?: number[];
 }

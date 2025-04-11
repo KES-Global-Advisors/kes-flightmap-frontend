@@ -15,8 +15,8 @@ export type MilestoneFormData = {
     deadline: string;
     status: 'not_started' | 'in_progress' | 'completed';
     strategic_goals: number[];
-    // NEW: use parent_milestone as a single value (or null)
     parent_milestone?: number | null;
+    dependencies?: number[];
     [key: string]: unknown;
   }[];
 };
@@ -252,6 +252,20 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
               >
                 Create a new Milestone to use as Parent
               </button>
+            </div>
+            {/* Dependencies MultiSelect */}
+            <div>
+              <MultiSelect
+                label="Dependencies"
+                options={parentMilestoneOptions}  // You can reuse this list or create a dedicated one if needed
+                value={watch(`milestones.${index}.dependencies`) || []}
+                onChange={(newValue) =>
+                  handleMultiSelectChange(index, 'dependencies', newValue)
+                }
+                isLoading={loadingMilestones}
+                error={errorMilestones}
+                placeholder="Select dependency milestones..."
+              />
             </div>
           </div>
         </div>

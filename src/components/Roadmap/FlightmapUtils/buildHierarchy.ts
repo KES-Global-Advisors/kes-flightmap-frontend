@@ -21,6 +21,7 @@ export function buildHierarchy(data: FlightmapData): any {
     created_at: node.created_at || "",
     supported_milestones: node.supported_milestones || [],
     additional_milestones: node.additional_milestones || [],
+    dependencies: node.dependencies || [],
     color: node.color || "",
     children: []
   });
