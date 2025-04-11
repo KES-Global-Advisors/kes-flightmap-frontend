@@ -233,6 +233,7 @@ const FormStepper: React.FC = () => {
               : milestone.strategic_goals,
             // NEW: send the parent milestone field instead of dependencies
             parent_milestone: milestone.parent_milestone || null,
+            dependencies: milestone.dependencies || []
           };
           if ((milestone as any).id) {
             payload.id = (milestone as any).id;
