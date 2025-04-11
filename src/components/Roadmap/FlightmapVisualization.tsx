@@ -41,6 +41,7 @@ function extractMilestonesAndActivities(data: FlightmapData) {
     [id: number]: { id: number; name: string; color: string; milestones: any[] };
   } = {};
   const activities: any[] = [];
+  const dependencies: { source: number; target: number }[] = [];
 
   function visit(node: any, currentWorkstreamId?: number) {
     if (node.type === "workstream") {
@@ -56,6 +57,15 @@ function extractMilestonesAndActivities(data: FlightmapData) {
       workstreams[currentWorkstreamId].milestones.push({
         ...node,
         workstreamId: currentWorkstreamId,
+      });
+    }
+    if (node.type === "milestone" && node.dependencies && node.dependencies.length > 0) {
+      // Add each dependency relation
+      node.dependencies.forEach((dependencyId: number) => {
+        dependencies.push({
+          source: dependencyId,      // The milestone this one depends on
+          target: node.id            // The dependent milestone
+        });
       });
     }
     if (node.type === "activity" && currentWorkstreamId != null) {
@@ -109,7 +119,7 @@ function extractMilestonesAndActivities(data: FlightmapData) {
   }
   linkParentActivities(rootNode);
 
-  return { workstreams: Object.values(workstreams), activities };
+  return { workstreams: Object.values(workstreams), activities, dependencies };
 }
 
 /**
@@ -259,7 +269,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     });
     svgEl.call(zoomRef.current as any);
 
-    const { workstreams, activities } = extractMilestonesAndActivities(data);
+    const { workstreams, activities, dependencies } = extractMilestonesAndActivities(data);
     const allMilestones = workstreams.flatMap((ws) => ws.milestones);
     const timelineMarkers = processDeadlines(allMilestones);
 
@@ -302,6 +312,8 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     const activitiesGroup = container.append("g").attr("class", "activities");
     const workstreamGroup = container.append("g").attr("class", "workstreams");
     const milestonesGroup = container.append("g").attr("class", "milestones");
+    const dependencyGroup = container.append("g").attr("class", "dependencies");
+
 
     // Workstream drag behavior
     const workstreamDragBehavior = d3
@@ -327,6 +339,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
 
         // Update activity paths
         updateActivities();
+        updateDependencies();
       })
       .on("end", function (event, d) {
         d3.select(this).classed("dragging", false);
@@ -393,6 +406,11 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       activitiesGroup.selectAll("text").remove();
       drawActivities();
     };
+
+    const updateDependencies = () => {
+      container.selectAll(".dependency-line").remove();
+      drawDependencies();
+    };    
 
     // Function to draw activities
     const drawActivities = () => {
@@ -509,6 +527,54 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       });
     };
 
+    // Function to draw dependency connections
+    const drawDependencies = () => {
+      // Remove any existing dependency lines first
+      container.selectAll(".dependency-line").remove();
+      
+      dependencies.forEach((dependency) => {
+        const source = milestoneCoordinates[dependency.source];
+        const target = milestoneCoordinates[dependency.target];
+        
+        if (!source || !target) return; // Skip if either milestone doesn't exist
+        
+        // Create a dashed line for dependencies
+        dependencyGroup
+          .append("path")
+          .attr("class", "dependency-line")
+          .attr(
+            "d",
+            d3.linkHorizontal()({
+              source: [source.x, source.y],
+              target: [target.x, target.y],
+            } as DefaultLinkObject) ?? ""
+          )
+          .attr("fill", "none")
+          .attr("stroke", "#6b7280") // Gray color to distinguish from activity lines
+          .attr("stroke-width", 2)
+          .attr("stroke-dasharray", "4 3") // Dashed line for dependencies
+          .attr("marker-end", "url(#dependency-arrow)")
+          .on("mouseover", (event) => {
+            setTooltip({
+              content: "Dependency relationship",
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+              visible: true,
+            });
+          })
+          .on("mousemove", (event) => {
+            setTooltip((prev) => ({
+              ...prev,
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+            }));
+          })
+          .on("mouseout", () => {
+            setTooltip((prev) => ({ ...prev, visible: false }));
+          });
+      });
+    };
+
     // Milestone drag behavior
     const dragBehavior = d3
       .drag<SVGGElement, any>()
@@ -520,6 +586,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         d3.select(this).attr("transform", `translate(0, ${event.y - data.initialY})`);
         milestoneCoordinates[data.id].y = newY;
         updateActivities();
+        updateDependencies(); 
       })
       .on("end", function (event, data) {
         d3.select(this).classed("dragging", false);
@@ -677,6 +744,9 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     drawActivities();
     activitiesGroup.lower();
 
+    drawDependencies();
+    dependencyGroup.lower();
+
     /**
      * Adds a label along an activity path.
      * @param path - The SVG path element
@@ -737,6 +807,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       { type: "status", label: "In Progress", status: "in_progress" },
       { type: "status", label: "Completed", status: "completed" },
       { type: "status", label: "Not Started", status: "not_started" },
+      { type: "dependency", label: "Milestone Dependency", status: "dependency" },
       { type: "instruction", label: "Drag milestones/workstreams" },
     ];
     const legend = svgEl
@@ -799,6 +870,21 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             .attr("stroke", "#4b5563")
             .attr("stroke-width", 1.5)
             .attr("stroke-linecap", "round");
+        }  else if (d.type === "dependency") {
+          g.append("line")
+            .attr("x1", 0)
+            .attr("y1", shapeSize / 2)
+            .attr("x2", shapeSize)
+            .attr("y2", shapeSize / 2)
+            .attr("stroke", "#6b7280")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-dasharray", "4 3");
+            
+          // Add an arrowhead
+          g.append("path")
+            .attr("d", "M0,-2L4,0L0,2")
+            .attr("transform", `translate(${shapeSize - 4},${shapeSize / 2})`)
+            .attr("fill", "#6b7280");
         }
         g.append("text")
           .attr("x", shapeSize + 5)
