@@ -112,8 +112,8 @@ export interface Strategy {
   time_horizon: string;
   programs: Program[];
   goal_summary: {
-    business_goals: number;
-    organizational_goals: number;
+    business_goals: string[];
+    organizational_goals: string[];
   };
   // Additional optional fields from Model.ts:
   roadmap?: number;
