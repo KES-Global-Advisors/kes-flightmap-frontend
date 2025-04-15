@@ -21,10 +21,12 @@ export function buildHierarchy(data: FlightmapData): any {
     created_at: node.created_at || "",
     supported_milestones: node.supported_milestones || [],
     additional_milestones: node.additional_milestones || [],
+    dependencies: node.dependencies || [],
     color: node.color || "",
     children: []
   });
 
+  // Create the roadmap node.
   const roadmapNode = mapNode(data, "roadmap");
   roadmapNode.description = data.description || "";
   roadmapNode.created_at = data.created_at || "";
@@ -45,29 +47,47 @@ export function buildHierarchy(data: FlightmapData): any {
               programNode.children = program.workstreams
                 ? program.workstreams.map((workstream: any) => {
                     const workstreamNode = mapNode(workstream, "workstream");
-                    // workstreamNode.color is now set from the backend via mapNode
-
-                    // Instead of pushing a "Milestones" group node, we push the milestone nodes directly.
+                    // Process milestones with the new parent relationship.
                     if (workstream.milestones && workstream.milestones.length > 0) {
-                      const milestoneNodes = workstream.milestones.map((milestone: any) => {
+                      // First, create milestone nodes and build a map.
+                      const milestoneNodesMap: { [key: number]: any } = {};
+                      const milestoneNodes: any[] = [];
+                      workstream.milestones.forEach((milestone: any) => {
                         const milestoneNode = mapNode(milestone, "milestone");
                         milestoneNode.deadline = milestone.deadline || "";
                         milestoneNode.status = milestone.status || "";
                         milestoneNode.current_progress = milestone.current_progress || 0;
-
-                        // Attach activities as direct children of the milestone node.
+                        // Copy the new parent field (assumed to be provided as milestone.parent)
+                        milestoneNode.parentId = milestone.parent || null;
+                        // Attach any activities directly under this milestone.
                         if (milestone.activities && milestone.activities.length > 0) {
                           milestoneNode.children = milestone.activities.map((activity: any) =>
                             mapNode(activity, "activity")
                           );
                         }
-                        return milestoneNode;
+                        milestoneNodesMap[milestone.id] = milestoneNode;
+                        milestoneNodes.push(milestoneNode);
                       });
-                      // Push milestone nodes directly.
-                      workstreamNode.children.push(...milestoneNodes);
+                      // Organize milestones by nesting child milestones under their parent.
+                      const rootMilestones: any[] = [];
+                      milestoneNodes.forEach((node: any) => {
+                        if (node.parentId) {
+                          const parentNode = milestoneNodesMap[node.parentId];
+                          if (parentNode) {
+                            parentNode.children.push(node);
+                          } else {
+                            // If the parent isn’t found, treat as root.
+                            rootMilestones.push(node);
+                          }
+                        } else {
+                          rootMilestones.push(node);
+                        }
+                      });
+                      // Attach the top-level milestones to the workstream.
+                      workstreamNode.children.push(...rootMilestones);
                     }
 
-                    // Same for activities directly under the workstream.
+                    // Also add activities directly under the workstream.
                     if (workstream.activities && workstream.activities.length > 0) {
                       const activityNodes = workstream.activities.map((activity: any) =>
                         mapNode(activity, "activity")

@@ -15,6 +15,7 @@ export type MilestoneFormData = {
     deadline: string;
     status: 'not_started' | 'in_progress' | 'completed';
     strategic_goals: number[];
+    parent_milestone?: number | null;
     dependencies?: number[];
     [key: string]: unknown;
   }[];
@@ -33,7 +34,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   });
   const API = import.meta.env.VITE_API_BASE_URL;
   
-  // Existing records fetch (for dropdown per item)
+  // Fetch existing milestones, workstreams, and strategic goals.
   const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
   const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
@@ -42,7 +43,8 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
     ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))
     : [];
 
-  const dependencyOptions = [
+  // Merge fetched milestones and any dependent milestones into options for parent milestone.
+  const parentMilestoneOptions = [
     ...(fetchedMilestones ? fetchedMilestones.map((ms: Milestone) => ({ label: ms.name, value: ms.id })) : []),
     ...dependentMilestones.map((ms: Milestone) => ({ label: ms.name, value: ms.id }))
   ];
@@ -55,7 +57,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
       deadline: "",
       status: "not_started",
       strategic_goals: [],
-      dependencies: []
+      parent_milestone: null
     });
   }, [append]);
 
@@ -82,7 +84,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
         deadline: "",
         status: "not_started",
         strategic_goals: [],
-        dependencies: []
+        parent_milestone: null
       });
     }
   };
@@ -219,28 +221,51 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
               />
             </div>
             
-            {/* Dependent Milestones MultiSelect */}
+            {/* NEW: Parent Milestone Dropdown */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Parent Milestone</label>
+              {loadingMilestones ? (
+                <p>Loading milestones...</p>
+              ) : errorMilestones ? (
+                <p>Error: {errorMilestones}</p>
+              ) : (
+                <select
+                  {...register(`milestones.${index}.parent_milestone` as never)}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  <option value="">No Parent Milestone</option>
+                  {parentMilestoneOptions.map((ms: { label: string, value: number }) => (
+                    <option key={ms.value} value={ms.value}>
+                      {ms.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            
+            {/* (Optional) Button to create a new milestone to be used as a parent */}
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={openMilestoneModal}
+                className="text-indigo-600 hover:text-indigo-800 underline"
+              >
+                Create a new Milestone to use as Parent
+              </button>
+            </div>
+            {/* Dependencies MultiSelect */}
             <div>
               <MultiSelect
-                label="Dependent Milestones"
-                options={dependencyOptions}
+                label="Dependencies"
+                options={parentMilestoneOptions}  // You can reuse this list or create a dedicated one if needed
                 value={watch(`milestones.${index}.dependencies`) || []}
                 onChange={(newValue) =>
                   handleMultiSelectChange(index, 'dependencies', newValue)
                 }
                 isLoading={loadingMilestones}
                 error={errorMilestones}
-                placeholder="Select dependent milestones..."
+                placeholder="Select dependency milestones..."
               />
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={openMilestoneModal}
-                  className="text-indigo-600 hover:text-indigo-800 underline"
-                >
-                  Create dependent Milestone
-                </button>
-              </div>
             </div>
           </div>
         </div>
