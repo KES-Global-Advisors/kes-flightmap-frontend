@@ -264,10 +264,32 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
 
     const container = svgEl.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    zoomRef.current = d3.zoom().scaleExtent([0.5, 5]).on("zoom", (event) => {
-      container.attr("transform", event.transform);
+    // Modified zoom behavior with proper constraints
+    zoomRef.current = d3.zoom<Element, unknown>()
+      .scaleExtent([0.5, 5]) 
+      .on("zoom", (event) => {
+        // Apply zoom transform but with constraints
+        const transform = event.transform;
+
+        // Ensure the timeline headers stay visible (don't go above the top of the view)
+        // This prevents the visualization from being dragged too far up
+        if (transform.y > margin.top) {
+          transform.y = margin.top;
+        }
+
+        // Allow horizontal scrolling and proper vertical scrolling below the headers
+        container.attr("transform", `translate(${transform.x}, ${transform.y}) scale(${transform.k})`);
+      });
+
+    // Apply the zoom behavior while disabling double-click zoom
+    svgEl
+      .call(zoomRef.current as any)
+      .on("dblclick.zoom", null);
+    
+    // Prevent default browser scrolling
+    svgEl.on("wheel", function(event) {
+      event.preventDefault();
     });
-    svgEl.call(zoomRef.current as any);
 
     const { workstreams, activities, dependencies } = extractMilestonesAndActivities(data);
     const allMilestones = workstreams.flatMap((ws) => ws.milestones);
@@ -315,53 +337,76 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     const dependencyGroup = container.append("g").attr("class", "dependencies");
 
 
-    // Workstream drag behavior
-    const workstreamDragBehavior = d3
-      .drag<SVGGElement, any>()
-      .on("start", function () {
-        d3.select(this).classed("dragging", true);
-      })
-      .on("drag", function (event, d) {
-        const offset = event.y - d.initialY;
-        d3.select(this).attr("transform", `translate(0, ${offset})`);
+// Update the workstream drag behavior to keep milestones properly connected
+const workstreamDragBehavior = d3
+  .drag<SVGGElement, any>()
+  .on("start", function () {
+    d3.select(this).classed("dragging", true);
+  })
+  .on("drag", function (event, d) {
+    // Calculate new position with constraint
+    const minAllowedY = 20; // Minimum allowed Y position
+    const newY = Math.max(minAllowedY, event.y);
+    
+    // Calculate the actual offset based on constrained position
+    const offset = newY - d.initialY;
+    
+    // Calculate the actual movement delta (may be different from event.dy if constrained)
+    const actualDeltaY = newY - (d.lastY || d.initialY);
+    d.lastY = newY; // Store last position for next calculation
+    
+    // Update workstream position
+    d3.select(this).attr("transform", `translate(0, ${offset})`);
 
-        // Move associated milestones
-        milestonesGroup
-          .selectAll(".milestone")
-          .filter((m: any) => m.workstreamId === d.id)
-          .each(function (milestoneData: any) {
-            milestoneCoordinates[milestoneData.id].y += event.dy;
-            const currentTransform = d3.select(this).attr("transform") || "";
-            const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
-            const currentY = match ? parseFloat(match[1]) : 0;
-            d3.select(this).attr("transform", `translate(0, ${currentY + event.dy})`);
-          });
-
-        // Update activity paths
-        updateActivities();
-        updateDependencies();
-      })
-      .on("end", function (event, d) {
-        d3.select(this).classed("dragging", false);
-
-        // Save workstream position
-        setWorkstreamPositions((prev) => ({
-          ...prev,
-          [d.id]: { y: event.y },
-        }));
-
-        // Save updated milestone positions
-        const updatedMilestonePositions = { ...milestonePositions };
-        milestonesGroup
-          .selectAll(".milestone")
-          .filter((m: any) => m.workstreamId === d.id)
-          .each(function (milestoneData: any) {
-            updatedMilestonePositions[milestoneData.id] = {
-              y: milestoneCoordinates[milestoneData.id].y,
-            };
-          });
-        setMilestonePositions(updatedMilestonePositions);
+    // Move associated milestones WITH SAME CONSTRAINT
+    milestonesGroup
+      .selectAll(".milestone")
+      .filter((m: any) => m.workstreamId === d.id)
+      .each(function (milestoneData: any) {
+        // Update milestone coordinates with the same delta as the workstream
+        milestoneCoordinates[milestoneData.id].y += actualDeltaY;
+        
+        // Update milestone visual position
+        const currentTransform = d3.select(this).attr("transform") || "";
+        const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
+        const currentY = match ? parseFloat(match[1]) : 0;
+        
+        // Apply the same delta movement to milestone
+        d3.select(this).attr("transform", `translate(0, ${currentY + actualDeltaY})`);
       });
+
+    // Update activity paths and dependencies
+    updateActivities();
+    updateDependencies();
+  })
+  .on("end", function (event, d) {
+    d3.select(this).classed("dragging", false);
+    
+    // Calculate final constrained position
+    const minAllowedY = 20;
+    const constrainedY = Math.max(minAllowedY, event.y);
+    
+    // Clean up temporary tracking property
+    delete d.lastY;
+    
+    // Save workstream position
+    setWorkstreamPositions((prev) => ({
+      ...prev,
+      [d.id]: { y: constrainedY },
+    }));
+
+    // Save updated milestone positions
+    const updatedMilestonePositions = { ...milestonePositions };
+    milestonesGroup
+      .selectAll(".milestone")
+      .filter((m: any) => m.workstreamId === d.id)
+      .each(function (milestoneData: any) {
+        updatedMilestonePositions[milestoneData.id] = {
+          y: milestoneCoordinates[milestoneData.id].y,
+        };
+      });
+    setMilestonePositions(updatedMilestonePositions);
+  });
 
     // Draw workstreams
     workstreams.forEach((workstream) => {
@@ -575,24 +620,37 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       });
     };
 
-    // Milestone drag behavior
+    // Update milestone drag behavior with additional synchronization
     const dragBehavior = d3
       .drag<SVGGElement, any>()
       .on("start", function () {
         d3.select(this).classed("dragging", true);
       })
       .on("drag", function (event, data) {
-        const newY = event.y;
-        d3.select(this).attr("transform", `translate(0, ${event.y - data.initialY})`);
-        milestoneCoordinates[data.id].y = newY;
+        // Apply minimum Y constraint
+        const minAllowedY = 20;
+        const constrainedY = Math.max(minAllowedY, event.y);
+        
+        // Update milestone position with constraint
+        d3.select(this).attr("transform", `translate(0, ${constrainedY - data.initialY})`);
+        
+        // Update milestone coordinates
+        milestoneCoordinates[data.id].y = constrainedY;
+        
+        // Update connections
         updateActivities();
-        updateDependencies(); 
+        updateDependencies();
       })
       .on("end", function (event, data) {
         d3.select(this).classed("dragging", false);
+        
+        // Save constrained position
+        const minAllowedY = 20;
+        const constrainedY = Math.max(minAllowedY, event.y);
+        
         setMilestonePositions((prev) => ({
           ...prev,
-          [data.id]: { y: event.y },
+          [data.id]: { y: constrainedY },
         }));
       });
 
@@ -674,7 +732,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           .attr("x1", x)
           .attr("y1", y)
           .attr("x2", x)
-          .attr("y2", workstreamY)
+          .attr("y2", Math.max(20, workstreamY)) // Apply constraint to workstream connection point
           .attr("stroke", workstream.color)
           .attr("stroke-width", 0.5)
           .attr("stroke-opacity", 0.5)
