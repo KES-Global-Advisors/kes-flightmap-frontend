@@ -720,10 +720,10 @@ const workstreamDragBehavior = d3
           .attr("y", y)
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
-          .attr("font-size", "12px")
+          .attr("font-size", "8px")
           .attr("fill", "white")
           .text(milestone.name);
-        wrapText(textEl, 60);
+        wrapText(textEl, 100);
 
         const workstreamY = yScale(workstream.id.toString()) || 0;
         milestoneGroup
@@ -821,12 +821,12 @@ const workstreamDragBehavior = d3
 
         activitiesGroup
           .append("rect")
-          .attr("x", midpoint.x - 60)
+          .attr("x", midpoint.x - 100)
           .attr("y", midpoint.y - 10)
-          .attr("width", 170)
+          .attr("width", 210)
           .attr("height", 20)
           .attr("fill", "white")
-          .attr("fill-opacity", 0.5)
+          .attr("fill-opacity", 0.8)
           .attr("rx", 3)
           .attr("ry", 3);
 
@@ -837,7 +837,7 @@ const workstreamDragBehavior = d3
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
           .attr("font-size", "6px")
-          .attr("fill", "#4b5563")
+          .attr("fill", "#3a3c40")
           .text(activity.name);
         wrapText(textEl, 220);
       }
