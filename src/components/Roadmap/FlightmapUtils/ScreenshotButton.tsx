@@ -26,7 +26,7 @@ const ScreenshotButton: React.FC<ScreenshotButtonProps> = ({ svgRef }) => {
         const pngData = canvas.toDataURL("image/png");
         const a = document.createElement("a");
         a.href = pngData;
-        a.download = `roadmap-screenshot-${new Date().toISOString().slice(0, 10)}.png`;
+        a.download = `flightmap-screenshot-${new Date().toISOString().slice(0, 10)}.png`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

@@ -45,6 +45,10 @@ const FrameworkView: React.FC<FrameworkViewProps> = ({ data }) => {
             ? strategy.executive_sponsors.join(', ')
             : 'N/A';
 
+          // For strategic objectives, we expect goal_summary.business_goals to be an array of goal texts.
+        const businessGoals = strategy.goal_summary.business_goals;
+        const organizationalGoals = strategy.goal_summary.organizational_goals;
+
         return (
           <section
             key={strategy.id}
@@ -66,24 +70,32 @@ const FrameworkView: React.FC<FrameworkViewProps> = ({ data }) => {
               <h3 className="text-lg font-semibold mb-3">Strategic Objectives</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded">
-                  <h4 className="font-semibold text-blue-800 mb-2">Business Objectives (Measurable)</h4>
-                  <ul className="list-disc ml-5">
-                    {Array.from({ length: strategy.goal_summary.business_goals }).map(
-                      (_val, idx) => (
-                        <li key={idx}>Objective {idx + 1}</li>
-                      )
-                    )}
-                  </ul>
+                  <h4 className="font-semibold text-blue-800 mb-2">
+                    Business Objectives (Measurable)
+                  </h4>
+                  {businessGoals && businessGoals.length > 0 ? (
+                    <ul className="list-disc ml-5">
+                      {businessGoals.map((goalText: string, idx: number) => (
+                        <li key={idx}>{goalText}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>N/A</p>
+                  )}
                 </div>
                 <div className="bg-blue-50 p-4 rounded">
-                  <h4 className="font-semibold text-blue-800 mb-2">Organizational Objectives (Observable)</h4>
-                  <ul className="list-disc ml-5">
-                    {Array.from({ length: strategy.goal_summary.organizational_goals }).map(
-                      (_val, idx) => (
-                        <li key={idx}>Objective {idx + 1}</li>
-                      )
-                    )}
-                  </ul>
+                  <h4 className="font-semibold text-blue-800 mb-2">
+                    Organizational Objectives (Observable)
+                  </h4>
+                  {organizationalGoals && organizationalGoals.length > 0 ? (
+                    <ul className="list-disc ml-5">
+                      {organizationalGoals.map((goalText: string, idx: number) => (
+                        <li key={idx}>{goalText}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>N/A</p>
+                  )}
                 </div>
               </div>
 

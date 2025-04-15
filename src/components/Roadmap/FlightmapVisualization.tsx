@@ -6,8 +6,6 @@ import type { DefaultLinkObject } from "d3-shape";
 import { FlightmapData } from "@/types/roadmap";
 
 // Utility components
-import JSONExportButton from "./FlightmapUtils/JSONExportButton";
-import CSVExportButton from "./FlightmapUtils/CSVExportButton";
 import ScreenshotButton from "./FlightmapUtils/ScreenshotButton";
 
 // Helpers
@@ -17,72 +15,9 @@ import Tooltip from "./FlightmapUtils/Tooltip";
 import { getTooltipContent } from "./FlightmapUtils/getTooltip";
 
 /**
- * Checks if a node has an ancestor milestone that is completed.
- */
-function hasAncestorCompletedMilestone(d: d3.HierarchyNode<any> | null): boolean {
-  if (!d) return false;
-  let current = d.parent;
-  while (current) {
-    if (current.data.type === "milestone" && current.data.status === "completed") {
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
-}
-
-/**
- * getNodeColor:
- * Returns the fill color for a node based on its type and nearest workstream color.
- */
-function getNodeColor(d: d3.HierarchyNode<any>): string {
-  const nodeType = d.data.type;
-  const nodeStatus = d.data.status;
-
-  // Gray out an activity if any ancestor milestone is completed.
-  if (nodeType === "activity" && hasAncestorCompletedMilestone(d)) {
-    return "#ccc";
-  }
-
-  // For workstream nodes, return the stored color.
-  if (nodeType === "workstream") {
-    return d.data.color || "#0000FF";
-  }
-
-  // For milestones/activities, inherit parent's workstream color.
-  let workstreamColor: string | null = null;
-  let current = d.parent;
-  while (current) {
-    if (current.data.type === "workstream" && current.data.color) {
-      workstreamColor = current.data.color;
-      break;
-    }
-    current = current.parent;
-  }
-
-  if (nodeType === "milestone") {
-    return nodeStatus === "completed" ? "#ccc" : (workstreamColor ? workstreamColor : "#facc15");
-  }
-  if (nodeType === "activity") {
-    return workstreamColor ? workstreamColor : "#f87171";
-  }
-
-  // Fallback colors for other node types.
-  switch (nodeType) {
-    case "roadmap":
-      return "#a78bfa";
-    case "strategy":
-      return "#2dd4bf";
-    case "program":
-      return "#fb923c";
-    default:
-      return "#d1d5db";
-  }
-}
-
-/**
- * getStatusColor:
- * Determines stroke color for status icons (circles, lines, check marks).
+ * Determines color for status indicators.
+ * @param status - The status of the milestone or activity
+ * @returns A hex color code
  */
 function getStatusColor(status: string): string {
   switch (status) {
@@ -96,58 +31,230 @@ function getStatusColor(status: string): string {
 }
 
 /**
- * getLegendColor:
- * Returns the fill color for legend shapes.
+ * Extracts workstreams, milestones, and activities from the hierarchical data.
+ * @param data - The raw flightmap data
+ * @returns An object containing workstreams and activities
  */
-function getLegendColor(
-  type: string,
-  status: string | undefined,
-  workstreamColor: string
-): string {
-  if (type === "workstream") {
-    return workstreamColor;
+function extractMilestonesAndActivities(data: FlightmapData) {
+  const rootNode = buildHierarchy(data);
+  const workstreams: {
+    [id: number]: { id: number; name: string; color: string; milestones: any[] };
+  } = {};
+  const activities: any[] = [];
+  const dependencies: { source: number; target: number }[] = [];
+
+  function visit(node: any, currentWorkstreamId?: number) {
+    if (node.type === "workstream") {
+      currentWorkstreamId = node.id;
+      workstreams[node.id] = {
+        id: node.id,
+        name: node.name,
+        color: node.color || "#0000FF",
+        milestones: [],
+      };
+    }
+    if (node.type === "milestone" && currentWorkstreamId && workstreams[currentWorkstreamId]) {
+      workstreams[currentWorkstreamId].milestones.push({
+        ...node,
+        workstreamId: currentWorkstreamId,
+      });
+    }
+    if (node.type === "milestone" && node.dependencies && node.dependencies.length > 0) {
+      // Add each dependency relation
+      node.dependencies.forEach((dependencyId: number) => {
+        dependencies.push({
+          source: dependencyId,      // The milestone this one depends on
+          target: node.id            // The dependent milestone
+        });
+      });
+    }
+    if (node.type === "activity" && currentWorkstreamId != null) {
+      let parentMilestoneNode: any = node.parent;
+      while (parentMilestoneNode && parentMilestoneNode.type !== "milestone") {
+        parentMilestoneNode = parentMilestoneNode.parent;
+      }
+      if (parentMilestoneNode && parentMilestoneNode.id) {
+        activities.push({
+          ...node,
+          workstreamId: currentWorkstreamId,
+          sourceMilestoneId: parentMilestoneNode.id,
+          targetMilestoneIds: [
+            ...(node.supported_milestones || []),
+            ...(node.additional_milestones || []),
+          ],
+          autoConnect: !(
+            (node.supported_milestones && node.supported_milestones.length) ||
+            (node.additional_milestones && node.additional_milestones.length)
+          ),
+        });
+      }
+    }
+    if (node.children) {
+      node.children.forEach((child: any) => {
+        child.parent = node;
+        visit(child, currentWorkstreamId);
+      });
+    }
   }
-  if (type === "milestone" && status === "completed") {
-    return "#ccc";
+  visit(rootNode);
+
+  function linkParentActivities(node: any) {
+    if (node.type === "milestone" && node.children) {
+      const childMilestones = node.children.filter((c: any) => c.type === "milestone");
+      const milestoneActivities = node.children.filter((c: any) => c.type === "activity");
+      childMilestones.forEach((childMilestone: any) => {
+        milestoneActivities.forEach((activityNode: any) => {
+          activities.push({
+            ...activityNode,
+            sourceMilestoneId: node.id,
+            targetMilestoneIds: [childMilestone.id],
+            autoConnect: false,
+          });
+        });
+      });
+    }
+    if (node.children) {
+      node.children.forEach(linkParentActivities);
+    }
   }
-  switch (type) {
-    case "roadmap":
-      return "#a78bfa";
-    case "strategy":
-      return "#2dd4bf";
-    case "program":
-      return "#fb923c";
-    case "milestone":
-      return "#facc15";
-    case "activity":
-      return "#f87171";
-    default:
-      return "#d1d5db";
+  linkParentActivities(rootNode);
+
+  return { workstreams: Object.values(workstreams), activities, dependencies };
+}
+
+/**
+ * Processes milestone deadlines to create timeline markers.
+ * @param milestones - Array of milestones
+ * @returns Array of unique dates
+ */
+function processDeadlines(milestones: any[]) {
+  const allDeadlines = milestones
+    .filter((m) => m.deadline)
+    .map((m) => new Date(m.deadline));
+  if (allDeadlines.length === 0) {
+    const now = new Date();
+    const oneMonthLater = new Date(now);
+    oneMonthLater.setMonth(now.getMonth() + 1);
+    const twoMonthsLater = new Date(now);
+    twoMonthsLater.setMonth(now.getMonth() + 2);
+    return [now, oneMonthLater, twoMonthsLater].sort((a, b) => a.getTime() - b.getTime());
+  }
+  const uniqueDates = Array.from(
+    new Set(allDeadlines.map((d) => d.toISOString().split("T")[0]))
+  )
+    .map((dateStr) => new Date(dateStr))
+    .sort((a, b) => a.getTime() - b.getTime());
+  return uniqueDates;
+}
+
+/**
+ * Groups milestones by workstream and deadline to handle overlapping milestones
+ * @param milestones - Array of milestones
+ * @returns Object with grouped milestones
+ */
+function groupMilestonesByDeadlineAndWorkstream(milestones: any[]) {
+  const groups: { [key: string]: any[] } = {};
+  milestones.forEach((milestone) => {
+    if (!milestone.deadline) return;
+    const dateKey = new Date(milestone.deadline).toISOString().split("T")[0];
+    const wsKey = milestone.workstreamId;
+    const groupKey = `${dateKey}-${wsKey}`;
+    if (!groups[groupKey]) {
+      groups[groupKey] = [];
+    }
+    groups[groupKey].push(milestone);
+  });
+  return groups;
+}
+
+/**
+ * Local storage helpers for milestone positions
+ */
+function getMilestonePositionsKey(dataId: string): string {
+  return `flightmap-milestone-positions-${dataId}`;
+}
+
+function loadMilestonePositions(dataId: string): { [id: number]: { y: number } } {
+  try {
+    const storedData = localStorage.getItem(getMilestonePositionsKey(dataId));
+    return storedData ? JSON.parse(storedData) : {};
+  } catch (e) {
+    console.error("Error loading milestone positions:", e);
+    return {};
+  }
+}
+
+function saveMilestonePositions(dataId: string, positions: { [id: number]: { y: number } }): void {
+  try {
+    localStorage.setItem(getMilestonePositionsKey(dataId), JSON.stringify(positions));
+  } catch (e) {
+    console.error("Error saving milestone positions:", e);
+  }
+}
+
+/**
+ * Local storage helpers for workstream positions
+ */
+function getWorkstreamPositionsKey(dataId: string): string {
+  return `flightmap-workstream-positions-${dataId}`;
+}
+
+function loadWorkstreamPositions(dataId: string): { [id: number]: { y: number } } {
+  try {
+    const storedData = localStorage.getItem(getWorkstreamPositionsKey(dataId));
+    return storedData ? JSON.parse(storedData) : {};
+  } catch (e) {
+    console.error("Error loading workstream positions:", e);
+    return {};
+  }
+}
+
+function saveWorkstreamPositions(dataId: string, positions: { [id: number]: { y: number } }): void {
+  try {
+    localStorage.setItem(getWorkstreamPositionsKey(dataId), JSON.stringify(positions));
+  } catch (e) {
+    console.error("Error saving workstream positions:", e);
   }
 }
 
 const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
-
   const [tooltip, setTooltip] = useState({
     content: "",
     left: 0,
     top: 0,
     visible: false,
   });
+  const [milestonePositions, setMilestonePositions] = useState<{ [id: number]: { y: number } }>({});
+  const [workstreamPositions, setWorkstreamPositions] = useState<{ [id: number]: { y: number } }>({});
+  const dataId = useRef<string>(`${data.id || new Date().getTime()}`);
 
-  // Default fallback workstream color from the backend.
-  const [defaultWorkstreamColor] = useState("#22d3ee");
+  // Load saved positions on mount
+  useEffect(() => {
+    setMilestonePositions(loadMilestonePositions(dataId.current));
+    setWorkstreamPositions(loadWorkstreamPositions(dataId.current));
+  }, []);
+
+  // Save positions when they change
+  useEffect(() => {
+    if (Object.keys(milestonePositions).length > 0) {
+      saveMilestonePositions(dataId.current, milestonePositions);
+    }
+    if (Object.keys(workstreamPositions).length > 0) {
+      saveWorkstreamPositions(dataId.current, workstreamPositions);
+    }
+  }, [milestonePositions, workstreamPositions]);
 
   useEffect(() => {
     const svgEl = d3.select(svgRef.current);
     svgEl.selectAll("*").remove();
 
-    // Dimensions and margins.
     const width = window.innerWidth;
     const height = window.innerHeight * 0.8;
-    const margin = { top: 20, right: 150, bottom: 30, left: 150 };
+    const margin = { top: 40, right: 150, bottom: 30, left: 150 };
+    const contentWidth = width - margin.left - margin.right;
+    const contentHeight = height - margin.top - margin.bottom;
 
     svgEl
       .attr("width", width)
@@ -155,377 +262,559 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .attr("viewBox", `0 0 ${width} ${height}`)
       .attr("class", "bg-white");
 
-    const container = svgEl
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+    const container = svgEl.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Zoom behavior.
-    zoomRef.current = d3
-      .zoom()
-      .scaleExtent([0.5, 5])
-      .on("zoom", (event) => {
-        container.attr("transform", event.transform);
-      });
-    svgEl.call(zoomRef.current as unknown as (
-      selection: d3.Selection<SVGSVGElement | null, unknown, null, undefined>
-    ) => void);
-
-    // Build hierarchy from the Roadmap data.
-    const hierarchyData = buildHierarchy(data);
-    const root = d3.hierarchy(hierarchyData);
-
-    // Use a tree layout with nodeSize + separation.
-    const treeLayout = d3
-      .tree()
-      .nodeSize([60, 300])
-      .separation(() => 2.5);
-    treeLayout(root);
-
-    // Compute bounding box for all nodes.
-    let xMin = Infinity, xMax = -Infinity;
-    let yMin = Infinity, yMax = -Infinity;
-    root.each((d) => {
-      if (d.x !== undefined && d.x < xMin) xMin = d.x;
-      if (d.x !== undefined && d.x > xMax) xMax = d.x;
-      if (d.y !== undefined && d.y < yMin) yMin = d.y;
-      if (d.y !== undefined && d.y > yMax) yMax = d.y;
+    zoomRef.current = d3.zoom().scaleExtent([0.5, 5]).on("zoom", (event) => {
+      container.attr("transform", event.transform);
     });
-    xMin -= 50; xMax += 50;
-    yMin -= 50; yMax += 200;
-    container.attr("transform", `translate(${margin.left - yMin}, ${margin.top - xMin})`);
+    svgEl.call(zoomRef.current as any);
 
-    // Link generator (horizontal).
-    const linkGenerator = d3.linkHorizontal();
+    const { workstreams, activities, dependencies } = extractMilestonesAndActivities(data);
+    const allMilestones = workstreams.flatMap((ws) => ws.milestones);
+    const timelineMarkers = processDeadlines(allMilestones);
 
-    // 1) Draw hierarchical links (behind everything).
-    const linksGroup = container.append("g").attr("class", "links");
-    linksGroup
-      .selectAll(".link")
-      .data(root.links())
-      .enter()
-      .append("path")
-      .attr("class", "link")
-      .attr("d", (d) =>
-        linkGenerator({
-          source: [d.source.y, d.source.x],
-          target: [d.target.y, d.target.x],
-        } as DefaultLinkObject) ?? ""
-      )
-      .attr("fill", "none")
-      .attr("stroke", "#ccc");
+    const xScale = d3
+      .scaleTime()
+      .domain([d3.min(timelineMarkers) || new Date(), d3.max(timelineMarkers) || new Date()])
+      .range([0, contentWidth])
+      .nice();
 
-    // --- Extra Links for Multiple Milestone–Activity Connections ---
-    // Build a map of milestone nodes by ID -> { x, y }.
-    const milestoneNodeMap: { [key: number]: { x: number; y: number } } = {};
-    root.descendants().forEach((d) => {
-      if (d.data.type === "milestone" && d.data.id) {
-        if (d.x !== undefined && d.y !== undefined) {
-          milestoneNodeMap[d.data.id] = { x: d.x, y: d.y };
-        }
-      }
-    });
+    const yScale = d3
+      .scalePoint()
+      .domain(workstreams.map((ws) => ws.id.toString()))
+      .range([100, contentHeight - 100])
+      .padding(1.0);
 
-    // Collect all cross-workstream links from supported_milestones / additional_milestones.
-    const extraLinks: Array<{
-      source: { x: number; y: number };
-      target: { x: number; y: number };
-      activityId: number;
-      milestoneId: number;
-    }> = [];
+    const milestoneCoordinates: { [id: number]: { x: number; y: number } } = {};
 
-    root.descendants().forEach((d) => {
-      if (d.data.type === "activity" && d.data.id) {
-        const activityX = d.x;
-        const activityY = d.y;
-        const targetIds: number[] = [];
-        if (d.data.supported_milestones && Array.isArray(d.data.supported_milestones)) {
-          targetIds.push(...d.data.supported_milestones);
-        }
-        if (d.data.additional_milestones && Array.isArray(d.data.additional_milestones)) {
-          targetIds.push(...d.data.additional_milestones);
-        }
-
-        targetIds.forEach((targetId: number) => {
-          const target = milestoneNodeMap[targetId];
-          if (target) {
-            extraLinks.push({
-              source: { x: activityX ?? 0, y: activityY ?? 0 },
-              target: target,
-              activityId: d.data.id,
-              milestoneId: targetId,
-            });
-          }
-        });
-      }
-    });
-
-    // 2) Draw extra dashed links (still behind nodes).
-    const extraLinksGroup = container.append("g").attr("class", "extra-links");
-    extraLinksGroup
-      .selectAll("path")
-      .data(extraLinks)
-      .enter()
-      .append("path")
-      .attr("class", "extra-link")
-      .attr("d", (d) =>
-        linkGenerator({
-          source: [d.source.y, d.source.x],
-          target: [d.target.y, d.target.x],
-        } as DefaultLinkObject) ?? ""
-      )
-      .attr("fill", "none")
-      .attr("stroke", "#888")
-      .attr("stroke-dasharray", "4 2")
-      .attr("stroke-width", 1);
-
-    // 3) Draw nodes on top.
-    const nodesGroup = container.append("g").attr("class", "nodes");
-    const nodes = nodesGroup
-      .selectAll(".node")
-      .data(root.descendants())
-      .enter()
-      .append("g")
-      .attr("class", (d) => "node " + (d.children ? "node--internal" : "node--leaf"))
-      .attr("transform", (d) => `translate(${d.y},${d.x})`)
-      .on("mouseover", (event, d) => {
-        setTooltip({
-          content: getTooltipContent(d),
-          left: event.pageX + 10,
-          top: event.pageY - 28,
-          visible: true,
-        });
-      })
-      .on("mousemove", (event) => {
-        setTooltip((prev) => ({
-          ...prev,
-          left: event.pageX + 10,
-          top: event.pageY - 28,
-        }));
-      })
-      .on("mouseout", () => {
-        setTooltip((prev) => ({ ...prev, visible: false }));
-      });
-
-    // Define separate state variable for filtering workstream nodes.
-    let activeWorkstreamFilter: { id: number } | null = null;
-
-    // For each node, draw the shape and text label.
-    nodes.each(function(d) {
-      let paddingX = 20,
-        paddingY = 15;
-      switch (d.data.type) {
-        case "roadmap":
-        case "strategy":
-        case "program":
-        case "workstream":
-          paddingY += 5;
-          break;
-        case "activity":
-          paddingX += 10;
-          paddingY += 10;
-          break;
-        default:
-          break;
-      }
-      const textSel = d3.select(this).append("text")
-        .attr("dy", "0.35em")
+    // Draw timeline markers
+    const timelineGroup = container.append("g").attr("class", "timeline");
+    timelineMarkers.forEach((date) => {
+      const x = xScale(date);
+      timelineGroup
+        .append("line")
+        .attr("x1", x)
+        .attr("y1", 0)
+        .attr("x2", x)
+        .attr("y2", contentHeight)
+        .attr("stroke", "#e5e7eb")
+        .attr("stroke-width", 1);
+      timelineGroup
+        .append("text")
+        .attr("x", x)
+        .attr("y", -15)
         .attr("text-anchor", "middle")
-        .text(d.data.name);
-      wrapText(textSel, 120);
-      const bbox = (textSel.node() as SVGTextElement).getBBox();
-      const shapeWidth = bbox.width + paddingX * 2;
-      const shapeHeight = bbox.height + paddingY * 2;
-      const fillColor = getNodeColor(d);
+        .attr("font-size", "12px")
+        .attr("fill", "#6b7280")
+        .text(date.toLocaleDateString(undefined, { month: "short", year: "numeric" }));
+    });
 
-      // Render shape by node type:
-      if (d.data.type === "milestone") {
-        const radius = Math.max(shapeWidth, shapeHeight) / 2;
-        d3.select(this)
-          .insert("circle", ":first-child")
-          .attr("r", radius)
-          .attr("cx", 0)
-          .attr("cy", 0)
-          .attr("fill", fillColor)
-          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", 1);
-      } else if (d.data.type === "roadmap") {
-        d3.select(this)
-          .insert("rect", ":first-child")
-          .attr("width", shapeWidth)
-          .attr("height", shapeHeight)
-          .attr("x", -shapeWidth / 2)
-          .attr("y", -shapeHeight / 2)
-          .attr("rx", 10)
-          .attr("ry", 10)
+    const activitiesGroup = container.append("g").attr("class", "activities");
+    const workstreamGroup = container.append("g").attr("class", "workstreams");
+    const milestonesGroup = container.append("g").attr("class", "milestones");
+    const dependencyGroup = container.append("g").attr("class", "dependencies");
+
+
+    // Workstream drag behavior
+    const workstreamDragBehavior = d3
+      .drag<SVGGElement, any>()
+      .on("start", function () {
+        d3.select(this).classed("dragging", true);
+      })
+      .on("drag", function (event, d) {
+        const offset = event.y - d.initialY;
+        d3.select(this).attr("transform", `translate(0, ${offset})`);
+
+        // Move associated milestones
+        milestonesGroup
+          .selectAll(".milestone")
+          .filter((m: any) => m.workstreamId === d.id)
+          .each(function (milestoneData: any) {
+            milestoneCoordinates[milestoneData.id].y += event.dy;
+            const currentTransform = d3.select(this).attr("transform") || "";
+            const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
+            const currentY = match ? parseFloat(match[1]) : 0;
+            d3.select(this).attr("transform", `translate(0, ${currentY + event.dy})`);
+          });
+
+        // Update activity paths
+        updateActivities();
+        updateDependencies();
+      })
+      .on("end", function (event, d) {
+        d3.select(this).classed("dragging", false);
+
+        // Save workstream position
+        setWorkstreamPositions((prev) => ({
+          ...prev,
+          [d.id]: { y: event.y },
+        }));
+
+        // Save updated milestone positions
+        const updatedMilestonePositions = { ...milestonePositions };
+        milestonesGroup
+          .selectAll(".milestone")
+          .filter((m: any) => m.workstreamId === d.id)
+          .each(function (milestoneData: any) {
+            updatedMilestonePositions[milestoneData.id] = {
+              y: milestoneCoordinates[milestoneData.id].y,
+            };
+          });
+        setMilestonePositions(updatedMilestonePositions);
+      });
+
+    // Draw workstreams
+    workstreams.forEach((workstream) => {
+      let y = yScale(workstream.id.toString()) || 0;
+      if (workstreamPositions[workstream.id]) {
+        y = workstreamPositions[workstream.id].y;
+      }
+
+      const wsGroup = workstreamGroup
+        .append("g")
+        .datum({ ...workstream, initialY: y })
+        .attr("class", "workstream")
+        .attr("cursor", "ns-resize")
+        .call(workstreamDragBehavior as any);
+
+      wsGroup
+        .append("text")
+        .attr("x", -10)
+        .attr("y", y)
+        .attr("text-anchor", "end")
+        .attr("dominant-baseline", "middle")
+        .attr("font-weight", "bold")
+        .attr("fill", workstream.color)
+        .text(workstream.name);
+
+      wsGroup
+        .append("line")
+        .attr("x1", 0)
+        .attr("y1", y)
+        .attr("x2", contentWidth)
+        .attr("y2", y)
+        .attr("stroke", workstream.color)
+        .attr("stroke-width", 1)
+        .attr("stroke-opacity", 0.3)
+        .attr("stroke-dasharray", "4 2");
+    });
+
+    // Function to update activities
+    const updateActivities = () => {
+      activitiesGroup.selectAll("path").remove();
+      activitiesGroup.selectAll("rect").remove();
+      activitiesGroup.selectAll("text").remove();
+      drawActivities();
+    };
+
+    const updateDependencies = () => {
+      container.selectAll(".dependency-line").remove();
+      drawDependencies();
+    };    
+
+    // Function to draw activities
+    const drawActivities = () => {
+      const connectionGroups: { [key: string]: any[] } = {};
+      activities.forEach((activity) => {
+        const sourceId = activity.sourceMilestoneId;
+        (activity.targetMilestoneIds || []).forEach((targetId: number) => {
+          const key = `${sourceId}-${targetId}`;
+          if (!connectionGroups[key]) {
+            connectionGroups[key] = [];
+          }
+          connectionGroups[key].push(activity);
+        });
+      });
+
+      Object.entries(connectionGroups).forEach(([key, groupActivities]) => {
+        const [sourceId, targetId] = key.split("-").map(Number);
+        const source = milestoneCoordinates[sourceId];
+        const target = milestoneCoordinates[targetId];
+        if (!source || !target) return;
+
+        if (groupActivities.length === 1) {
+          const activity = groupActivities[0];
+          const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
+          if (!workstream) return;
+
+          const path = activitiesGroup
+            .append("path")
+            .attr(
+              "d",
+              d3.linkHorizontal()({
+                source: [source.x, source.y],
+                target: [target.x, target.y],
+              } as DefaultLinkObject) ?? ""
+            )
+            .attr("fill", "none")
+            .attr("stroke", workstream.color)
+            .attr("stroke-width", 1.5)
+            .attr("marker-end", "url(#arrow)")
+            .on("mouseover", (event) => {
+              setTooltip({
+                content: getTooltipContent({ data: activity }),
+                left: event.pageX + 10,
+                top: event.pageY - 28,
+                visible: true,
+              });
+            })
+            .on("mousemove", (event) => {
+              setTooltip((prev) => ({
+                ...prev,
+                left: event.pageX + 10,
+                top: event.pageY - 28,
+              }));
+            })
+            .on("mouseout", () => {
+              setTooltip((prev) => ({ ...prev, visible: false }));
+            });
+
+          addActivityLabel(path, activity);
+        } else {
+          const centerX = (source.x + target.x) / 2;
+          const centerY = (source.y + target.y) / 2;
+          const dx = target.x - source.x;
+          const dy = target.y - source.y;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          if (length === 0) return;
+
+          const perpVectorX = -dy / length;
+          const perpVectorY = dx / length;
+          const someScale = 50;
+
+          groupActivities.forEach((activity, index) => {
+            const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
+            if (!workstream) return;
+
+            const offset = index - (groupActivities.length - 1) / 2;
+            const controlX = centerX + offset * perpVectorX * someScale;
+            const controlY = centerY + offset * perpVectorY * someScale;
+
+            const pathData = `
+              M ${source.x},${source.y}
+              Q ${controlX},${controlY} ${target.x},${target.y}
+            `;
+
+            const path = activitiesGroup
+              .append("path")
+              .attr("d", pathData)
+              .attr("fill", "none")
+              .attr("stroke", workstream.color)
+              .attr("stroke-width", 1.5)
+              .attr("marker-end", "url(#arrow)")
+              .on("mouseover", (event) => {
+                setTooltip({
+                  content: getTooltipContent({ data: activity }),
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                  visible: true,
+                });
+              })
+              .on("mousemove", (event) => {
+                setTooltip((prev) => ({
+                  ...prev,
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                }));
+              })
+              .on("mouseout", () => {
+                setTooltip((prev) => ({ ...prev, visible: false }));
+              });
+
+            addActivityLabel(path, activity);
+          });
+        }
+      });
+    };
+
+    // Function to draw dependency connections
+    const drawDependencies = () => {
+      // Remove any existing dependency lines first
+      container.selectAll(".dependency-line").remove();
+      
+      dependencies.forEach((dependency) => {
+        const source = milestoneCoordinates[dependency.source];
+        const target = milestoneCoordinates[dependency.target];
+        
+        if (!source || !target) return; // Skip if either milestone doesn't exist
+        
+        // Create a dashed line for dependencies
+        dependencyGroup
+          .append("path")
+          .attr("class", "dependency-line")
+          .attr(
+            "d",
+            d3.linkHorizontal()({
+              source: [source.x, source.y],
+              target: [target.x, target.y],
+            } as DefaultLinkObject) ?? ""
+          )
           .attr("fill", "none")
-          .attr("stroke", fillColor)
-          .attr("stroke-width", 3);
-        d3.select(this)
-          .insert("rect", ":first-child")
-          .attr("width", shapeWidth - 6)
-          .attr("height", shapeHeight - 6)
-          .attr("x", -(shapeWidth - 6) / 2)
-          .attr("y", -(shapeHeight - 6) / 2)
-          .attr("rx", 8)
-          .attr("ry", 8)
-          .attr("fill", fillColor)
-          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", 1);
-      } else if (d.data.type === "strategy") {
-        const w = shapeWidth,
-          h = shapeHeight;
-        const points = [
-          [-w / 4, -h / 2],
-          [w / 4, -h / 2],
-          [w / 2, 0],
-          [w / 4, h / 2],
-          [-w / 4, h / 2],
-          [-w / 2, 0],
-        ]
-          .map((p) => p.join(","))
-          .join(" ");
-        d3.select(this)
-          .insert("polygon", ":first-child")
-          .attr("points", points)
-          .attr("fill", fillColor)
-          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", 1);
-      } else if (d.data.type === "program") {
-        d3.select(this)
-          .insert("rect", ":first-child")
-          .attr("width", shapeWidth)
-          .attr("height", shapeHeight)
-          .attr("x", -shapeWidth / 2)
-          .attr("y", -shapeHeight / 2)
-          .attr("rx", 5)
-          .attr("ry", 5)
-          .attr("fill", fillColor)
-          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", 1);
-      } else if (d.data.type === "workstream") {
-        d3.select(this)
-          .insert("rect", ":first-child")
-          .attr("width", shapeWidth)
-          .attr("height", shapeHeight)
-          .attr("x", -shapeWidth / 2)
-          .attr("y", -shapeHeight / 2)
-          .attr("rx", shapeHeight / 2)
-          .attr("ry", shapeHeight / 2)
-          .attr("fill", fillColor)
-          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", 1);
-      } else if (d.data.type === "activity") {
-        const halfWidth = shapeWidth / 2;
-        const halfHeight = shapeHeight / 2;
-        const points = `0,${-halfHeight} ${halfWidth},0 0,${halfHeight} ${-halfWidth},0`;
-        d3.select(this)
-          .insert("polygon", ":first-child")
-          .attr("points", points)
-          .attr("fill", fillColor)
-          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", 1);
+          .attr("stroke", "#6b7280") // Gray color to distinguish from activity lines
+          .attr("stroke-width", 2)
+          .attr("stroke-dasharray", "4 3") // Dashed line for dependencies
+          .attr("marker-end", "url(#dependency-arrow)")
+          .on("mouseover", (event) => {
+            setTooltip({
+              content: "Dependency relationship",
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+              visible: true,
+            });
+          })
+          .on("mousemove", (event) => {
+            setTooltip((prev) => ({
+              ...prev,
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+            }));
+          })
+          .on("mouseout", () => {
+            setTooltip((prev) => ({ ...prev, visible: false }));
+          });
+      });
+    };
 
-        // Optional status indicator
-        // const half = Math.min(halfWidth, halfHeight);
-        if (d.data.status) {
-          const statusStroke = getStatusColor(d.data.status);
-          d3.select(this)
+    // Milestone drag behavior
+    const dragBehavior = d3
+      .drag<SVGGElement, any>()
+      .on("start", function () {
+        d3.select(this).classed("dragging", true);
+      })
+      .on("drag", function (event, data) {
+        const newY = event.y;
+        d3.select(this).attr("transform", `translate(0, ${event.y - data.initialY})`);
+        milestoneCoordinates[data.id].y = newY;
+        updateActivities();
+        updateDependencies(); 
+      })
+      .on("end", function (event, data) {
+        d3.select(this).classed("dragging", false);
+        setMilestonePositions((prev) => ({
+          ...prev,
+          [data.id]: { y: event.y },
+        }));
+      });
+
+    // Draw milestones
+    const milestoneGroups = groupMilestonesByDeadlineAndWorkstream(allMilestones);
+    Object.values(milestoneGroups).forEach((group) => {
+      const maxOffset = 200;
+      const offsetStep = group.length > 1 ? maxOffset / (group.length - 1) : 0;
+
+      group.forEach((milestone, index) => {
+        const workstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
+        if (!workstream) return;
+
+        const x = milestone.deadline ? xScale(new Date(milestone.deadline)) : 20;
+        let y = yScale(workstream.id.toString()) || 0;
+        if (workstreamPositions[workstream.id]) {
+          y = workstreamPositions[workstream.id].y;
+        }
+        if (group.length > 1) {
+          const totalOffset = (group.length - 1) * offsetStep;
+          const startOffset = -totalOffset / 2;
+          y += startOffset + index * offsetStep;
+        }
+        if (milestonePositions[milestone.id]) {
+          y = milestonePositions[milestone.id].y;
+        }
+
+        milestoneCoordinates[milestone.id] = { x, y };
+
+        const milestoneGroup = milestonesGroup
+          .append("g")
+          .datum({ ...milestone, initialY: y })
+          .attr("class", "milestone")
+          .attr("cursor", "ns-resize")
+          .call(dragBehavior as any);
+
+        milestoneGroup
+          .append("circle")
+          .attr("cx", x)
+          .attr("cy", y)
+          .attr("r", 55)
+          .attr("fill", milestone.status === "completed" ? "#ccc" : workstream.color)
+          .attr("stroke", milestone.status === "completed" ? "#ccc" : d3.color(workstream.color)?.darker(0.5) + "")
+          .attr("stroke-width", 1)
+          .on("mouseover", (event) => {
+            setTooltip({
+              content: getTooltipContent({ data: milestone }),
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+              visible: true,
+            });
+          })
+          .on("mousemove", (event) => {
+            setTooltip((prev) => ({
+              ...prev,
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+            }));
+          })
+          .on("mouseout", () => {
+            setTooltip((prev) => ({ ...prev, visible: false }));
+          });
+
+        const textEl = milestoneGroup
+          .append("text")
+          .attr("x", x)
+          .attr("y", y)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "12px")
+          .attr("fill", "white")
+          .text(milestone.name);
+        wrapText(textEl, 60);
+
+        const workstreamY = yScale(workstream.id.toString()) || 0;
+        milestoneGroup
+          .append("line")
+          .attr("class", "connection-line")
+          .attr("x1", x)
+          .attr("y1", y)
+          .attr("x2", x)
+          .attr("y2", workstreamY)
+          .attr("stroke", workstream.color)
+          .attr("stroke-width", 0.5)
+          .attr("stroke-opacity", 0.5)
+          .attr("stroke-dasharray", "3 2");
+
+        if (milestone.status) {
+          const statusStroke = getStatusColor(milestone.status);
+          milestoneGroup
             .append("circle")
-            .attr("cx", 0)
-            .attr("cy", -halfHeight - 10)
-            .attr("r", 8)
+            .attr("cx", x)
+            .attr("cy", y - 30)
+            .attr("r", 5)
             .attr("fill", "white")
             .attr("stroke", statusStroke)
             .attr("stroke-width", 1);
-          if (d.data.status === "completed") {
-            d3.select(this)
+          if (milestone.status === "completed") {
+            milestoneGroup
               .append("path")
-              .attr("d", "M-3,0 L-1,2 L3,-2")
-              .attr("transform", `translate(0,${-halfHeight - 10})`)
+              .attr("d", "M-2,0 L-1,1 L2,-2")
+              .attr("transform", `translate(${x},${y - 30})`)
               .attr("stroke", statusStroke)
-              .attr("stroke-width", 2)
+              .attr("stroke-width", 1.5)
               .attr("fill", "none");
-          } else if (d.data.status === "in_progress") {
-            d3.select(this)
+          } else if (milestone.status === "in_progress") {
+            milestoneGroup
               .append("circle")
-              .attr("cx", 0)
-              .attr("cy", -halfHeight - 10)
-              .attr("r", 3)
+              .attr("cx", x)
+              .attr("cy", y - 30)
+              .attr("r", 2)
               .attr("fill", statusStroke);
           } else {
-            d3.select(this)
+            milestoneGroup
               .append("line")
-              .attr("x1", -3)
-              .attr("y1", -halfHeight - 10)
-              .attr("x2", 3)
-              .attr("y2", -halfHeight - 10)
+              .attr("x1", x - 2)
+              .attr("y1", y - 30)
+              .attr("x2", x + 2)
+              .attr("y2", y - 30)
               .attr("stroke", statusStroke)
-              .attr("stroke-width", 2);
+              .attr("stroke-width", 1.5);
           }
         }
-      }
-      // Node label (bottom-right)
-      d3.select(this)
-        .append("text")
-        .attr("x", shapeWidth + 5)
-        .attr("y", shapeHeight / 2 + 5)
-        .attr("fill", "black")
-        .style("font-size", "12px")
-        .text(d.data.label || "");
-
-      // Attach click handler ONLY to workstream nodes.
-      if (d.data.type === "workstream") {
-        d3.select(this)
-          .style("cursor", "pointer")
-          .on("click", function(_event: MouseEvent, d: any) {
-            if (activeWorkstreamFilter && activeWorkstreamFilter.id === d.data.id) {
-              activeWorkstreamFilter = null;
-              d3.selectAll(".node")
-                .transition()
-                .duration(500)
-                .style("opacity", 1);
-            } else {
-              activeWorkstreamFilter = { id: d.data.id };
-              const selectedNodes = d.descendants();
-              d3.selectAll(".node")
-                .transition()
-                .duration(500)
-                .style("opacity", function(nd: any) {
-                  return selectedNodes.includes(nd) ? 1 : 0.2;
-                });
-            }
-          });
-      }
+      });
     });
 
-    // --- Legend with Toggling Logic ---
-    const legendData = [
-      { type: "roadmap", label: "Flightmap" },
-      { type: "strategy", label: "Strategy" },
-      { type: "program", label: "Program" },
-      { type: "workstream", label: "Workstream" },
-      { type: "milestone", label: "Milestone" },
-      { type: "activity", label: "Activity" },
-      { type: "status_completed", label: "Completed", status: "completed" },
-      { type: "status_in_progress", label: "In Progress", status: "in_progress" },
-      { type: "status_not_started", label: "Not Started", status: "not_started" },
-    ];
+    // Auto-connect activities
+    workstreams.forEach((workstream) => {
+      const wsMilestones = workstream.milestones
+        .slice()
+        .sort((a, b) => {
+          const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
+          const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
+          return dateA.getTime() - dateB.getTime();
+        });
+      activities
+        .filter((a) => a.workstreamId === workstream.id && a.autoConnect)
+        .forEach((activity) => {
+          const sourceMilestoneIndex = wsMilestones.findIndex(
+            (m) => m.id === activity.sourceMilestoneId
+          );
+          if (sourceMilestoneIndex >= 0 && sourceMilestoneIndex < wsMilestones.length - 1) {
+            activity.targetMilestoneIds = [wsMilestones[sourceMilestoneIndex + 1].id];
+          }
+        });
+    });
 
+    // Draw activities
+    drawActivities();
+    activitiesGroup.lower();
+
+    drawDependencies();
+    dependencyGroup.lower();
+
+    /**
+     * Adds a label along an activity path.
+     * @param path - The SVG path element
+     * @param activity - The activity data
+     */
+    function addActivityLabel(
+      path: d3.Selection<SVGPathElement, unknown, null, undefined>,
+      activity: any
+    ) {
+      const pathNode = path.node();
+      if (pathNode && activity.name) {
+        const pathLength = pathNode.getTotalLength();
+        const midpoint = pathNode.getPointAtLength(pathLength / 2);
+
+        activitiesGroup
+          .append("rect")
+          .attr("x", midpoint.x - 60)
+          .attr("y", midpoint.y - 10)
+          .attr("width", 170)
+          .attr("height", 20)
+          .attr("fill", "white")
+          .attr("fill-opacity", 0.5)
+          .attr("rx", 3)
+          .attr("ry", 3);
+
+        const textEl = activitiesGroup
+          .append("text")
+          .attr("x", midpoint.x)
+          .attr("y", midpoint.y)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "6px")
+          .attr("fill", "#4b5563")
+          .text(activity.name);
+        wrapText(textEl, 220);
+      }
+    }
+
+    // Define arrow marker
+    svgEl
+      .append("defs")
+      .append("marker")
+      .attr("id", "arrow")
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 73)
+      .attr("refY", 0)
+      .attr("markerWidth", 6)
+      .attr("markerHeight", 6)
+      .attr("orient", "auto")
+      .append("path")
+      .attr("d", "M0,-5L10,0L0,5")
+      .attr("fill", "#64748b");
+
+    // Add legend
+    const legendData = [
+      { type: "milestone", label: "Milestone", status: "not_started" },
+      { type: "milestone", label: "Completed Milestone", status: "completed" },
+      { type: "status", label: "In Progress", status: "in_progress" },
+      { type: "status", label: "Completed", status: "completed" },
+      { type: "status", label: "Not Started", status: "not_started" },
+      { type: "dependency", label: "Milestone Dependency", status: "dependency" },
+      { type: "instruction", label: "Drag milestones/workstreams" },
+    ];
     const legend = svgEl
       .append("g")
       .attr("class", "legend")
-      .attr("transform", `translate(${width - margin.right + 20}, ${margin.top})`);
-
+      .attr("transform", `translate(${width - margin.right + -50}, ${margin.top})`);
     const legendItemHeight = 30;
-    const interactiveTypes = new Set([
-      "roadmap",
-      "strategy",
-      "program",
-      "workstream",
-      "milestone",
-      "activity",
-    ]);
-
     legend
       .selectAll(".legend-item")
       .data(legendData)
@@ -533,171 +822,110 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .append("g")
       .attr("class", "legend-item")
       .attr("transform", (_, i) => `translate(0, ${i * legendItemHeight})`)
-      .each((d, i, nodes) => {
-        const g = d3.select(nodes[i]);
-        const shapeSize = 20;
-
-        const fill = getLegendColor(d.type, d.status, defaultWorkstreamColor);
-
-        if (d.type.startsWith("status_")) {
+      .each(function (d) {
+        const g = d3.select(this);
+        const shapeSize = 15;
+        if (d.type === "milestone") {
           g.append("circle")
             .attr("cx", shapeSize / 2)
             .attr("cy", shapeSize / 2)
-            .attr("r", 8)
+            .attr("r", shapeSize / 2)
+            .attr("fill", d.status === "completed" ? "#ccc" : "#6366f1")
+            .attr("stroke", d.status === "completed" ? "#ccc" : "#4f46e5")
+            .attr("stroke-width", 1);
+        } else if (d.type === "status") {
+          g.append("circle")
+            .attr("cx", shapeSize / 2)
+            .attr("cy", shapeSize / 2)
+            .attr("r", 5)
             .attr("fill", "white")
             .attr("stroke", getStatusColor(d.status || ""))
             .attr("stroke-width", 1);
-
           if (d.status === "completed") {
             g.append("path")
-              .attr("d", "M-3,0 L-1,2 L3,-2")
+              .attr("d", "M-2,0 L-1,1 L2,-2")
               .attr("transform", `translate(${shapeSize / 2},${shapeSize / 2})`)
               .attr("stroke", getStatusColor(d.status))
-              .attr("stroke-width", 2)
+              .attr("stroke-width", 1.5)
               .attr("fill", "none");
           } else if (d.status === "in_progress") {
             g.append("circle")
               .attr("cx", shapeSize / 2)
               .attr("cy", shapeSize / 2)
-              .attr("r", 3)
+              .attr("r", 2)
               .attr("fill", getStatusColor(d.status));
           } else {
             g.append("line")
-              .attr("x1", shapeSize / 2 - 3)
+              .attr("x1", shapeSize / 2 - 2)
               .attr("y1", shapeSize / 2)
-              .attr("x2", shapeSize / 2 + 3)
+              .attr("x2", shapeSize / 2 + 2)
               .attr("y2", shapeSize / 2)
               .attr("stroke", getStatusColor(d.status || ""))
-              .attr("stroke-width", 2);
+              .attr("stroke-width", 1.5);
           }
-        } else if (d.type === "roadmap") {
-          g.append("rect")
-            .attr("width", shapeSize)
-            .attr("height", shapeSize)
-            .attr("rx", 6)
-            .attr("ry", 6)
-            .attr("fill", "none")
-            .attr("stroke", fill)
-            .attr("stroke-width", 2);
-          g.append("rect")
-            .attr("width", shapeSize - 4)
-            .attr("height", shapeSize - 4)
-            .attr("x", 2)
-            .attr("y", 2)
-            .attr("rx", 4)
-            .attr("ry", 4)
-            .attr("fill", fill)
-            .attr("stroke", d3.color(fill)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.type === "strategy") {
-          const w = shapeSize,
-            h = shapeSize;
-          const points = [
-            [-w / 4, -h / 2],
-            [w / 4, -h / 2],
-            [w / 2, 0],
-            [w / 4, h / 2],
-            [-w / 4, h / 2],
-            [-w / 2, 0],
-          ]
-            .map((p) => p.map((v) => v + shapeSize / 2).join(","))
-            .join(" ");
-          g.append("polygon")
-            .attr("points", points)
-            .attr("fill", fill)
-            .attr("stroke", d3.color(fill)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.type === "program") {
-          g.append("rect")
-            .attr("width", shapeSize)
-            .attr("height", shapeSize)
-            .attr("rx", 4)
-            .attr("ry", 4)
-            .attr("fill", fill)
-            .attr("stroke", d3.color(fill)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.type === "workstream") {
-          g.append("rect")
-            .attr("width", shapeSize)
-            .attr("height", shapeSize)
-            .attr("rx", shapeSize / 2)
-            .attr("ry", shapeSize / 2)
-            .attr("fill", fill)
-            .attr("stroke", d3.color(fill)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.type === "milestone") {
-          g.append("circle")
-            .attr("cx", shapeSize / 2)
-            .attr("cy", shapeSize / 2)
-            .attr("r", shapeSize / 2)
-            .attr("fill", fill)
-            .attr("stroke", d3.color(fill)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
-        } else if (d.type === "activity") {
-          const half = shapeSize / 2;
-          const points = `0,${-half} ${half},0 0,${half} ${-half},0`;
-          g.append("polygon")
-            .attr(
-              "points",
-              points
-                .split(" ")
-                .map((pt) => {
-                  const [x, y] = pt.split(",").map(Number);
-                  return [x + half, y + half].join(",");
-                })
-                .join(" ")
-            )
-            .attr("fill", fill)
-            .attr("stroke", d3.color(fill)?.darker(0.5) + "")
-            .attr("stroke-width", 1);
+        } else if (d.type === "instruction") {
+          g.append("path")
+            .attr("d", "M3,0 L7,0 M5,-2 L5,2 M3,5 L7,5 M5,3 L5,7")
+            .attr("transform", `translate(${shapeSize / 2 - 5},${shapeSize / 2 - 5})`)
+            .attr("stroke", "#4b5563")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-linecap", "round");
+        }  else if (d.type === "dependency") {
+          g.append("line")
+            .attr("x1", 0)
+            .attr("y1", shapeSize / 2)
+            .attr("x2", shapeSize)
+            .attr("y2", shapeSize / 2)
+            .attr("stroke", "#6b7280")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-dasharray", "4 3");
+            
+          // Add an arrowhead
+          g.append("path")
+            .attr("d", "M0,-2L4,0L0,2")
+            .attr("transform", `translate(${shapeSize - 4},${shapeSize / 2})`)
+            .attr("fill", "#6b7280");
         }
-
         g.append("text")
           .attr("x", shapeSize + 5)
-          .attr("y", shapeSize / 2 + 5)
+          .attr("y", shapeSize / 2 + 4)
           .attr("fill", "black")
           .style("font-size", "12px")
           .text(d.label);
-
-        // Legend toggling logic (filters by type or status).
-        let activeFilter: string | null = null;
-        if (interactiveTypes.has(d.type) || d.type.startsWith("status_")) {
-          g.style("cursor", "pointer").on("click", function () {
-            const filterKey = d.type.startsWith("status_") ? d.status : d.type;
-            if (activeFilter === filterKey) {
-              activeFilter = null;
-              d3.selectAll(".node")
-                .transition()
-                .duration(500)
-                .style("opacity", 1);
-            } else {
-              activeFilter = filterKey ?? null;
-              d3.selectAll(".node")
-                .transition()
-                .duration(500)
-                .style("opacity", function (nd: any) {
-                  if (
-                    filterKey === "completed" ||
-                    filterKey === "in_progress" ||
-                    filterKey === "not_started"
-                  ) {
-                    return nd.data.type === "activity" && nd.data.status === filterKey ? 1 : 0.2;
-                  } else {
-                    return nd.data.type === filterKey ? 1 : 0.2;
-                  }
-                });
-            }
-            d3.selectAll(".legend-item").style("opacity", function (legData: any) {
-              const legKey = legData.type.startsWith("status_") ? legData.status : legData.type;
-              if (activeFilter) {
-                return legKey === activeFilter ? 1 : 0.5;
-              }
-              return 1;
-            });
-          });
-        }
       });
-  }, [data, defaultWorkstreamColor]);
+
+    // Add a button to reset node positions
+    const resetButton = svgEl
+      .append("g")
+      .attr("class", "reset-positions-button")
+      .attr("transform", `translate(${width - margin.right + -50}, ${margin.top + (legendData.length + 1) * legendItemHeight})`)
+      .attr("cursor", "pointer")
+      .on("click", () => {
+        localStorage.removeItem(getMilestonePositionsKey(dataId.current));
+        localStorage.removeItem(getWorkstreamPositionsKey(dataId.current));
+        setMilestonePositions({});
+        setWorkstreamPositions({});
+      });
+
+    resetButton
+      .append("rect")
+      .attr("width", 150)
+      .attr("height", 30)
+      .attr("rx", 3)
+      .attr("ry", 3)
+      .attr("fill", "#e5e7eb")
+      .attr("stroke", "#9ca3af")
+      .attr("stroke-width", 1);
+
+    resetButton
+      .append("text")
+      .attr("x", 75)
+      .attr("y", 18)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "12px")
+      .attr("fill", "#4b5563")
+      .text("Reset Node Positions");
+  }, [data, milestonePositions, workstreamPositions]);
 
   return (
     <div className="w-full h-full relative">
@@ -714,7 +942,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             d3.select(svgRef.current)
               .transition()
               .duration(500)
-              .call(zoomRef.current?.transform as any, d3.zoomIdentity);
+              .call(zoomRef.current.transform as any, d3.zoomIdentity);
           }
         }}
         className="absolute bottom-4 right-4 p-2 bg-white rounded shadow hover:bg-gray-50 transition-colors"
@@ -722,8 +950,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         Reset View
       </button>
       <div className="absolute top-4 left-4 flex flex-col gap-2">
-        <JSONExportButton hierarchyData={buildHierarchy(data)} />
-        <CSVExportButton hierarchyData={buildHierarchy(data)} />
         <ScreenshotButton svgRef={svgRef} />
       </div>
     </div>
