@@ -318,7 +318,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
         .attr("x1", x)
         .attr("y1", 0)
         .attr("x2", x)
-        .attr("y2", contentHeight)
+        .attr("y2", 10000)
         .attr("stroke", "#e5e7eb")
         .attr("stroke-width", 1);
       timelineGroup
