@@ -60,11 +60,10 @@ function extractMilestonesAndActivities(data: FlightmapData) {
       });
     }
     if (node.type === "milestone" && node.dependencies && node.dependencies.length > 0) {
-      // Add each dependency relation
       node.dependencies.forEach((dependencyId: number) => {
         dependencies.push({
-          source: dependencyId,      // The milestone this one depends on
-          target: node.id            // The dependent milestone
+          source: dependencyId,
+          target: node.id
         });
       });
     }
@@ -148,33 +147,13 @@ function processDeadlines(milestones: any[]) {
 }
 
 /**
- * Groups milestones by workstream and deadline to handle overlapping milestones
- * @param milestones - Array of milestones
- * @returns Object with grouped milestones
- */
-function groupMilestonesByDeadlineAndWorkstream(milestones: any[]) {
-  const groups: { [key: string]: any[] } = {};
-  milestones.forEach((milestone) => {
-    if (!milestone.deadline) return;
-    const dateKey = new Date(milestone.deadline).toISOString().split("T")[0];
-    const wsKey = milestone.workstreamId;
-    const groupKey = `${dateKey}-${wsKey}`;
-    if (!groups[groupKey]) {
-      groups[groupKey] = [];
-    }
-    groups[groupKey].push(milestone);
-  });
-  return groups;
-}
-
-/**
  * Local storage helpers for milestone positions
  */
 function getMilestonePositionsKey(dataId: string): string {
   return `flightmap-milestone-positions-${dataId}`;
 }
 
-function loadMilestonePositions(dataId: string): { [id: number]: { y: number } } {
+function loadMilestonePositions(dataId: string): { [id: string]: { y: number } } {
   try {
     const storedData = localStorage.getItem(getMilestonePositionsKey(dataId));
     return storedData ? JSON.parse(storedData) : {};
@@ -184,7 +163,7 @@ function loadMilestonePositions(dataId: string): { [id: number]: { y: number } }
   }
 }
 
-function saveMilestonePositions(dataId: string, positions: { [id: number]: { y: number } }): void {
+function saveMilestonePositions(dataId: string, positions: { [id: string]: { y: number } }): void {
   try {
     localStorage.setItem(getMilestonePositionsKey(dataId), JSON.stringify(positions));
   } catch (e) {
@@ -217,6 +196,36 @@ function saveWorkstreamPositions(dataId: string, positions: { [id: number]: { y:
   }
 }
 
+// Define type for milestone placements
+type MilestonePlacement = {
+  id: string;
+  milestone: any;
+  placementWorkstreamId: number;
+  isDuplicate: boolean;
+  originalMilestoneId?: number;
+};
+
+/**
+ * Groups milestone placements by workstream and deadline to handle overlapping milestones
+ * @param placements - Array of milestone placements
+ * @returns Object with grouped placements
+ */
+function groupPlacementsByDeadlineAndWorkstream(placements: MilestonePlacement[]) {
+  const groups: { [key: string]: MilestonePlacement[] } = {};
+  placements.forEach((placement) => {
+    const milestone = placement.milestone;
+    if (!milestone.deadline) return;
+    const dateKey = new Date(milestone.deadline).toISOString().split("T")[0];
+    const wsKey = placement.placementWorkstreamId;
+    const groupKey = `${dateKey}-${wsKey}`;
+    if (!groups[groupKey]) {
+      groups[groupKey] = [];
+    }
+    groups[groupKey].push(placement);
+  });
+  return groups;
+}
+
 const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
@@ -226,7 +235,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     top: 0,
     visible: false,
   });
-  const [milestonePositions, setMilestonePositions] = useState<{ [id: number]: { y: number } }>({});
+  const [milestonePositions, setMilestonePositions] = useState<{ [id: string]: { y: number } }>({});
   const [workstreamPositions, setWorkstreamPositions] = useState<{ [id: number]: { y: number } }>({});
   const dataId = useRef<string>(`${data.id || new Date().getTime()}`);
 
@@ -266,27 +275,19 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
 
     // Modified zoom behavior with proper constraints
     zoomRef.current = d3.zoom<Element, unknown>()
-      .scaleExtent([0.5, 5]) 
+      .scaleExtent([0.5, 5])
       .on("zoom", (event) => {
-        // Apply zoom transform but with constraints
         const transform = event.transform;
-
-        // Ensure the timeline headers stay visible (don't go above the top of the view)
-        // This prevents the visualization from being dragged too far up
         if (transform.y > margin.top) {
           transform.y = margin.top;
         }
-
-        // Allow horizontal scrolling and proper vertical scrolling below the headers
         container.attr("transform", `translate(${transform.x}, ${transform.y}) scale(${transform.k})`);
       });
 
-    // Apply the zoom behavior while disabling double-click zoom
     svgEl
       .call(zoomRef.current as any)
       .on("dblclick.zoom", null);
-    
-    // Prevent default browser scrolling
+
     svgEl.on("wheel", function(event) {
       event.preventDefault();
     });
@@ -307,7 +308,37 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .range([100, contentHeight - 100])
       .padding(1.0);
 
-    const milestoneCoordinates: { [id: number]: { x: number; y: number } } = {};
+    const placementCoordinates: { [id: string]: { x: number; y: number } } = {};
+
+    // Create milestone placements
+    const milestonePlacements: MilestonePlacement[] = allMilestones.map((m) => ({
+      id: m.id.toString(),
+      milestone: m,
+      placementWorkstreamId: m.workstreamId,
+      isDuplicate: false,
+    }));
+
+    // Duplicate source milestones from dependencies into target workstreams
+    dependencies.forEach((dep) => {
+      const sourceMilestone = allMilestones.find((m) => m.id === dep.source);
+      const targetMilestone = allMilestones.find((m) => m.id === dep.target);
+      if (
+        sourceMilestone &&
+        targetMilestone &&
+        sourceMilestone.workstreamId !== targetMilestone.workstreamId
+      ) {
+        const duplicateId = `duplicate-${dep.source}-${dep.target}`;
+        milestonePlacements.push({
+          id: duplicateId,
+          milestone: sourceMilestone, // Duplicate the milestone listed in dependencies (source)
+          placementWorkstreamId: targetMilestone.workstreamId, // Place in the dependent workstream
+          isDuplicate: true,
+          originalMilestoneId: sourceMilestone.id,
+        });
+      }
+    });
+
+    const placementGroups = groupPlacementsByDeadlineAndWorkstream(milestonePlacements);
 
     // Draw timeline markers
     const timelineGroup = container.append("g").attr("class", "timeline");
@@ -336,77 +367,57 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
     const milestonesGroup = container.append("g").attr("class", "milestones");
     const dependencyGroup = container.append("g").attr("class", "dependencies");
 
+    // Update the workstream drag behavior to keep milestones properly connected
+    const workstreamDragBehavior = d3
+      .drag<SVGGElement, any>()
+      .on("start", function () {
+        d3.select(this).classed("dragging", true);
+      })
+      .on("drag", function (event, d) {
+        const minAllowedY = 20;
+        const newY = Math.max(minAllowedY, event.y);
+        const offset = newY - d.initialY;
+        const actualDeltaY = newY - (d.lastY || d.initialY);
+        d.lastY = newY;
 
-// Update the workstream drag behavior to keep milestones properly connected
-const workstreamDragBehavior = d3
-  .drag<SVGGElement, any>()
-  .on("start", function () {
-    d3.select(this).classed("dragging", true);
-  })
-  .on("drag", function (event, d) {
-    // Calculate new position with constraint
-    const minAllowedY = 20; // Minimum allowed Y position
-    const newY = Math.max(minAllowedY, event.y);
-    
-    // Calculate the actual offset based on constrained position
-    const offset = newY - d.initialY;
-    
-    // Calculate the actual movement delta (may be different from event.dy if constrained)
-    const actualDeltaY = newY - (d.lastY || d.initialY);
-    d.lastY = newY; // Store last position for next calculation
-    
-    // Update workstream position
-    d3.select(this).attr("transform", `translate(0, ${offset})`);
+        d3.select(this).attr("transform", `translate(0, ${offset})`);
 
-    // Move associated milestones WITH SAME CONSTRAINT
-    milestonesGroup
-      .selectAll(".milestone")
-      .filter((m: any) => m.workstreamId === d.id)
-      .each(function (milestoneData: any) {
-        // Update milestone coordinates with the same delta as the workstream
-        milestoneCoordinates[milestoneData.id].y += actualDeltaY;
-        
-        // Update milestone visual position
-        const currentTransform = d3.select(this).attr("transform") || "";
-        const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
-        const currentY = match ? parseFloat(match[1]) : 0;
-        
-        // Apply the same delta movement to milestone
-        d3.select(this).attr("transform", `translate(0, ${currentY + actualDeltaY})`);
+        milestonesGroup
+          .selectAll(".milestone")
+          .filter((p: any) => p.placementWorkstreamId === d.id)
+          .each(function (placementData: any) {
+            placementCoordinates[placementData.id].y += actualDeltaY;
+            const currentTransform = d3.select(this).attr("transform") || "";
+            const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
+            const currentY = match ? parseFloat(match[1]) : 0;
+            d3.select(this).attr("transform", `translate(0, ${currentY + actualDeltaY})`);
+          });
+
+        updateActivities();
+        updateDependencies();
+      })
+      .on("end", function (event, d) {
+        d3.select(this).classed("dragging", false);
+        const minAllowedY = 20;
+        const constrainedY = Math.max(minAllowedY, event.y);
+        delete d.lastY;
+
+        setWorkstreamPositions((prev) => ({
+          ...prev,
+          [d.id]: { y: constrainedY },
+        }));
+
+        const updatedMilestonePositions = { ...milestonePositions };
+        milestonesGroup
+          .selectAll(".milestone")
+          .filter((p: any) => p.placementWorkstreamId === d.id)
+          .each(function (placementData: any) {
+            updatedMilestonePositions[placementData.id] = {
+              y: placementCoordinates[placementData.id].y,
+            };
+          });
+        setMilestonePositions(updatedMilestonePositions);
       });
-
-    // Update activity paths and dependencies
-    updateActivities();
-    updateDependencies();
-  })
-  .on("end", function (event, d) {
-    d3.select(this).classed("dragging", false);
-    
-    // Calculate final constrained position
-    const minAllowedY = 20;
-    const constrainedY = Math.max(minAllowedY, event.y);
-    
-    // Clean up temporary tracking property
-    delete d.lastY;
-    
-    // Save workstream position
-    setWorkstreamPositions((prev) => ({
-      ...prev,
-      [d.id]: { y: constrainedY },
-    }));
-
-    // Save updated milestone positions
-    const updatedMilestonePositions = { ...milestonePositions };
-    milestonesGroup
-      .selectAll(".milestone")
-      .filter((m: any) => m.workstreamId === d.id)
-      .each(function (milestoneData: any) {
-        updatedMilestonePositions[milestoneData.id] = {
-          y: milestoneCoordinates[milestoneData.id].y,
-        };
-      });
-    setMilestonePositions(updatedMilestonePositions);
-  });
 
     // Draw workstreams
     workstreams.forEach((workstream) => {
@@ -444,6 +455,252 @@ const workstreamDragBehavior = d3
         .attr("stroke-dasharray", "4 2");
     });
 
+    // Update milestone drag behavior with additional synchronization
+    const dragBehavior = d3
+      .drag<SVGGElement, any>()
+      .on("start", function () {
+        d3.select(this).classed("dragging", true);
+      })
+      .on("drag", function (event, data) {
+        const minAllowedY = 20;
+        const constrainedY = Math.max(minAllowedY, event.y);
+
+        d3.select(this).attr("transform", `translate(0, ${constrainedY - data.initialY})`);
+        placementCoordinates[data.id].y = constrainedY;
+
+        updateActivities();
+        updateDependencies();
+      })
+      .on("end", function (event, data) {
+        d3.select(this).classed("dragging", false);
+        const minAllowedY = 20;
+        const constrainedY = Math.max(minAllowedY, event.y);
+
+        setMilestonePositions((prev) => ({
+          ...prev,
+          [data.id]: { y: constrainedY },
+        }));
+      });
+
+    // Draw milestones
+    Object.values(placementGroups).forEach((group) => {
+      const maxOffset = 200;
+      const offsetStep = group.length > 1 ? maxOffset / (group.length - 1) : 0;
+
+      group.forEach((placement, index) => {
+        const milestone = placement.milestone;
+        const workstreamId = placement.placementWorkstreamId;
+        const workstream = workstreams.find((ws) => ws.id === workstreamId);
+        if (!workstream) return;
+
+        const x = milestone.deadline ? xScale(new Date(milestone.deadline)) : 20;
+        let y = yScale(workstream.id.toString()) || 0;
+        if (workstreamPositions[workstream.id]) {
+          y = workstreamPositions[workstream.id].y;
+        }
+        if (group.length > 1) {
+          const totalOffset = (group.length - 1) * offsetStep;
+          const startOffset = -totalOffset / 2;
+          y += startOffset + index * offsetStep;
+        }
+        if (milestonePositions[placement.id]) {
+          y = milestonePositions[placement.id].y;
+        }
+
+        placementCoordinates[placement.id] = { x, y };
+
+        const milestoneGroup = milestonesGroup
+          .append("g")
+          .datum({ ...placement, initialY: y })
+          .attr("class", "milestone")
+          .attr("cursor", "ns-resize")
+          .call(dragBehavior as any);
+
+        const originalWorkstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
+        const fillColor =
+          milestone.status === "completed" ? "#ccc" : originalWorkstream?.color || "#6366f1";
+
+        milestoneGroup
+          .append("circle")
+          .attr("cx", x)
+          .attr("cy", y)
+          .attr("r", 55)
+          .attr("fill", fillColor)
+          .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
+          .attr("stroke-width", 1)
+          .attr("opacity", placement.isDuplicate ? 0.7 : 1)
+          .on("mouseover", (event) => {
+            setTooltip({
+              content: getTooltipContent({ data: milestone }) + (placement.isDuplicate ? " (Duplicate)" : ""),
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+              visible: true,
+            });
+          })
+          .on("mousemove", (event) => {
+            setTooltip((prev) => ({
+              ...prev,
+              left: event.pageX + 10,
+              top: event.pageY - 28,
+            }));
+          })
+          .on("mouseout", () => {
+            setTooltip((prev) => ({ ...prev, visible: false }));
+          });
+
+        const textEl = milestoneGroup
+          .append("text")
+          .attr("x", x)
+          .attr("y", y)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "8px")
+          .attr("fill", "white")
+          .text(milestone.name);
+        wrapText(textEl as d3.Selection<SVGTextElement, unknown, null, undefined>, 100);
+
+        const workstreamY = yScale(workstream.id.toString()) || 0;
+        milestoneGroup
+          .append("line")
+          .attr("class", "connection-line")
+          .attr("x1", x)
+          .attr("y1", y)
+          .attr("x2", x)
+          .attr("y2", Math.max(20, workstreamY))
+          .attr("stroke", workstream.color)
+          .attr("stroke-width", 0.5)
+          .attr("stroke-opacity", 0.5)
+          .attr("stroke-dasharray", "3 2");
+
+        if (milestone.status) {
+          const statusStroke = getStatusColor(milestone.status);
+          milestoneGroup
+            .append("circle")
+            .attr("cx", x)
+            .attr("cy", y - 30)
+            .attr("r", 5)
+            .attr("fill", "white")
+            .attr("stroke", statusStroke)
+            .attr("stroke-width", 1);
+          if (milestone.status === "completed") {
+            milestoneGroup
+              .append("path")
+              .attr("d", "M-2,0 L-1,1 L2,-2")
+              .attr("transform", `translate(${x},${y - 30})`)
+              .attr("stroke", statusStroke)
+              .attr("stroke-width", 1.5)
+              .attr("fill", "none");
+          } else if (milestone.status === "in_progress") {
+            milestoneGroup
+              .append("circle")
+              .attr("cx", x)
+              .attr("cy", y - 30)
+              .attr("r", 2)
+              .attr("fill", statusStroke);
+          } else {
+            milestoneGroup
+              .append("line")
+              .attr("x1", x - 2)
+              .attr("y1", y - 30)
+              .attr("x2", x + 2)
+              .attr("y2", y - 30)
+              .attr("stroke", statusStroke)
+              .attr("stroke-width", 1.5);
+          }
+        }
+
+      // Draw dotted line for duplicates
+      if (placement.isDuplicate && placement.originalMilestoneId) {
+        const originalCoord = placementCoordinates[placement.originalMilestoneId.toString()];
+        if (originalCoord) {
+          // Find the target milestone ID in the current workstream that depends on this duplicate
+          const relatedDependency = dependencies.find(
+            dep => dep.source === placement.originalMilestoneId && 
+            allMilestones.find(m => m.id === dep.target)?.workstreamId === placement.placementWorkstreamId
+          );
+
+          const targetMilestoneId = relatedDependency?.target;
+          const targetCoord = targetMilestoneId ? 
+            placementCoordinates[targetMilestoneId.toString()] : 
+            null;
+
+          // Draw connection to the dependent milestone in this workstream
+          if (targetCoord) {
+            dependencyGroup
+              .append("path")
+              .attr("class", "duplicate-dependency-line")
+              .attr(
+                "d",
+                d3.linkHorizontal()({
+                  source: [x, y],
+                  target: [targetCoord.x, targetCoord.y],
+                } as DefaultLinkObject) ?? ""
+              )
+              .attr("fill", "none")
+              .attr("stroke", originalWorkstream?.color || "#6b7280")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5 5")
+              .attr("opacity", 2)
+              .attr("marker-end", "url(#dependency-arrow)")
+              .on("mouseover", (event) => {
+                setTooltip({
+                  content: `Dependency: ${milestone.name} → ${allMilestones.find(m => m.id === targetMilestoneId)?.name}`,
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                  visible: true,
+                });
+              })
+              .on("mousemove", (event) => {
+                setTooltip((prev) => ({
+                  ...prev,
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                }));
+              })
+              .on("mouseout", () => {
+                setTooltip((prev) => ({ ...prev, visible: false }));
+              });
+          } else {
+            // Draw original-to-duplicate connection only if no target milestone was found
+            dependencyGroup
+              .append("path")
+              .attr("class", "duplicate-dependency-line")
+              .attr(
+                "d",
+                d3.linkHorizontal()({
+                  source: [originalCoord.x, originalCoord.y],
+                  target: [x, y],
+                } as DefaultLinkObject) ?? ""
+              )
+              .attr("fill", "none")
+              .attr("stroke", originalWorkstream?.color || "#6b7280")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5 5")
+              .attr("opacity", 0.7)
+              .on("mouseover", (event) => {
+                setTooltip({
+                  content: `Dependency from ${milestone.name}`,
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                  visible: true,
+                });
+              })
+              .on("mousemove", (event) => {
+                setTooltip((prev) => ({
+                  ...prev,
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                }));
+              })
+              .on("mouseout", () => {
+                setTooltip((prev) => ({ ...prev, visible: false }));
+              });
+          }
+        }
+      }
+      });
+    });
+
     // Function to update activities
     const updateActivities = () => {
       activitiesGroup.selectAll("path").remove();
@@ -453,9 +710,10 @@ const workstreamDragBehavior = d3
     };
 
     const updateDependencies = () => {
-      container.selectAll(".dependency-line").remove();
+      dependencyGroup.selectAll(".dependency-line").remove();
+      dependencyGroup.selectAll(".duplicate-dependency-line").remove();
       drawDependencies();
-    };    
+    };
 
     // Function to draw activities
     const drawActivities = () => {
@@ -473,8 +731,8 @@ const workstreamDragBehavior = d3
 
       Object.entries(connectionGroups).forEach(([key, groupActivities]) => {
         const [sourceId, targetId] = key.split("-").map(Number);
-        const source = milestoneCoordinates[sourceId];
-        const target = milestoneCoordinates[targetId];
+        const source = placementCoordinates[sourceId.toString()];
+        const target = placementCoordinates[targetId.toString()];
         if (!source || !target) return;
 
         if (groupActivities.length === 1) {
@@ -574,208 +832,56 @@ const workstreamDragBehavior = d3
 
     // Function to draw dependency connections
     const drawDependencies = () => {
-      // Remove any existing dependency lines first
       container.selectAll(".dependency-line").remove();
+    
+      dependencies.forEach((dep) => {
+        const sourceMilestone = allMilestones.find((m) => m.id === dep.source);
+        const targetMilestone = allMilestones.find((m) => m.id === dep.target);
       
-      dependencies.forEach((dependency) => {
-        const source = milestoneCoordinates[dependency.source];
-        const target = milestoneCoordinates[dependency.target];
-        
-        if (!source || !target) return; // Skip if either milestone doesn't exist
-        
-        // Create a dashed line for dependencies
-        dependencyGroup
-          .append("path")
-          .attr("class", "dependency-line")
-          .attr(
-            "d",
-            d3.linkHorizontal()({
-              source: [source.x, source.y],
-              target: [target.x, target.y],
-            } as DefaultLinkObject) ?? ""
-          )
-          .attr("fill", "none")
-          .attr("stroke", "#6b7280") // Gray color to distinguish from activity lines
-          .attr("stroke-width", 2)
-          .attr("stroke-dasharray", "4 3") // Dashed line for dependencies
-          .attr("marker-end", "url(#dependency-arrow)")
-          .on("mouseover", (event) => {
-            setTooltip({
-              content: "Dependency relationship",
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-              visible: true,
-            });
-          })
-          .on("mousemove", (event) => {
-            setTooltip((prev) => ({
-              ...prev,
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-            }));
-          })
-          .on("mouseout", () => {
-            setTooltip((prev) => ({ ...prev, visible: false }));
-          });
-      });
-    };
-
-    // Update milestone drag behavior with additional synchronization
-    const dragBehavior = d3
-      .drag<SVGGElement, any>()
-      .on("start", function () {
-        d3.select(this).classed("dragging", true);
-      })
-      .on("drag", function (event, data) {
-        // Apply minimum Y constraint
-        const minAllowedY = 20;
-        const constrainedY = Math.max(minAllowedY, event.y);
-        
-        // Update milestone position with constraint
-        d3.select(this).attr("transform", `translate(0, ${constrainedY - data.initialY})`);
-        
-        // Update milestone coordinates
-        milestoneCoordinates[data.id].y = constrainedY;
-        
-        // Update connections
-        updateActivities();
-        updateDependencies();
-      })
-      .on("end", function (event, data) {
-        d3.select(this).classed("dragging", false);
-        
-        // Save constrained position
-        const minAllowedY = 20;
-        const constrainedY = Math.max(minAllowedY, event.y);
-        
-        setMilestonePositions((prev) => ({
-          ...prev,
-          [data.id]: { y: constrainedY },
-        }));
-      });
-
-    // Draw milestones
-    const milestoneGroups = groupMilestonesByDeadlineAndWorkstream(allMilestones);
-    Object.values(milestoneGroups).forEach((group) => {
-      const maxOffset = 200;
-      const offsetStep = group.length > 1 ? maxOffset / (group.length - 1) : 0;
-
-      group.forEach((milestone, index) => {
-        const workstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
-        if (!workstream) return;
-
-        const x = milestone.deadline ? xScale(new Date(milestone.deadline)) : 20;
-        let y = yScale(workstream.id.toString()) || 0;
-        if (workstreamPositions[workstream.id]) {
-          y = workstreamPositions[workstream.id].y;
-        }
-        if (group.length > 1) {
-          const totalOffset = (group.length - 1) * offsetStep;
-          const startOffset = -totalOffset / 2;
-          y += startOffset + index * offsetStep;
-        }
-        if (milestonePositions[milestone.id]) {
-          y = milestonePositions[milestone.id].y;
-        }
-
-        milestoneCoordinates[milestone.id] = { x, y };
-
-        const milestoneGroup = milestonesGroup
-          .append("g")
-          .datum({ ...milestone, initialY: y })
-          .attr("class", "milestone")
-          .attr("cursor", "ns-resize")
-          .call(dragBehavior as any);
-
-        milestoneGroup
-          .append("circle")
-          .attr("cx", x)
-          .attr("cy", y)
-          .attr("r", 55)
-          .attr("fill", milestone.status === "completed" ? "#ccc" : workstream.color)
-          .attr("stroke", milestone.status === "completed" ? "#ccc" : d3.color(workstream.color)?.darker(0.5) + "")
-          .attr("stroke-width", 1)
-          .on("mouseover", (event) => {
-            setTooltip({
-              content: getTooltipContent({ data: milestone }),
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-              visible: true,
-            });
-          })
-          .on("mousemove", (event) => {
-            setTooltip((prev) => ({
-              ...prev,
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-            }));
-          })
-          .on("mouseout", () => {
-            setTooltip((prev) => ({ ...prev, visible: false }));
-          });
-
-        const textEl = milestoneGroup
-          .append("text")
-          .attr("x", x)
-          .attr("y", y)
-          .attr("text-anchor", "middle")
-          .attr("dominant-baseline", "middle")
-          .attr("font-size", "8px")
-          .attr("fill", "white")
-          .text(milestone.name);
-        wrapText(textEl, 100);
-
-        const workstreamY = yScale(workstream.id.toString()) || 0;
-        milestoneGroup
-          .append("line")
-          .attr("class", "connection-line")
-          .attr("x1", x)
-          .attr("y1", y)
-          .attr("x2", x)
-          .attr("y2", Math.max(20, workstreamY)) // Apply constraint to workstream connection point
-          .attr("stroke", workstream.color)
-          .attr("stroke-width", 0.5)
-          .attr("stroke-opacity", 0.5)
-          .attr("stroke-dasharray", "3 2");
-
-        if (milestone.status) {
-          const statusStroke = getStatusColor(milestone.status);
-          milestoneGroup
-            .append("circle")
-            .attr("cx", x)
-            .attr("cy", y - 30)
-            .attr("r", 5)
-            .attr("fill", "white")
-            .attr("stroke", statusStroke)
-            .attr("stroke-width", 1);
-          if (milestone.status === "completed") {
-            milestoneGroup
+        if (!sourceMilestone || !targetMilestone) return;
+      
+        // Only draw direct dependencies for same-workstream milestones
+        // Cross-workstream dependencies are handled via duplicate nodes
+        if (sourceMilestone.workstreamId === targetMilestone.workstreamId) {
+          const sourceCoord = placementCoordinates[dep.source.toString()];
+          const targetCoord = placementCoordinates[dep.target.toString()];
+          if (sourceCoord && targetCoord) {
+            dependencyGroup
               .append("path")
-              .attr("d", "M-2,0 L-1,1 L2,-2")
-              .attr("transform", `translate(${x},${y - 30})`)
-              .attr("stroke", statusStroke)
-              .attr("stroke-width", 1.5)
-              .attr("fill", "none");
-          } else if (milestone.status === "in_progress") {
-            milestoneGroup
-              .append("circle")
-              .attr("cx", x)
-              .attr("cy", y - 30)
-              .attr("r", 2)
-              .attr("fill", statusStroke);
-          } else {
-            milestoneGroup
-              .append("line")
-              .attr("x1", x - 2)
-              .attr("y1", y - 30)
-              .attr("x2", x + 2)
-              .attr("y2", y - 30)
-              .attr("stroke", statusStroke)
-              .attr("stroke-width", 1.5);
+              .attr("class", "dependency-line")
+              .attr(
+                "d",
+                d3.linkHorizontal()({
+                  source: [sourceCoord.x, sourceCoord.y],
+                  target: [targetCoord.x, targetCoord.y],
+                } as DefaultLinkObject) ?? ""
+              )
+              .attr("fill", "none")
+              .attr("stroke", "#6b7280")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "4 3")
+              .on("mouseover", (event) => {
+                setTooltip({
+                  content: "Dependency relationship",
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                  visible: true,
+                });
+              })
+              .on("mousemove", (event) => {
+                setTooltip((prev) => ({
+                  ...prev,
+                  left: event.pageX + 10,
+                  top: event.pageY - 28,
+                }));
+              })
+              .on("mouseout", () => {
+                setTooltip((prev) => ({ ...prev, visible: false }));
+              });
           }
         }
       });
-    });
+    };
 
     // Auto-connect activities
     workstreams.forEach((workstream) => {
@@ -858,6 +964,21 @@ const workstreamDragBehavior = d3
       .attr("d", "M0,-5L10,0L0,5")
       .attr("fill", "#64748b");
 
+    // Define dependency arrow marker
+    svgEl
+      .append("defs")
+      .append("marker")
+      .attr("id", "dependency-arrow")
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 73)
+      .attr("refY", 0)
+      .attr("markerWidth", 6)
+      .attr("markerHeight", 6)
+      .attr("orient", "auto")
+      .append("path")
+      .attr("d", "M0,-5L10,0L0,5")
+      .attr("fill", "#6b7280");
+
     // Add legend
     const legendData = [
       { type: "milestone", label: "Milestone", status: "not_started" },
@@ -866,6 +987,7 @@ const workstreamDragBehavior = d3
       { type: "status", label: "Completed", status: "completed" },
       { type: "status", label: "Not Started", status: "not_started" },
       { type: "dependency", label: "Milestone Dependency", status: "dependency" },
+      { type: "duplicate", label: "Cross-Workstream Dependency", status: "duplicate" },
       { type: "instruction", label: "Drag milestones/workstreams" },
     ];
     const legend = svgEl
@@ -928,7 +1050,7 @@ const workstreamDragBehavior = d3
             .attr("stroke", "#4b5563")
             .attr("stroke-width", 1.5)
             .attr("stroke-linecap", "round");
-        }  else if (d.type === "dependency") {
+        } else if (d.type === "dependency") {
           g.append("line")
             .attr("x1", 0)
             .attr("y1", shapeSize / 2)
@@ -937,12 +1059,19 @@ const workstreamDragBehavior = d3
             .attr("stroke", "#6b7280")
             .attr("stroke-width", 1.5)
             .attr("stroke-dasharray", "4 3");
-            
-          // Add an arrowhead
           g.append("path")
             .attr("d", "M0,-2L4,0L0,2")
             .attr("transform", `translate(${shapeSize - 4},${shapeSize / 2})`)
             .attr("fill", "#6b7280");
+        } else if (d.type === "duplicate") {
+          g.append("line")
+            .attr("x1", 0)
+            .attr("y1", shapeSize / 2)
+            .attr("x2", shapeSize)
+            .attr("y2", shapeSize / 2)
+            .attr("stroke", "#6366f1")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-dasharray", "5 5");
         }
         g.append("text")
           .attr("x", shapeSize + 5)
