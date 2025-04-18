@@ -203,6 +203,7 @@ type MilestonePlacement = {
   placementWorkstreamId: number;
   isDuplicate: boolean;
   originalMilestoneId?: number;
+  activityId?: number | string;
 };
 
 /**
@@ -336,6 +337,44 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           originalMilestoneId: sourceMilestone.id,
         });
       }
+    });
+
+    // After creating initial milestonePlacements array, add this code
+// around line 504, before the placementGroups const definition
+
+    // Duplicate milestones referenced by cross-workstream activities
+    activities.forEach((activity) => {
+      const activityWorkstreamId = activity.workstreamId;
+
+      // Process supported and additional milestones
+      const supportedMilestoneIds = [
+        ...(activity.supported_milestones || []),
+        ...(activity.additional_milestones || []),
+      ];
+
+      supportedMilestoneIds.forEach((targetMilestoneId) => {
+        const targetMilestone = allMilestones.find((m) => m.id === targetMilestoneId);
+
+        // Skip if milestone not found or is in the same workstream
+        if (!targetMilestone || targetMilestone.workstreamId === activityWorkstreamId) {
+          return;
+        }
+
+        // Create a duplicate of the target milestone in the activity's workstream
+        const duplicateId = `activity-duplicate-${targetMilestoneId}-${activity.id}`;
+
+        // Check if this duplicate already exists
+        if (!milestonePlacements.some(p => p.id === duplicateId)) {
+          milestonePlacements.push({
+            id: duplicateId,
+            milestone: targetMilestone,
+            placementWorkstreamId: activityWorkstreamId, // Place in the activity's workstream
+            isDuplicate: true,
+            originalMilestoneId: targetMilestoneId,
+            activityId: activity.id // Track which activity created this duplicate
+          });
+        }
+      });
     });
 
     const placementGroups = groupPlacementsByDeadlineAndWorkstream(milestonePlacements);
@@ -527,11 +566,14 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           .attr("r", 55)
           .attr("fill", fillColor)
           .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", 1)
+          .attr("stroke-width", placement.activityId ? 2 : 1) // Make border thicker for activity duplicates
           .attr("opacity", placement.isDuplicate ? 0.7 : 1)
+          .attr("stroke-dasharray", placement.activityId ? "0" : (placement.isDuplicate ? "4 3" : "0")) // Different dash pattern based on duplicate type
           .on("mouseover", (event) => {
+            const tooltipText = getTooltipContent({ data: milestone }) + 
+                               (placement.isDuplicate ? (placement.activityId ? " (Activity Duplicate)" : " (Dependency Duplicate)") : "");
             setTooltip({
-              content: getTooltipContent({ data: milestone }) + (placement.isDuplicate ? " (Duplicate)" : ""),
+              content: tooltipText,
               left: event.pageX + 10,
               top: event.pageY - 28,
               visible: true,
@@ -715,31 +757,107 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       drawDependencies();
     };
 
-    // Function to draw activities
+    // Replace or modify the existing drawActivities function
     const drawActivities = () => {
+      activitiesGroup.selectAll("path").remove();
+      activitiesGroup.selectAll("rect").remove();
+      activitiesGroup.selectAll("text").remove();
+
+      // Draw regular connections within same workstream
       const connectionGroups: { [key: string]: any[] } = {};
       activities.forEach((activity) => {
         const sourceId = activity.sourceMilestoneId;
+        const activityWorkstreamId = activity.workstreamId;
+
+        // Process connections within the same workstream (solid lines)
         (activity.targetMilestoneIds || []).forEach((targetId: number) => {
+          const targetMilestone = allMilestones.find(m => m.id === targetId);
+
+          // Skip if milestone not found or belongs to different workstream
+          if (!targetMilestone || targetMilestone.workstreamId !== activityWorkstreamId) {
+            return;
+          }
+
           const key = `${sourceId}-${targetId}`;
           if (!connectionGroups[key]) {
             connectionGroups[key] = [];
           }
           connectionGroups[key].push(activity);
         });
-      });
 
+        // Process cross-workstream connections (dotted lines to duplicate nodes)
+        const crossWorkstreamTargets = [
+          ...(activity.supported_milestones || []),
+          ...(activity.additional_milestones || [])
+        ].filter(targetId => {
+          const targetMilestone = allMilestones.find(m => m.id === targetId);
+          return targetMilestone && targetMilestone.workstreamId !== activityWorkstreamId;
+        });
+
+        crossWorkstreamTargets.forEach(targetId => {
+          const duplicateId = `activity-duplicate-${targetId}-${activity.id}`;
+          const source = placementCoordinates[sourceId.toString()];
+          const duplicateTarget = placementCoordinates[duplicateId];
+
+          if (!source || !duplicateTarget) return;
+
+          const workstream = workstreams.find(ws => ws.id === activity.workstreamId);
+          if (!workstream) return;
+
+          // Draw dotted connection from activity source to duplicate milestone
+          const pathData = d3.linkHorizontal()({
+            source: [source.x, source.y],
+            target: [duplicateTarget.x, duplicateTarget.y]
+          } as DefaultLinkObject) ?? "";
+
+          const path = activitiesGroup
+            .append("path")
+            .attr("d", pathData)
+            .attr("fill", "none")
+            .attr("stroke", workstream.color)
+            .attr("stroke-width", 1.5)
+            .attr("stroke-dasharray", "4 3") // Make it dotted for cross-workstream
+            .attr("marker-end", "url(#arrow)")
+            .attr("class", "cross-workstream-activity")
+            .on("mouseover", (event) => {
+              const targetMilestone = allMilestones.find(m => m.id === targetId);
+              setTooltip({
+                content: `${getTooltipContent({ data: activity })} → ${targetMilestone?.name || "Unknown"} (Cross-workstream)`,
+                left: event.pageX + 10,
+                top: event.pageY - 28,
+                visible: true,
+              });
+            })
+            .on("mousemove", (event) => {
+              setTooltip(prev => ({
+                ...prev,
+                left: event.pageX + 10,
+                top: event.pageY - 28,
+              }));
+            })
+            .on("mouseout", () => {
+              setTooltip(prev => ({ ...prev, visible: false }));
+            });
+          
+          addActivityLabel(path, {
+            ...activity,
+            name: activity.name + " (cross-workstream)"
+          });
+        });
+      });
+    
+      // Draw regular connections (solid lines)
       Object.entries(connectionGroups).forEach(([key, groupActivities]) => {
         const [sourceId, targetId] = key.split("-").map(Number);
         const source = placementCoordinates[sourceId.toString()];
         const target = placementCoordinates[targetId.toString()];
         if (!source || !target) return;
-
+      
         if (groupActivities.length === 1) {
           const activity = groupActivities[0];
           const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
           if (!workstream) return;
-
+        
           const path = activitiesGroup
             .append("path")
             .attr(
@@ -753,6 +871,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             .attr("stroke", workstream.color)
             .attr("stroke-width", 1.5)
             .attr("marker-end", "url(#arrow)")
+            .attr("class", "same-workstream-activity")
             .on("mouseover", (event) => {
               setTooltip({
                 content: getTooltipContent({ data: activity }),
@@ -771,7 +890,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             .on("mouseout", () => {
               setTooltip((prev) => ({ ...prev, visible: false }));
             });
-
+          
           addActivityLabel(path, activity);
         } else {
           const centerX = (source.x + target.x) / 2;
@@ -780,19 +899,19 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
           const dy = target.y - source.y;
           const length = Math.sqrt(dx * dx + dy * dy);
           if (length === 0) return;
-
+        
           const perpVectorX = -dy / length;
           const perpVectorY = dx / length;
           const someScale = 50;
-
+        
           groupActivities.forEach((activity, index) => {
             const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
             if (!workstream) return;
-
+          
             const offset = index - (groupActivities.length - 1) / 2;
             const controlX = centerX + offset * perpVectorX * someScale;
             const controlY = centerY + offset * perpVectorY * someScale;
-
+          
             const pathData = `
               M ${source.x},${source.y}
               Q ${controlX},${controlY} ${target.x},${target.y}
@@ -805,6 +924,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
               .attr("stroke", workstream.color)
               .attr("stroke-width", 1.5)
               .attr("marker-end", "url(#arrow)")
+              .attr("class", "same-workstream-activity")
               .on("mouseover", (event) => {
                 setTooltip({
                   content: getTooltipContent({ data: activity }),
@@ -988,6 +1108,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       { type: "status", label: "Not Started", status: "not_started" },
       { type: "dependency", label: "Milestone Dependency", status: "dependency" },
       { type: "duplicate", label: "Cross-Workstream Dependency", status: "duplicate" },
+      { type: "cross-workstream-activity", label: "Cross-Workstream Activity", status: "cross-activity" },
       { type: "instruction", label: "Drag milestones/workstreams" },
     ];
     const legend = svgEl
@@ -1072,6 +1193,19 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
             .attr("stroke", "#6366f1")
             .attr("stroke-width", 1.5)
             .attr("stroke-dasharray", "5 5");
+        } else if (d.type === "cross-workstream-activity") {
+          g.append("line")
+            .attr("x1", 0)
+            .attr("y1", shapeSize / 2)
+            .attr("x2", shapeSize)
+            .attr("y2", shapeSize / 2)
+            .attr("stroke", "#6366f1")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-dasharray", "4 3");
+          g.append("path")
+            .attr("d", "M0,-2L4,0L0,2")
+            .attr("transform", `translate(${shapeSize - 4},${shapeSize / 2})`)
+            .attr("fill", "#6366f1");
         }
         g.append("text")
           .attr("x", shapeSize + 5)
