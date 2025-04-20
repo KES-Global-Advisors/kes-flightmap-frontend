@@ -339,9 +339,6 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       }
     });
 
-    // After creating initial milestonePlacements array, add this code
-// around line 504, before the placementGroups const definition
-
     // Duplicate milestones referenced by cross-workstream activities
     activities.forEach((activity) => {
       const activityWorkstreamId = activity.workstreamId;
