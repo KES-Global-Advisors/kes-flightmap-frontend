@@ -170,6 +170,7 @@ const FlightmapCard: React.FC<FlightmapCardProps> = ({ roadmap, openModal, onDel
   );
 };
 
+
 const FlightmapListing: React.FC = () => {
   const { themeColor } = useContext(ThemeContext);
   const [selectedRoadmap, setSelectedRoadmap] = useState<FlightmapData | null>(null);
@@ -180,73 +181,68 @@ const FlightmapListing: React.FC = () => {
     data: roadmaps,
     loading,
     error,
+    refetch,
+    silentRefetch,
   } = useFetch<FlightmapData[]>(`${API}/flightmaps/`);
 
-  const handleDelete = async (id: number) => {
-    try {
-      const accessToken = sessionStorage.getItem('accessToken');
-      const response = await fetch(`${API}/flightmaps/${id}/`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete roadmap');
-      }
-
-      // Refresh the page to update the roadmap list
-      window.location.reload();
-    } catch (error) {
-      console.error('Error deleting roadmap:', error);
-      alert('Failed to delete roadmap. Please try again.');
+  // keep selectedRoadmap fresh whenever the list updates
+  useEffect(() => {
+    if (selectedRoadmap && roadmaps) {
+      const updated = roadmaps.find(r => r.id === selectedRoadmap.id);
+      if (updated) setSelectedRoadmap(updated);
     }
-  };
+  }, [roadmaps, selectedRoadmap]);
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4" style={{ borderColor: themeColor }}></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-500">
-        Error: {error}
-      </div>
-    );
-  }
-
-  if (!roadmaps || !roadmaps.length) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        No flightmaps available.
-      </div>
-    );
-  }
-
-  const openModal = (roadmap: FlightmapData) => {
-    setSelectedRoadmap(roadmap);
+  const openModal = (r: FlightmapData) => {
+    setSelectedRoadmap(r);
     setShowModal(true);
   };
-
   const closeModal = () => {
     setSelectedRoadmap(null);
     setShowModal(false);
+  };
+
+  // only show page‑level loader when not in the modal
+  if (loading && !showModal) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div
+          className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4"
+          style={{ borderColor: themeColor }}
+        />
+      </div>
+    );
+  }
+  if (error && !showModal) {
+    return <div className="min-h-screen flex items-center justify-center text-red-500">Error: {error}</div>;
+  }
+
+  const handleDelete = async (id: number) => {
+    try {
+      const token = sessionStorage.getItem('accessToken');
+      const res = await fetch(`${API}/flightmaps/${id}/`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      // re‑load list (with loader)
+      await refetch();
+    } catch {
+      alert('Failed to delete. Please try again.');
+    }
   };
 
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-6">Flightmaps</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {roadmaps.map((roadmap) => (
-          <FlightmapCard 
-            key={roadmap.id} 
-            roadmap={roadmap} 
+        {roadmaps?.map(r => (
+          <FlightmapCard
+            key={r.id}
+            roadmap={r}
             openModal={openModal}
             onDelete={handleDelete}
           />
@@ -256,7 +252,11 @@ const FlightmapListing: React.FC = () => {
       {showModal && selectedRoadmap && (
         <Modal onClose={closeModal}>
           <h2 className="text-xl font-bold mb-4">{selectedRoadmap.name}</h2>
-          <FlightmapSwitcher roadmap={selectedRoadmap} />
+          <FlightmapSwitcher
+            roadmap={selectedRoadmap}
+            // silent refetch => no loader shown
+            onRoadmapChange={() => silentRefetch()}
+          />
         </Modal>
       )}
     </div>

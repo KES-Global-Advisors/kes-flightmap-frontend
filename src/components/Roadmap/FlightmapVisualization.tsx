@@ -206,6 +206,11 @@ type MilestonePlacement = {
   activityId?: number | string;
 };
 
+interface FlightmapVisualizationProps {
+  data: FlightmapData;
+  onMilestoneDeadlineChange: (milestoneId: string, newDeadline: Date) => Promise<boolean>;
+}
+
 /**
  * Groups milestone placements by workstream and deadline to handle overlapping milestones
  * @param placements - Array of milestone placements
@@ -227,7 +232,7 @@ function groupPlacementsByDeadlineAndWorkstream(placements: MilestonePlacement[]
   return groups;
 }
 
-const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => {
+const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, onMilestoneDeadlineChange }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>();
   const [tooltip, setTooltip] = useState({
@@ -493,30 +498,51 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
 
     // Update milestone drag behavior with additional synchronization
     const dragBehavior = d3
-      .drag<SVGGElement, any>()
-      .on("start", function () {
-        d3.select(this).classed("dragging", true);
-      })
-      .on("drag", function (event, data) {
-        const minAllowedY = 20;
-        const constrainedY = Math.max(minAllowedY, event.y);
+    .drag<SVGGElement, any>()
+    .on("start", function () {
+      d3.select(this).classed("dragging", true);
+    })
+    .on("drag", function (event, data) {
+      const deltaX = event.x - data.initialX;
+      const deltaY = event.y - data.initialY;
+      d3.select(this).attr("transform", `translate(${deltaX}, ${deltaY})`);
+    })
+    .on("end", function (event, data) {
+      d3.select(this).classed("dragging", false);
+      const minAllowedY = 20;
+      const constrainedY = Math.max(minAllowedY, event.y);
+      const droppedX = data.initialX + (event.x - data.initialX);
 
-        d3.select(this).attr("transform", `translate(0, ${constrainedY - data.initialY})`);
-        placementCoordinates[data.id].y = constrainedY;
-
-        updateActivities();
-        updateDependencies();
-      })
-      .on("end", function (event, data) {
-        d3.select(this).classed("dragging", false);
-        const minAllowedY = 20;
-        const constrainedY = Math.max(minAllowedY, event.y);
-
-        setMilestonePositions((prev) => ({
-          ...prev,
-          [data.id]: { y: constrainedY },
-        }));
+      const closestMarker = timelineMarkers.reduce((prev, curr) => {
+        const prevDist = Math.abs(xScale(prev) - droppedX);
+        const currDist = Math.abs(xScale(curr) - droppedX);
+        return currDist < prevDist ? curr : prev;
       });
+      const newDeadline = closestMarker;
+      const snappedX = xScale(newDeadline);
+
+      d3.select(this).attr("transform", `translate(${snappedX - data.initialX}, ${constrainedY - data.initialY})`);
+
+      setMilestonePositions((prev) => ({
+        ...prev,
+        [data.id]: { y: constrainedY },
+      }));
+
+      onMilestoneDeadlineChange(data.milestone.id.toString(), newDeadline)
+        .then((success) => {
+          if (!success) {
+            const originalX = data.milestone.deadline ? xScale(new Date(data.milestone.deadline)) : 20;
+            d3.select(this)
+              .transition()
+              .duration(300)
+              .attr("transform", `translate(${originalX - data.initialX}, ${constrainedY - data.initialY})`);
+            alert("Failed to update milestone deadline");
+          }
+        });
+
+      updateActivities();
+      updateDependencies();
+    });
 
     // Draw milestones
     Object.values(placementGroups).forEach((group) => {
@@ -547,9 +573,9 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
 
         const milestoneGroup = milestonesGroup
           .append("g")
-          .datum({ ...placement, initialY: y })
+          .datum({ ...placement, initialX: x, initialY: y })
           .attr("class", "milestone")
-          .attr("cursor", "ns-resize")
+          .attr("cursor", "move")
           .call(dragBehavior as any);
 
         const originalWorkstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
@@ -1243,7 +1269,7 @@ const FlightmapVisualization: React.FC<{ data: FlightmapData }> = ({ data }) => 
       .attr("font-size", "12px")
       .attr("fill", "#4b5563")
       .text("Reset Node Positions");
-  }, [data, milestonePositions, workstreamPositions]);
+  }, [data, milestonePositions, workstreamPositions, onMilestoneDeadlineChange]);
 
   return (
     <div className="w-full h-full relative">
