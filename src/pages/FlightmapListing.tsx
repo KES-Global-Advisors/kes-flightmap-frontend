@@ -2,27 +2,16 @@
 // cSpell:ignore workstream workstreams roadmaps flightmap flightmaps
 // src/pages/FlightmapListing.tsx
 import { useState, useContext } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import Modal from '@/components/Roadmap/Modal';
 import FlightmapSwitcher from '@/components/Roadmap/FlightmapSwitcher';
 import FlightmapCard from './components/FlightmapCard';
 import { FlightmapData } from '@/types/roadmap';
+import { useFlightmaps } from '@/api/flightmap';
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-// 1️⃣ fetcher for the flightmaps list
-async function fetchFlightmaps(): Promise<FlightmapData[]> {
-  const token = sessionStorage.getItem('accessToken');
-  const res = await fetch(`${API}/flightmaps/`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-    },
-  });
-  if (!res.ok) throw new Error('Failed to fetch flightmaps');
-  return res.json();
-}
 
 export default function FlightmapListing() {
   const { themeColor } = useContext(ThemeContext);
@@ -31,17 +20,7 @@ export default function FlightmapListing() {
   
 
   // 2️⃣ Load all flightmaps
-  const {
-    data: roadmaps,
-    isLoading,
-    isError,
-    error,
-  } = useQuery<FlightmapData[], Error>({
-    queryKey: ['flightmaps'],
-    queryFn: fetchFlightmaps,
-    staleTime: 60_000,
-    refetchOnWindowFocus: true,
-  });
+  const { data: roadmaps, isLoading, isError, error } = useFlightmaps();
   const selectedId = selected?.id;
   const freshSelected = roadmaps?.find(r => r.id === selectedId);
 

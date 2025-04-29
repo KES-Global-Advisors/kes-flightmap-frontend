@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 
 interface ScreenshotButtonProps {
-  svgRef: React.RefObject<SVGSVGElement>;
+  svgRef: React.RefObject<SVGSVGElement | null>;
 }
+
 
 const ScreenshotButton: React.FC<ScreenshotButtonProps> = ({ svgRef }) => {
   const [isExporting, setIsExporting] = useState(false);
