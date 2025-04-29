@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
 import { FlightmapData } from "@/types/roadmap";
+import { useNodePositions, useUpsertPosition } from '@/api/flightmap';
 
 // Utility components
 import ScreenshotButton from "./FlightmapUtils/ScreenshotButton";
@@ -153,16 +154,6 @@ function getMilestonePositionsKey(dataId: string): string {
   return `flightmap-milestone-positions-${dataId}`;
 }
 
-function loadMilestonePositions(dataId: string): { [id: string]: { y: number } } {
-  try {
-    const storedData = localStorage.getItem(getMilestonePositionsKey(dataId));
-    return storedData ? JSON.parse(storedData) : {};
-  } catch (e) {
-    console.error("Error loading milestone positions:", e);
-    return {};
-  }
-}
-
 function saveMilestonePositions(dataId: string, positions: { [id: string]: { y: number } }): void {
   try {
     localStorage.setItem(getMilestonePositionsKey(dataId), JSON.stringify(positions));
@@ -176,16 +167,6 @@ function saveMilestonePositions(dataId: string, positions: { [id: string]: { y: 
  */
 function getWorkstreamPositionsKey(dataId: string): string {
   return `flightmap-workstream-positions-${dataId}`;
-}
-
-function loadWorkstreamPositions(dataId: string): { [id: number]: { y: number } } {
-  try {
-    const storedData = localStorage.getItem(getWorkstreamPositionsKey(dataId));
-    return storedData ? JSON.parse(storedData) : {};
-  } catch (e) {
-    console.error("Error loading workstream positions:", e);
-    return {};
-  }
 }
 
 function saveWorkstreamPositions(dataId: string, positions: { [id: number]: { y: number } }): void {
@@ -245,11 +226,42 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   const [workstreamPositions, setWorkstreamPositions] = useState<{ [id: number]: { y: number } }>({});
   const dataId = useRef<string>(`${data.id || new Date().getTime()}`);
 
-  // Load saved positions on mount
+  const width = window.innerWidth;
+  const height = window.innerHeight * 0.8;
+  const margin = { top: 40, right: 150, bottom: 30, left: 150 };
+  const contentWidth = width - margin.left - margin.right;
+  const contentHeight = height - margin.top - margin.bottom;
+
+  // ─── 1️⃣ Load remote positions via hooks ───────────────────────────────────
+  const { data: remoteMilestonePos = [] } = useNodePositions(data.id, 'milestone');
+  const { data: remoteWorkstreamPos = [] } = useNodePositions(data.id, 'workstream');
+  const upsertPos = useUpsertPosition();
+
   useEffect(() => {
-    setMilestonePositions(loadMilestonePositions(dataId.current));
-    setWorkstreamPositions(loadWorkstreamPositions(dataId.current));
-  }, []);
+    if (remoteMilestonePos.length) {
+      const newM: typeof milestonePositions = {};
+      remoteMilestonePos.forEach(p => {
+        newM[p.node_id.toString()] = {
+          y: margin.top + p.rel_y * contentHeight
+        };
+      });
+      setMilestonePositions(newM);
+    }
+  }, [contentHeight, margin.top, remoteMilestonePos]);
+  
+  useEffect(() => {
+    if (remoteWorkstreamPos.length) {
+      const newW: typeof workstreamPositions = {};
+      remoteWorkstreamPos.forEach(p => {
+        newW[p.node_id] = {
+          y: margin.top + p.rel_y * contentHeight
+        };
+      });
+      setWorkstreamPositions(newW);
+    }
+  }, [contentHeight, margin.top, remoteWorkstreamPos]);
+  
+  
 
   // Save positions when they change
   useEffect(() => {
@@ -265,12 +277,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     const svgEl = d3.select(svgRef.current);
     svgEl.selectAll("*").remove();
 
-    const width = window.innerWidth;
-    const height = window.innerHeight * 0.8;
-    const margin = { top: 40, right: 150, bottom: 30, left: 150 };
-    const contentWidth = width - margin.left - margin.right;
-    const contentHeight = height - margin.top - margin.bottom;
-
     svgEl
       .attr("width", width)
       .attr("height", height)
@@ -283,11 +289,9 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     zoomRef.current = d3.zoom<Element, unknown>()
       .scaleExtent([0.5, 5])
       .on("zoom", (event) => {
-        const transform = event.transform;
-        if (transform.y > margin.top) {
-          transform.y = margin.top;
-        }
-        container.attr("transform", `translate(${transform.x}, ${transform.y}) scale(${transform.k})`);
+        const { x, y, k } = event.transform;
+        const ty = Math.min(y, margin.top);
+        container.attr("transform", `translate(${x}, ${ty}) scale(${k})`);
       });
 
     svgEl
@@ -408,7 +412,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     const milestonesGroup = container.append("g").attr("class", "milestones");
     const dependencyGroup = container.append("g").attr("class", "dependencies");
 
-    // Update the workstream drag behavior to keep milestones properly connected
+    // Update the workstream drag behavior to keep milestones properly connectedDragBehavior
     const workstreamDragBehavior = d3
       .drag<SVGGElement, any>()
       .on("start", function () {
@@ -443,10 +447,13 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         const constrainedY = Math.max(minAllowedY, event.y);
         delete d.lastY;
 
-        setWorkstreamPositions((prev) => ({
-          ...prev,
-          [d.id]: { y: constrainedY },
-        }));
+        setWorkstreamPositions((prev) => ({ ...prev, [d.id]: { y: constrainedY } }));
+        upsertPos.mutate({
+          flightmap: data.id,
+          nodeType: 'workstream',
+          nodeId: d.id,
+          relY: (constrainedY - margin.top) / (contentHeight - margin.top - margin.bottom)
+        });
 
         const updatedMilestonePositions = { ...milestonePositions };
         milestonesGroup
@@ -528,17 +535,33 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         [data.id]: { y: constrainedY },
       }));
 
-      onMilestoneDeadlineChange(data.milestone.id.toString(), newDeadline)
-        .then((success) => {
-          if (!success) {
-            const originalX = data.milestone.deadline ? xScale(new Date(data.milestone.deadline)) : 20;
-            d3.select(this)
-              .transition()
-              .duration(300)
-              .attr("transform", `translate(${originalX - data.initialX}, ${constrainedY - data.initialY})`);
-            alert("Failed to update milestone deadline");
-          }
+      // 1️⃣ update vertical position only if Y changed
+      if (constrainedY !== data.initialY) {
+        const relY = (constrainedY - margin.top) / (contentHeight - margin.top - margin.bottom);
+        upsertPos.mutate({
+          flightmap: data.id,
+          nodeType: 'milestone',
+          nodeId: Number(data.id),
+          relY
         });
+      }
+
+      // 2️⃣ update deadline only if it actually snapped to a new date
+      const originalDateMs = new Date(data.milestone.deadline).getTime();
+      const newDateMs = newDeadline.getTime();
+      if (newDateMs !== originalDateMs) {
+        onMilestoneDeadlineChange(data.milestone.id.toString(), newDeadline)
+          .then((ok) => {
+            if (!ok) {
+              // rollback X‐axis
+              const origX = xScale(new Date(data.milestone.deadline));
+              d3.select(this)
+                .transition().duration(300)
+                .attr("transform", `translate(${origX - data.initialX}, ${constrainedY - data.initialY})`);
+              alert("Failed to update milestone deadline");
+            }
+          });
+      }
 
       updateActivities();
       updateDependencies();
@@ -1269,7 +1292,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       .attr("font-size", "12px")
       .attr("fill", "#4b5563")
       .text("Reset Node Positions");
-  }, [data, milestonePositions, workstreamPositions, onMilestoneDeadlineChange]);
+  }, [data, milestonePositions, workstreamPositions, onMilestoneDeadlineChange, width, height, margin.left, margin.top, margin.right, margin.bottom, contentWidth, contentHeight, upsertPos]);
 
   return (
     <div className="w-full h-full relative">
