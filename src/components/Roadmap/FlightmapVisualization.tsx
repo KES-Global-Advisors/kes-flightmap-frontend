@@ -8,209 +8,31 @@ import { useNodePositions, useUpsertPosition } from '@/api/flightmap';
 
 // Utility components
 import ScreenshotButton from "./FlightmapUtils/ScreenshotButton";
+import { legendData } from "./FlightmapUtils/LegendData";
 
 // Helpers
 import { wrapText } from "./FlightmapUtils/wrapText";
-import { buildHierarchy } from "./FlightmapUtils/buildHierarchy";
 import Tooltip from "./FlightmapUtils/Tooltip";
 import { getTooltipContent } from "./FlightmapUtils/getTooltip";
+import { getStatusColor } from "./FlightmapUtils/getStatusColor";
 
-/**
- * Determines color for status indicators.
- * @param status - The status of the milestone or activity
- * @returns A hex color code
- */
-function getStatusColor(status: string): string {
-  switch (status) {
-    case "completed":
-      return "#22c55e"; // green
-    case "in_progress":
-      return "#f97316"; // orange
-    default:
-      return "#9ca3af"; // gray
-  }
-}
+import {
+  extractMilestonesAndActivities,
+  processDeadlines,
+  groupPlacementsByDeadlineAndWorkstream,
+  MilestonePlacement,
+} from './FlightmapUtils/dataProcessing';
+import {
+  getMilestonePositionsKey,
+  saveMilestonePositions,
+  getWorkstreamPositionsKey,
+  saveWorkstreamPositions,
+} from './FlightmapUtils/storageHelpers';
 
-/**
- * Extracts workstreams, milestones, and activities from the hierarchical data.
- * @param data - The raw flightmap data
- * @returns An object containing workstreams and activities
- */
-function extractMilestonesAndActivities(data: FlightmapData) {
-  const rootNode = buildHierarchy(data);
-  const workstreams: {
-    [id: number]: { id: number; name: string; color: string; milestones: any[] };
-  } = {};
-  const activities: any[] = [];
-  const dependencies: { source: number; target: number }[] = [];
-
-  function visit(node: any, currentWorkstreamId?: number) {
-    if (node.type === "workstream") {
-      currentWorkstreamId = node.id;
-      workstreams[node.id] = {
-        id: node.id,
-        name: node.name,
-        color: node.color || "#0000FF",
-        milestones: [],
-      };
-    }
-    if (node.type === "milestone" && currentWorkstreamId && workstreams[currentWorkstreamId]) {
-      workstreams[currentWorkstreamId].milestones.push({
-        ...node,
-        workstreamId: currentWorkstreamId,
-      });
-    }
-    if (node.type === "milestone" && node.dependencies && node.dependencies.length > 0) {
-      node.dependencies.forEach((dependencyId: number) => {
-        dependencies.push({
-          source: dependencyId,
-          target: node.id
-        });
-      });
-    }
-    if (node.type === "activity" && currentWorkstreamId != null) {
-      let parentMilestoneNode: any = node.parent;
-      while (parentMilestoneNode && parentMilestoneNode.type !== "milestone") {
-        parentMilestoneNode = parentMilestoneNode.parent;
-      }
-      if (parentMilestoneNode && parentMilestoneNode.id) {
-        activities.push({
-          ...node,
-          workstreamId: currentWorkstreamId,
-          sourceMilestoneId: parentMilestoneNode.id,
-          targetMilestoneIds: [
-            ...(node.supported_milestones || []),
-            ...(node.additional_milestones || []),
-          ],
-          autoConnect: !(
-            (node.supported_milestones && node.supported_milestones.length) ||
-            (node.additional_milestones && node.additional_milestones.length)
-          ),
-        });
-      }
-    }
-    if (node.children) {
-      node.children.forEach((child: any) => {
-        child.parent = node;
-        visit(child, currentWorkstreamId);
-      });
-    }
-  }
-  visit(rootNode);
-
-  function linkParentActivities(node: any) {
-    if (node.type === "milestone" && node.children) {
-      const childMilestones = node.children.filter((c: any) => c.type === "milestone");
-      const milestoneActivities = node.children.filter((c: any) => c.type === "activity");
-      childMilestones.forEach((childMilestone: any) => {
-        milestoneActivities.forEach((activityNode: any) => {
-          activities.push({
-            ...activityNode,
-            sourceMilestoneId: node.id,
-            targetMilestoneIds: [childMilestone.id],
-            autoConnect: false,
-          });
-        });
-      });
-    }
-    if (node.children) {
-      node.children.forEach(linkParentActivities);
-    }
-  }
-  linkParentActivities(rootNode);
-
-  return { workstreams: Object.values(workstreams), activities, dependencies };
-}
-
-/**
- * Processes milestone deadlines to create timeline markers.
- * @param milestones - Array of milestones
- * @returns Array of unique dates
- */
-function processDeadlines(milestones: any[]) {
-  const allDeadlines = milestones
-    .filter((m) => m.deadline)
-    .map((m) => new Date(m.deadline));
-  if (allDeadlines.length === 0) {
-    const now = new Date();
-    const oneMonthLater = new Date(now);
-    oneMonthLater.setMonth(now.getMonth() + 1);
-    const twoMonthsLater = new Date(now);
-    twoMonthsLater.setMonth(now.getMonth() + 2);
-    return [now, oneMonthLater, twoMonthsLater].sort((a, b) => a.getTime() - b.getTime());
-  }
-  const uniqueDates = Array.from(
-    new Set(allDeadlines.map((d) => d.toISOString().split("T")[0]))
-  )
-    .map((dateStr) => new Date(dateStr))
-    .sort((a, b) => a.getTime() - b.getTime());
-  return uniqueDates;
-}
-
-/**
- * Local storage helpers for milestone positions
- */
-function getMilestonePositionsKey(dataId: string): string {
-  return `flightmap-milestone-positions-${dataId}`;
-}
-
-function saveMilestonePositions(dataId: string, positions: { [id: string]: { y: number } }): void {
-  try {
-    localStorage.setItem(getMilestonePositionsKey(dataId), JSON.stringify(positions));
-  } catch (e) {
-    console.error("Error saving milestone positions:", e);
-  }
-}
-
-/**
- * Local storage helpers for workstream positions
- */
-function getWorkstreamPositionsKey(dataId: string): string {
-  return `flightmap-workstream-positions-${dataId}`;
-}
-
-function saveWorkstreamPositions(dataId: string, positions: { [id: number]: { y: number } }): void {
-  try {
-    localStorage.setItem(getWorkstreamPositionsKey(dataId), JSON.stringify(positions));
-  } catch (e) {
-    console.error("Error saving workstream positions:", e);
-  }
-}
-
-// Define type for milestone placements
-type MilestonePlacement = {
-  id: string;
-  milestone: any;
-  placementWorkstreamId: number;
-  isDuplicate: boolean;
-  originalMilestoneId?: number;
-  activityId?: number | string;
-};
 
 interface FlightmapVisualizationProps {
   data: FlightmapData;
   onMilestoneDeadlineChange: (milestoneId: string, newDeadline: Date) => Promise<boolean>;
-}
-
-/**
- * Groups milestone placements by workstream and deadline to handle overlapping milestones
- * @param placements - Array of milestone placements
- * @returns Object with grouped placements
- */
-function groupPlacementsByDeadlineAndWorkstream(placements: MilestonePlacement[]) {
-  const groups: { [key: string]: MilestonePlacement[] } = {};
-  placements.forEach((placement) => {
-    const milestone = placement.milestone;
-    if (!milestone.deadline) return;
-    const dateKey = new Date(milestone.deadline).toISOString().split("T")[0];
-    const wsKey = placement.placementWorkstreamId;
-    const groupKey = `${dateKey}-${wsKey}`;
-    if (!groups[groupKey]) {
-      groups[groupKey] = [];
-    }
-    groups[groupKey].push(placement);
-  });
-  return groups;
 }
 
 const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, onMilestoneDeadlineChange }) => {
@@ -1146,17 +968,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       .attr("fill", "#6b7280");
 
     // Add legend
-    const legendData = [
-      { type: "milestone", label: "Milestone", status: "not_started" },
-      { type: "milestone", label: "Completed Milestone", status: "completed" },
-      { type: "status", label: "In Progress", status: "in_progress" },
-      { type: "status", label: "Completed", status: "completed" },
-      { type: "status", label: "Not Started", status: "not_started" },
-      { type: "dependency", label: "Milestone Dependency", status: "dependency" },
-      { type: "duplicate", label: "Cross-Workstream Dependency", status: "duplicate" },
-      { type: "cross-workstream-activity", label: "Cross-Workstream Activity", status: "cross-activity" },
-      { type: "instruction", label: "Drag milestones/workstreams" },
-    ];
     const legend = svgEl
       .append("g")
       .attr("class", "legend")
