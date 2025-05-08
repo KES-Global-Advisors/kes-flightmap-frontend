@@ -650,25 +650,25 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         if (dragEndTimeout) clearTimeout(dragEndTimeout);
         pendingPositionUpdates = {};
       })
-      .on("drag", function(event, data) {
-        const deltaX = event.x - data.initialX;
-        const deltaY = event.y - data.initialY;
+      .on("drag", function(event, d) {
+        const deltaX = event.x - d.initialX;
+        const deltaY = event.y - d.initialY;
         d3.select(this).attr("transform", `translate(${deltaX}, ${deltaY})`);
         
         // Update placement coordinates temporarily for visual updates
-        if (placementCoordinates[data.id]) {
-          const origX = placementCoordinates[data.id].x;
-          placementCoordinates[data.id].y = data.initialY + deltaY;
+        if (placementCoordinates[d.id]) {
+          // const origX = placementCoordinates[d.id].x;
+          placementCoordinates[d.id].y = d.initialY + deltaY;
         }
         
         // Update only the visual connections without state changes
-        updateVisualConnectionsForNode(data.id);
+        updateVisualConnectionsForNode(d.id);
       })
-      .on("end", function(event, data) {
+      .on("end", function(event, d) {
         d3.select(this).classed("dragging", false);
         const minAllowedY = 20;
         const constrainedY = Math.max(minAllowedY, event.y);
-        const droppedX = data.initialX + (event.x - data.initialX);
+        const droppedX = d.initialX + (event.x - d.initialX);
         
         // Find closest timeline marker
         const closestMarker = timelineMarkers.reduce((prev, curr) => {
@@ -682,16 +682,16 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         
         // Apply visual changes immediately
         d3.select(this).attr("transform", 
-          `translate(${snappedX - data.initialX}, ${constrainedY - data.initialY})`);
+          `translate(${snappedX - d.initialX}, ${constrainedY - d.initialY})`);
         
         // Update placement coordinates with final position
-        if (placementCoordinates[data.id]) {
-          placementCoordinates[data.id].x = snappedX;
-          placementCoordinates[data.id].y = constrainedY;
+        if (placementCoordinates[d.id]) {
+          placementCoordinates[d.id].x = snappedX;
+          placementCoordinates[d.id].y = constrainedY;
         }
         
         // Store position in pending updates instead of immediate state change
-        pendingPositionUpdates[data.id] = { y: constrainedY };
+        pendingPositionUpdates[d.id] = { y: constrainedY };
         
         // Batch position updates with debouncing
         if (dragEndTimeout) clearTimeout(dragEndTimeout);
@@ -703,31 +703,31 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           }));
           
           // Only call API with the final position after interaction is complete
-          if (constrainedY !== data.initialY) {
+          if (constrainedY !== d.initialY) {
             const relY = (constrainedY - margin.top) / contentHeight;
-            debouncedUpsertPosition(data.id, 'milestone', Number(data.id), relY);
+            debouncedUpsertPosition(data.id, 'milestone', d.id, relY);
           }
           
           // Handle deadline changes only after drag is complete
-          const originalDateMs = new Date(data.milestone.deadline).getTime();
+          const originalDateMs = new Date(d.milestone.deadline).getTime();
           const newDateMs = newDeadline.getTime();
           if (newDateMs !== originalDateMs) {
-            onMilestoneDeadlineChange(data.milestone.id.toString(), newDeadline)
+            onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
               .then((ok) => {
                 if (!ok) {
                   // Rollback X-axis
-                  const origX = xScale(new Date(data.milestone.deadline));
+                  const origX = xScale(new Date(d.milestone.deadline));
                   d3.select(this)
                     .transition().duration(300)
-                    .attr("transform", `translate(${origX - data.initialX}, ${constrainedY - data.initialY})`);
+                    .attr("transform", `translate(${origX - d.initialX}, ${constrainedY - d.initialY})`);
                   
                   // Also update the placement coordinates
-                  if (placementCoordinates[data.id]) {
-                    placementCoordinates[data.id].x = origX;
+                  if (placementCoordinates[d.id]) {
+                    placementCoordinates[d.id].x = origX;
                   }
                   
                   // Update connections after rollback
-                  updateVisualConnectionsForNode(data.id);
+                  updateVisualConnectionsForNode(d.id);
                 }
               });
           }
@@ -736,9 +736,9 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         }, 200); // Debounce for 200ms
         
         // Update visual connections immediately without full redraw
-        updateVisualConnectionsForNode(data.id);
+        updateVisualConnectionsForNode(d.id);
       });
-  }, [contentHeight, margin.top, timelineMarkers, xScale, debouncedUpsertPosition, onMilestoneDeadlineChange, updateVisualConnectionsForNode, placementCoordinates]);
+  }, [data.id, contentHeight, margin.top, timelineMarkers, xScale, debouncedUpsertPosition, onMilestoneDeadlineChange, updateVisualConnectionsForNode, placementCoordinates]);
 
   // Optimized workstream drag behavior
   const createWorkstreamDragBehavior = useCallback(() => {
