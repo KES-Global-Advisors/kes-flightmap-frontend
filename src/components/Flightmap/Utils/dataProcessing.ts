@@ -1,7 +1,7 @@
 // src/utils/dataProcessing.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams roadmaps Flightmap
-import { FlightmapData } from '@/types/roadmap';
+import { FlightmapData } from '@/types/flightmap';
 import { buildHierarchy } from './buildHierarchy';
 
 export interface MilestonePlacement {

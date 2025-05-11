@@ -7,7 +7,7 @@ import { ThemeContext } from '@/contexts/ThemeContext';
 import Modal from '@/components/Flightmap/Modal';
 import FlightmapSwitcher from '@/components/Flightmap/FlightmapSwitcher';
 import FlightmapCard from './components/FlightmapCard';
-import { FlightmapData } from '@/types/roadmap';
+import { FlightmapData } from '@/types/flightmap';
 import { useFlightmaps } from '@/api/flightmap';
 
 const API = import.meta.env.VITE_API_BASE_URL;

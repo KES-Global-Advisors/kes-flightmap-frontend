@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
-import { FlightmapData } from "@/types/roadmap";
+import { FlightmapData } from "@/types/flightmap";
 import { useQueryClient } from '@tanstack/react-query';
 import { useNodePositions, useUpsertPosition } from '@/api/flightmap';
 

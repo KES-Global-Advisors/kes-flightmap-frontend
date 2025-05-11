@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import FlightmapVisualization from './FlightmapVisualization';
 import GanttChart from './GanttChart';
 import FrameworkView from './FrameworkView';
-import { FlightmapData } from '@/types/roadmap';
+import { FlightmapData } from '@/types/flightmap';
 import { useUpdateMilestoneDeadline } from '@/api/flightmap';
 
 

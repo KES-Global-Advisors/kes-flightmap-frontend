@@ -1,7 +1,7 @@
 // cSpell:ignore workstream workstreams roadmaps flightmaps
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
-import { FlightmapData } from '@/types/roadmap';
+import { FlightmapData } from '@/types/flightmap';
 import { useAuth } from '@/contexts/UserContext';
 import { ChevronRight, MoreVertical, Trash2, X } from 'lucide-react';
 

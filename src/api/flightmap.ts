@@ -1,7 +1,7 @@
 // src/api/flightmap.ts
 // cSpell:ignore workstream workstreams roadmaps flightmap flightmaps
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { FlightmapData } from '@/types/roadmap';
+import type { FlightmapData } from '@/types/flightmap';
 const API = import.meta.env.VITE_API_BASE_URL;
 
 export interface NodePos { 
