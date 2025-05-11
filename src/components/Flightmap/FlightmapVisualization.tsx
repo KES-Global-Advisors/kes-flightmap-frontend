@@ -4,30 +4,31 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
 import { FlightmapData } from "@/types/roadmap";
+import { useQueryClient } from '@tanstack/react-query';
 import { useNodePositions, useUpsertPosition } from '@/api/flightmap';
 
 // Utility components
-import ScreenshotButton from "./FlightmapUtils/ScreenshotButton";
-import { legendData } from "./FlightmapUtils/LegendData";
+import ScreenshotButton from "./FlightmapComponents/ScreenshotButton";
+import { legendData } from "./Utils/LegendData";
 
 // Helpers
-import { wrapText } from "./FlightmapUtils/wrapText";
-import Tooltip from "./FlightmapUtils/Tooltip";
-import { getTooltipContent } from "./FlightmapUtils/getTooltip";
-import { getStatusColor } from "./FlightmapUtils/getStatusColor";
+import { wrapText } from "./Utils/wrapText";
+import Tooltip from "./FlightmapComponents/Tooltip";
+import { getTooltipContent } from "./Utils/getTooltip";
+import { getStatusColor } from "./Utils/getStatusColor";
 
 import {
   extractMilestonesAndActivities,
   processDeadlines,
   groupPlacementsByDeadlineAndWorkstream,
   MilestonePlacement,
-} from './FlightmapUtils/dataProcessing';
+} from './Utils/dataProcessing';
 import {
   getMilestonePositionsKey,
   saveMilestonePositions,
   getWorkstreamPositionsKey,
   saveWorkstreamPositions,
-} from './FlightmapUtils/storageHelpers';
+} from './Utils/storageHelpers';
 
 // Simple debounce utility
 function debounce<T extends (...args: any[]) => any>(
@@ -51,6 +52,7 @@ interface FlightmapVisualizationProps {
 }
 
 const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, onMilestoneDeadlineChange }) => {
+  const queryClient = useQueryClient();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>(null);
   const [tooltip, setTooltip] = useState({
@@ -74,7 +76,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   // Separate trackers for original and duplicate node positions
   const originalNodeCoordinates = useRef<{ [id: string]: { x: number; y: number } }>({});
   const duplicateNodeCoordinates = useRef<{ [id: string]: { x: number; y: number } }>({});
-  
+  const processedDuplicates = useRef(new Set<string>());
+
   // Reference to track all placement coordinates for rendering
   const placementCoordinates: { 
     [id: string]: { 
@@ -82,20 +85,34 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       y: number; 
       isDuplicate?: boolean; 
       originalId?: number; 
+      duplicateKey?: string | number; // Track the duplicate key
+      workstreamId: number; // Track the workstream ID
     } 
   } = useRef({}).current;
 
   // Debounced API call reference
-  const debouncedUpsertPosition = useRef(
-    debounce((flightmapId: number, nodeType: 'milestone'|'workstream', nodeId: number, relY: number) => {
-      upsertPos.mutate({
-        flightmap: flightmapId,
-        nodeType,
-        nodeId,
-        relY
-      });
-    }, 500)
-  ).current;
+// Debounced API call reference with support for duplicate node parameters
+const debouncedUpsertPosition = useRef(
+  debounce((
+    flightmapId: number, 
+    nodeType: 'milestone'|'workstream', 
+    nodeId: number, 
+    relY: number, 
+    isDuplicate: boolean = false, 
+    duplicateKey: string = "", 
+    originalNodeId?: number
+  ) => {
+    upsertPos.mutate({
+      flightmap: flightmapId,
+      nodeType,
+      nodeId,
+      relY,
+      isDuplicate,
+      duplicateKey,
+      originalNodeId
+    });
+  }, 500)
+).current;
 
   const width = window.innerWidth;
   const height = window.innerHeight * 0.8;
@@ -121,11 +138,60 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     }, 500)
   ).current;
 
+  // Add this function after the other utility functions (around line 270)
+  const ensureDuplicateNodeBackendRecord = useCallback((placement: MilestonePlacement) => {
+    // Only process duplicate nodes with a duplicateKey
+    if (!placement.isDuplicate || !placement.duplicateKey || !placement.originalMilestoneId) {
+      return;
+    }
+  
+    // Skip if we've already processed this duplicate
+    const duplicateKey = String(placement.duplicateKey);
+    if (processedDuplicates.current.has(duplicateKey)) {
+      return;
+    }
+  
+    // Check if this duplicate already exists in remoteMilestonePos
+    const existingPos = remoteMilestonePos.find(p => 
+      p.is_duplicate && 
+      p.duplicate_key === duplicateKey
+    );
+  
+    // Only create if it doesn't already exist in the backend
+    if (!existingPos) {
+      // Get the workstream's y position
+      const workstreamId = placement.placementWorkstreamId;
+      const workstreamY = workstreamPositions[workstreamId]?.y || 0;
+  
+      // Calculate relative Y position (0-1 scale for backend)
+      const relY = (workstreamY - margin.top) / contentHeight;
+  
+      console.log(`Creating backend record for duplicate milestone: ${duplicateKey}`);
+  
+      // Store the duplicate node in the backend
+      upsertPos.mutate({
+        flightmap: data.id,
+        nodeType: 'milestone',
+        // Use duplicateKey as the node_id for backend storage
+        nodeId: duplicateKey, // Use duplicateKey instead of original milestone ID
+        relY: relY > 0 && relY <= 1 ? relY : 0.5,
+        isDuplicate: true,
+        duplicateKey: duplicateKey,
+        originalNodeId: placement.originalMilestoneId
+      });
+    }
+  
+    // Mark as processed
+    processedDuplicates.current.add(duplicateKey);
+  }, [data.id, remoteMilestonePos, workstreamPositions, margin.top, contentHeight, upsertPos]);
+
   useEffect(() => {
     if (remoteMilestonePos.length) {
       const newM: typeof milestonePositions = {};
       remoteMilestonePos.forEach(p => {
-        newM[p.node_id.toString()] = {
+        // For duplicate nodes, use the duplicate key as the id in our state
+        const stateId = p.is_duplicate && p.duplicate_key ? p.duplicate_key : p.node_id.toString();
+        newM[stateId] = {
           y: margin.top + p.rel_y * contentHeight
         };
       });
@@ -137,7 +203,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     if (remoteWorkstreamPos.length) {
       const newW: typeof workstreamPositions = {};
       remoteWorkstreamPos.forEach(p => {
-        newW[p.node_id] = {
+        newW[typeof p.node_id === "string" ? Number(p.node_id) : p.node_id] = {
           y: margin.top + p.rel_y * contentHeight
         };
       });
@@ -168,14 +234,17 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         x, 
         y, 
         isDuplicate: true, 
-        originalId: placement.originalMilestoneId 
+        originalId: placement.originalMilestoneId,
+        duplicateKey: placement.duplicateKey, // Track the duplicate key
+        workstreamId: placement.placementWorkstreamId // Add workstream ID
       };
     } else {
       originalNodeCoordinates.current[placement.id] = { x, y };
       placementCoordinates[placement.id] = { 
         x, 
         y, 
-        isDuplicate: false
+        isDuplicate: false,
+        workstreamId: placement.placementWorkstreamId // Add workstream ID
       };
     }
   }, [placementCoordinates]);
@@ -345,10 +414,47 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       .attr("transform", `translate(${width - margin.right + -50}, ${margin.top + (legendData.length + 1) * legendItemHeight})`)
       .attr("cursor", "pointer")
       .on("click", () => {
+        // Show a loading state
+        resetButton.select("text").text("Resetting positions...");
+        
+        // Clear local storage
         localStorage.removeItem(getMilestonePositionsKey(dataId.current));
         localStorage.removeItem(getWorkstreamPositionsKey(dataId.current));
+        
+        // Reset local state
         setMilestonePositions({});
         setWorkstreamPositions({});
+        
+        // Call the new reset endpoint
+        const resetPositions = async () => {
+          const token = sessionStorage.getItem('accessToken');
+          try {
+            // Use the new reset endpoint to create default positions
+            const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/positions/reset/?flightmap=${data.id}`, {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { Authorization: `Bearer ${token}` }),
+              },
+            });
+            
+            if (!res.ok) {
+              console.error('Failed to reset positions on server');
+            }
+            
+            // Invalidate queries to refresh data from server
+            queryClient.invalidateQueries({ queryKey: ['positions', data.id, 'milestone'] });
+            queryClient.invalidateQueries({ queryKey: ['positions', data.id, 'workstream'] });
+            
+            // Reset button text
+            resetButton.select("text").text("Reset Node Positions");
+          } catch (error) {
+            console.error('Error resetting positions:', error);
+            resetButton.select("text").text("Reset Node Positions");
+          }
+        };
+        
+        resetPositions();
       });
 
     resetButton
@@ -370,7 +476,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       .attr("fill", "#4b5563")
       .text("Reset Node Positions");
 
-  }, [width, height, margin.left, margin.top, margin.right]);
+  }, [width, height, margin.left, margin.top, margin.right, data.id, queryClient]);
 
   // 2. Initialize zoom behavior - executed once after container is created
   useEffect(() => {
@@ -441,13 +547,15 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         targetMilestone &&
         sourceMilestone.workstreamId !== targetMilestone.workstreamId
       ) {
-        const duplicateId = `duplicate-${dep.source}-${dep.target}`;
+        // Create a unique, consistent key for this duplicate
+        const duplicateKey = `duplicate-${dep.source}-${dep.target}`;
         milestonePlacements.push({
-          id: duplicateId,
+          id: duplicateKey,
           milestone: sourceMilestone,
           placementWorkstreamId: targetMilestone.workstreamId,
           isDuplicate: true,
           originalMilestoneId: sourceMilestone.id,
+          duplicateKey: duplicateKey, // Store the duplicate key
         });
       }
     });
@@ -471,18 +579,19 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         }
 
         // Create a duplicate of the target milestone in the activity's workstream
-        const duplicateId = `activity-duplicate-${targetMilestoneId}-${activity.id}`;
+        const duplicateKey = `activity-duplicate-${targetMilestoneId}-${activity.id}`;
 
         // Check if this duplicate already exists
-        if (!milestonePlacements.some(p => p.id === duplicateId)) {
+        if (!milestonePlacements.some(p => p.id === duplicateKey)) {
           milestonePlacements.push({
-            id: duplicateId,
+            id: duplicateKey,
             milestone: targetMilestone,
-            placementWorkstreamId: activityWorkstreamId, // Place in the activity's workstream
+            placementWorkstreamId: activityWorkstreamId,
             isDuplicate: true,
             originalMilestoneId: targetMilestoneId,
-            activityId: activity.id // Track which activity created this duplicate
-          });
+            activityId: activity.id,
+            duplicateKey: duplicateKey, // Store the duplicate key
+          })
         }
       });
     });
@@ -515,111 +624,239 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   }, [workstreams, contentHeight]);
 
   // Function to update only connections related to a specific node
-  const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => {
-    // Skip if SVG groups don't exist yet
-    if (!activitiesGroup.current || !dependencyGroup.current) return;
+const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => {
+  // Skip if SVG groups don't exist yet
+  if (!activitiesGroup.current || !dependencyGroup.current) return;
 
-    // Find activities that involve this node
-    const activitiesToUpdate = activities.filter(activity => 
-      activity.sourceMilestoneId.toString() === nodeId.toString() || 
-      (activity.targetMilestoneIds && activity.targetMilestoneIds.some(
-        (id: number) => id.toString() === nodeId.toString())
-      )
-    );
-
-    // Update each affected activity path
-    activitiesToUpdate.forEach(activity => {
-      const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
-      if (!sourceCoord) return;
-      
-      // For each target milestone, update the connection
-      (activity.targetMilestoneIds || []).forEach((targetId: number) => {
-        const targetCoord = placementCoordinates[targetId.toString()];
-        if (!targetCoord) return;
-        
-        // Find the path element for this activity connection
-        const activityPath = activitiesGroup.current!
-          .selectAll(".same-workstream-activity, .cross-workstream-activity")
-          .filter((d: any) => 
-            d.id === activity.id && 
-            d.sourceMilestoneId === activity.sourceMilestoneId && 
-            d.targetMilestoneIds && 
-            d.targetMilestoneIds.includes(targetId)
-          );
-        
-        // Update the path if found
-        if (!activityPath.empty()) {
-          activityPath.attr(
-            "d",
-            d3.linkHorizontal()({
-              source: [sourceCoord.x, sourceCoord.y],
-              target: [targetCoord.x, targetCoord.y],
-            } as DefaultLinkObject) ?? ""
-          );
-          
-          // Update activity label position
-          const pathNode = activityPath.node();
-          if (pathNode) {
-            const pathLength = (pathNode as SVGPathElement).getTotalLength();
-            const midpoint = (pathNode as SVGPathElement).getPointAtLength(pathLength / 2);
-            
-            // Find and update the label rectangle and text
-            const labelRect = activitiesGroup.current!
-              .selectAll("rect")
-              .filter((d: any) => d && d.id === activity.id);
-              
-            const labelText = activitiesGroup.current!
-              .selectAll("text")
-              .filter((d: any) => d && d.id === activity.id);
-              
-            if (!labelRect.empty()) {
-              labelRect
-                .attr("x", midpoint.x - 100)
-                .attr("y", midpoint.y - 10);
-            }
-            
-            if (!labelText.empty()) {
-              labelText
-                .attr("x", midpoint.x)
-                .attr("y", midpoint.y);
-            }
-          }
-        }
-      });
-    });
-
-    // Find dependencies that involve this node
-    const dependenciesToUpdate = dependencies.filter(dep => 
-      dep.source.toString() === nodeId.toString() || 
-      dep.target.toString() === nodeId.toString()
+  // Get the node data
+  const nodeIdStr = nodeId.toString();
+  const nodeData = placementCoordinates[nodeIdStr];
+  if (!nodeData) return;
+  
+  const isDuplicate = Boolean(nodeData.isDuplicate);
+  
+  // Find activities that involve this specific node only (no cross-referencing with original/duplicate counterparts)
+  const activitiesToUpdate = activities.filter(activity => {
+    // Check if this node is the source or target of the activity
+    const isSource = activity.sourceMilestoneId.toString() === nodeIdStr;
+    const isTarget = activity.targetMilestoneIds && activity.targetMilestoneIds.some(
+      (id: number) => id.toString() === nodeIdStr
     );
     
-    // Update each affected dependency line
-    dependenciesToUpdate.forEach(dep => {
-      const sourceCoord = placementCoordinates[dep.source.toString()];
-      const targetCoord = placementCoordinates[dep.target.toString()];
+    return isSource || isTarget;
+  });
+
+  // Update each affected activity path
+  activitiesToUpdate.forEach(activity => {
+    const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
+    if (!sourceCoord) return;
+    
+    // For each target milestone, update the connection
+    (activity.targetMilestoneIds || []).forEach((targetId: number) => {
+      const targetCoord = placementCoordinates[targetId.toString()];
+      if (!targetCoord) return;
       
-      if (!sourceCoord || !targetCoord) return;
-      
-      // Find the dependency line for this connection
-      const dependencyLine = dependencyGroup.current!
-        .selectAll(".dependency-line, .duplicate-dependency-line")
+      // Find the path element for this activity connection
+      const activityPath = activitiesGroup.current!
+        .selectAll(".same-workstream-activity, .cross-workstream-activity")
         .filter((d: any) => 
-          d && d.source === dep.source && d.target === dep.target
+          d.id === activity.id && 
+          d.sourceMilestoneId === activity.sourceMilestoneId && 
+          d.targetMilestoneIds && 
+          d.targetMilestoneIds.includes(targetId)
         );
       
-      // Update the line if found
-      if (!dependencyLine.empty()) {
-        dependencyLine.attr(
+      // Update the path if found
+      if (!activityPath.empty()) {
+        activityPath.attr(
           "d",
           d3.linkHorizontal()({
             source: [sourceCoord.x, sourceCoord.y],
             target: [targetCoord.x, targetCoord.y],
           } as DefaultLinkObject) ?? ""
         );
+        
+        // Update activity label position
+        const pathNode = activityPath.node();
+        if (pathNode) {
+          const pathLength = (pathNode as SVGPathElement).getTotalLength();
+          const midpoint = (pathNode as SVGPathElement).getPointAtLength(pathLength / 2);
+          
+          // Find and update the label rectangle and text
+          const labelRect = activitiesGroup.current!
+            .selectAll("rect")
+            .filter((d: any) => d && d.id === activity.id);
+            
+          const labelText = activitiesGroup.current!
+            .selectAll("text")
+            .filter((d: any) => d && d.id === activity.id);
+            
+          if (!labelRect.empty()) {
+            labelRect
+              .attr("x", midpoint.x - 100)
+              .attr("y", midpoint.y - 10);
+          }
+          
+          if (!labelText.empty()) {
+            labelText
+              .attr("x", midpoint.x)
+              .attr("y", midpoint.y);
+          }
+        }
       }
     });
-  }, [activities, dependencies, placementCoordinates]);
+  });
+
+  // Find dependencies that involve this specific node only (no cross-referencing)
+  const dependenciesToUpdate = dependencies.filter(dep => 
+    dep.source.toString() === nodeIdStr || 
+    dep.target.toString() === nodeIdStr
+  );
+  
+  // Update each affected dependency line
+  dependenciesToUpdate.forEach(dep => {
+    const sourceCoord = placementCoordinates[dep.source.toString()];
+    const targetCoord = placementCoordinates[dep.target.toString()];
+    
+    if (!sourceCoord || !targetCoord) return;
+    
+    // Find the dependency line for this connection
+    const dependencyLine = dependencyGroup.current!
+      .selectAll(".dependency-line, .duplicate-dependency-line")
+      .filter((d: any) => 
+        d && d.source === dep.source && d.target === dep.target
+      );
+    
+    // Update the line if found
+    if (!dependencyLine.empty()) {
+      dependencyLine.attr(
+        "d",
+        d3.linkHorizontal()({
+          source: [sourceCoord.x, sourceCoord.y],
+          target: [targetCoord.x, targetCoord.y],
+        } as DefaultLinkObject) ?? ""
+      );
+    }
+  });
+
+  // For duplicate nodes, also update the special visual connection with the target milestone
+  if (isDuplicate && nodeData.originalId) {
+    const workstreamId = nodeData.workstreamId; // Use the workstreamId directly
+    
+    // Find dependencies where this duplicate's original is the source
+    const relevantDeps = dependencies.filter(dep => 
+      dep.source === nodeData.originalId &&
+      allMilestones.find(m => m.id === dep.target)?.workstreamId === workstreamId
+    );
+    
+    // Update the special duplicate connection
+    relevantDeps.forEach(dep => {
+      const targetCoord = placementCoordinates[dep.target.toString()];
+      if (targetCoord) {
+        // Find the duplicate connection
+        const duplicateConn = dependencyGroup.current!
+          .selectAll(".duplicate-dependency-line")
+          .filter((d: any) => 
+            (d && d.source === nodeIdStr && d.target === dep.target) ||
+            (d && d.originalId === nodeData.originalId && d.duplicateId === nodeIdStr)
+          );
+          
+        // Update the connection if found
+        if (!duplicateConn.empty()) {
+          duplicateConn.attr(
+            "d",
+            d3.linkHorizontal()({
+              source: [nodeData.x, nodeData.y],
+              target: [targetCoord.x, targetCoord.y],
+            } as DefaultLinkObject) ?? ""
+          );
+        }
+      }
+    });
+    
+    // Also update cross-workstream activity connections
+    const relevantActivities = activities.filter(activity => {
+      const supportedMilestones = [
+        ...(activity.supported_milestones || []),
+        ...(activity.additional_milestones || [])
+      ];
+      return (
+        activity.workstreamId === workstreamId && 
+        supportedMilestones.includes(nodeData.originalId)
+      );
+    });
+    
+    relevantActivities.forEach(activity => {
+      const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
+      if (sourceCoord) {
+        // Find the cross-workstream activity line
+        const activityLine = activitiesGroup.current!
+          .selectAll(".cross-workstream-activity")
+          .filter((d: any) => 
+            d && d.id === activity.id && 
+            d.targetMilestoneIds && 
+            d.targetMilestoneIds.includes(nodeData.originalId)
+          );
+          
+        // Update the line if found
+        if (!activityLine.empty()) {
+          activityLine.attr(
+            "d",
+            d3.linkHorizontal()({
+              source: [sourceCoord.x, sourceCoord.y],
+              target: [nodeData.x, nodeData.y],
+            } as DefaultLinkObject) ?? ""
+          );
+        }
+      }
+    });
+  }
+}, [activities, dependencies, placementCoordinates, allMilestones]);
+
+  // Function to update workstream line positions
+  const updateWorkstreamLines = useCallback(() => {
+    if (!workstreamGroup.current) return;
+    
+    workstreamGroup.current.selectAll(".workstream").each(function(d: any) {
+      const workstreamId = d.id;
+      const wsGroup = d3.select(this);
+      
+      // Get the current position from state - this is the source of truth
+      const y = workstreamPositions[workstreamId]?.y || d.initialY;
+      
+      // Update the actual line y-coordinates 
+      wsGroup.select("line")
+        .attr("y1", y)
+        .attr("y2", y);
+        
+      // Update workstream label y-coordinate
+      wsGroup.select("text")
+        .attr("y", y);
+        
+      // IMPORTANT: Reset the transform to prevent double transformations
+      wsGroup.attr("transform", "translate(0, 0)");
+    });
+  }, [workstreamPositions]);
+
+  // Add an effect to update workstream lines when workstream positions change
+  useEffect(() => {
+    // Make sure the workstream lines are updated after any position changes
+    if (Object.keys(workstreamPositions).length > 0) {
+      // Call the existing debounced save
+      debouncedSaveWorkstreamPositions(dataId.current, workstreamPositions);
+
+      // Immediate update of line positions
+      updateWorkstreamLines();
+    }
+  }, [workstreamPositions, debouncedSaveWorkstreamPositions, updateWorkstreamLines]);
+
+  // Also add an effect to ensure workstream lines are updated after the component fully mounts
+  useEffect(() => {
+    // This ensures lines are correctly positioned after initial render
+    if (workstreamGroup.current && Object.keys(workstreamPositions).length > 0) {
+      updateWorkstreamLines();
+    }
+  }, [updateWorkstreamLines, workstreamPositions]);
 
   // Lightweight function to update only visual appearance without full redraw
   const updateActivities = useCallback(() => {
@@ -705,33 +942,52 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           // Only call API with the final position after interaction is complete
           if (constrainedY !== d.initialY) {
             const relY = (constrainedY - margin.top) / contentHeight;
-            debouncedUpsertPosition(data.id, 'milestone', d.id, relY);
+
+            // Handle position updates differently for duplicates
+            if (d.isDuplicate) {
+              debouncedUpsertPosition(
+                data.id, 
+                'milestone', 
+                // Use the duplicateKey as the node_id for duplicates
+                // instead of using the original milestone ID
+                d.id, // Use the duplicate key directly
+                relY,
+                true, // isDuplicate
+                d.id, // duplicateKey
+                d.originalMilestoneId // originalNodeId
+              );
+            } else {
+              // For original nodes, no duplicate params needed
+              debouncedUpsertPosition(data.id, 'milestone', Number(d.milestone.id), relY);
+            }
           }
           
-          // Handle deadline changes only after drag is complete
-          const originalDateMs = new Date(d.milestone.deadline).getTime();
-          const newDateMs = newDeadline.getTime();
-          if (newDateMs !== originalDateMs) {
-            onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
-              .then((ok) => {
-                if (!ok) {
-                  // Rollback X-axis
-                  const origX = xScale(new Date(d.milestone.deadline));
-                  d3.select(this)
-                    .transition().duration(300)
-                    .attr("transform", `translate(${origX - d.initialX}, ${constrainedY - d.initialY})`);
-                  
-                  // Also update the placement coordinates
-                  if (placementCoordinates[d.id]) {
-                    placementCoordinates[d.id].x = origX;
+          // Handle deadline changes only for original nodes
+          if (!d.isDuplicate) {
+            const originalDateMs = new Date(d.milestone.deadline).getTime();
+            const newDateMs = newDeadline.getTime();
+            if (newDateMs !== originalDateMs) {
+              onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
+                .then((ok) => {
+                  if (!ok) {
+                    // Rollback X-axis
+                    const origX = xScale(new Date(d.milestone.deadline));
+                    d3.select(this)
+                      .transition().duration(300)
+                      .attr("transform", `translate(${origX - d.initialX}, ${constrainedY - d.initialY})`);
+
+                    // Also update the placement coordinates
+                    if (placementCoordinates[d.id]) {
+                      placementCoordinates[d.id].x = origX;
+                    }
+
+                    // Update connections after rollback
+                    updateVisualConnectionsForNode(d.id);
                   }
-                  
-                  // Update connections after rollback
-                  updateVisualConnectionsForNode(d.id);
-                }
-              });
+                });
+            }
           }
-          
+
           pendingPositionUpdates = {};
         }, 200); // Debounce for 200ms
         
@@ -740,11 +996,11 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       });
   }, [data.id, contentHeight, margin.top, timelineMarkers, xScale, debouncedUpsertPosition, onMilestoneDeadlineChange, updateVisualConnectionsForNode, placementCoordinates]);
 
-  // Optimized workstream drag behavior
+  // Fix createWorkstreamDragBehavior function
   const createWorkstreamDragBehavior = useCallback(() => {
     let pendingPositionUpdates: Record<number, { y: number }> = {};
     let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
-    
+
     return d3.drag<SVGGElement, any>()
       .on("start", function () {
         d3.select(this).classed("dragging", true);
@@ -758,29 +1014,27 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         const actualDeltaY = newY - (d.lastY || d.initialY);
         d.lastY = newY;
 
+        // Apply transform to the workstream group during drag
         d3.select(this).attr("transform", `translate(0, ${offset})`);
 
-        // Modified to respect node type relationships
+        // ADDED: Update workstream line coordinates directly during drag for visual consistency
+        d3.select(this).select("line")
+          .attr("y1", newY)
+          .attr("y2", newY);
+
+        d3.select(this).select("text")
+          .attr("y", newY);
+
+        // Move all milestone nodes for this workstream
         if (milestonesGroup.current) {
           milestonesGroup.current
             .selectAll(".milestone")
-            .filter((p: any) => {
-              // Filter for nodes in this workstream that are either:
-              // 1. Original nodes
-              // 2. Duplicate nodes that don't have their original in this view
-              if (p.placementWorkstreamId !== d.id) return false;
-              
-              if (!p.isDuplicate) return true;
-              
-              // For duplicates, check if original is present
-              const originalId = p.originalMilestoneId?.toString();
-              return !originalId || !placementCoordinates[originalId];
-            })
+            .filter((p: any) => p.placementWorkstreamId === d.id)
             .each(function (placementData: any) {
               // Update placement coordinates
               if (placementCoordinates[placementData.id]) {
                 placementCoordinates[placementData.id].y += actualDeltaY;
-                
+
                 // Also update the appropriate reference storage
                 if (placementData.isDuplicate) {
                   if (duplicateNodeCoordinates.current[placementData.id]) {
@@ -792,7 +1046,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
                   }
                 }
               }
-              
+
               // Update the visual position
               const currentTransform = d3.select(this).attr("transform") || "";
               const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
@@ -801,7 +1055,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             });
         }
 
-        // Update visual connections instead of full redraw
+        // Update visual connections during drag
         activities.forEach(activity => {
           if (activity.workstreamId === d.id) {
             updateVisualConnectionsForNode(activity.sourceMilestoneId);
@@ -814,9 +1068,21 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         const constrainedY = Math.max(minAllowedY, event.y);
         delete d.lastY;
 
+        // CRITICAL: Update the line coordinates immediately after drag
+        // This ensures the line doesn't snap back before the state update
+        d3.select(this).select("line")
+          .attr("y1", constrainedY)
+          .attr("y2", constrainedY);
+
+        d3.select(this).select("text")
+          .attr("y", constrainedY);
+
+        // Reset the transform to prevent double transformation
+        d3.select(this).attr("transform", "translate(0, 0)");
+
         // Store position in pending updates
         pendingPositionUpdates[d.id] = { y: constrainedY };
-        
+
         // Batch position updates with debouncing
         if (dragEndTimeout) clearTimeout(dragEndTimeout);
         dragEndTimeout = setTimeout(() => {
@@ -825,11 +1091,18 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             ...prev,
             ...pendingPositionUpdates
           }));
-          
+
           // Debounce API call
           const relY = (constrainedY - margin.top) / contentHeight;
-          debouncedUpsertPosition(data.id, 'workstream', d.id, relY);
-          
+          debouncedUpsertPosition(
+            data.id, 
+            'workstream', 
+            d.id, 
+            relY,
+            false,
+            ""
+          );
+
           // Collect milestone positions that need updating
           const updatedMilestonePositions: Record<string, { y: number }> = {};
           if (milestonesGroup.current) {
@@ -844,7 +1117,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
                 }
               });
           }
-          
+
           // Update milestone positions if any changed
           if (Object.keys(updatedMilestonePositions).length > 0) {
             setMilestonePositions(prev => ({
@@ -852,10 +1125,10 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
               ...updatedMilestonePositions
             }));
           }
-          
+
           pendingPositionUpdates = {};
         }, 200); // Debounce for 200ms
-        
+
         // Update visual connections
         updateActivities();
         updateDependencies();
@@ -907,30 +1180,34 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       if (workstreamPositions[workstream.id]) {
         y = workstreamPositions[workstream.id].y;
       }
-
+    
       const wsGroup = workstreamGroup.current!
         .append("g")
         .datum({ ...workstream, initialY: y })
         .attr("class", "workstream")
         .attr("cursor", "ns-resize")
         .call(workstreamDragBehavior as any);
-
+    
+      // IMPORTANT: Remove any default transform on the workstream group
+      // and only rely on explicit coordinates for the line and text
+      wsGroup.attr("transform", "translate(0, 0)");
+    
       wsGroup
         .append("text")
         .attr("x", -10)
-        .attr("y", y)
+        .attr("y", y) // Explicit y-coordinate
         .attr("text-anchor", "end")
         .attr("dominant-baseline", "middle")
         .attr("font-weight", "bold")
         .attr("fill", workstream.color)
         .text(workstream.name);
-
+    
       wsGroup
         .append("line")
         .attr("x1", 0)
-        .attr("y1", y)
+        .attr("y1", y) // Explicit y-coordinate
         .attr("x2", contentWidth)
-        .attr("y2", y)
+        .attr("y2", y) // Explicit y-coordinate
         .attr("stroke", workstream.color)
         .attr("stroke-width", 1)
         .attr("stroke-opacity", 0.3)
@@ -1071,6 +1348,10 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           }
         }
 
+        if (placement.isDuplicate) {
+          ensureDuplicateNodeBackendRecord(placement);
+        }
+
         // Draw dotted line for duplicates
         if (placement.isDuplicate && placement.originalMilestoneId) {
           const originalCoord = placementCoordinates[placement.originalMilestoneId.toString()];
@@ -1107,41 +1388,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
                 .on("mouseover", (event) => {
                   setTooltip({
                     content: `Dependency: ${milestone.name} → ${allMilestones.find(m => m.id === targetMilestoneId)?.name}`,
-                    left: event.pageX + 10,
-                    top: event.pageY - 28,
-                    visible: true,
-                  });
-                })
-                .on("mousemove", (event) => {
-                  setTooltip((prev) => ({
-                    ...prev,
-                    left: event.pageX + 10,
-                    top: event.pageY - 28,
-                  }));
-                })
-                .on("mouseout", () => {
-                  setTooltip((prev) => ({ ...prev, visible: false }));
-                });
-            } else {
-              // Draw original-to-duplicate connection only if no target milestone was found
-              dependencyGroup.current!
-                .append("path")
-                .attr("class", "duplicate-dependency-line")
-                .attr(
-                  "d",
-                  d3.linkHorizontal()({
-                    source: [originalCoord.x, originalCoord.y],
-                    target: [x, y],
-                  } as DefaultLinkObject) ?? ""
-                )
-                .attr("fill", "none")
-                .attr("stroke", originalWorkstream?.color || "#6b7280")
-                .attr("stroke-width", 2)
-                .attr("stroke-dasharray", "5 5")
-                .attr("opacity", 0.7)
-                .on("mouseover", (event) => {
-                  setTooltip({
-                    content: `Dependency from ${milestone.name}`,
                     left: event.pageX + 10,
                     top: event.pageY - 28,
                     visible: true,
@@ -1473,24 +1719,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     activitiesGroup.current.lower();
     dependencyGroup.current.lower();
     
-  }, [
-    data, 
-    timelineMarkers, 
-    workstreams, 
-    activities, 
-    dependencies, 
-    xScale, 
-    yScale, 
-    milestonePositions, 
-    workstreamPositions,
-    allMilestones,
-    contentWidth,
-    milestonePlacements,
-    createMilestoneDragBehavior,
-    createWorkstreamDragBehavior,
-    placementCoordinates,
-    trackNodePosition
-  ]);
+  }, [data, timelineMarkers, workstreams, activities, dependencies, xScale, yScale, milestonePositions, workstreamPositions, allMilestones, contentWidth, milestonePlacements, createMilestoneDragBehavior, createWorkstreamDragBehavior, placementCoordinates, trackNodePosition, ensureDuplicateNodeBackendRecord]);
 
   return (
     <div className="w-full h-full relative">

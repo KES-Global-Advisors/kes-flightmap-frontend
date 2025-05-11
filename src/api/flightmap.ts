@@ -4,6 +4,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { FlightmapData } from '@/types/roadmap';
 const API = import.meta.env.VITE_API_BASE_URL;
 
+export interface NodePos { 
+  node_type: NodeType; 
+  node_id: number | string; 
+  rel_y: number;
+  is_duplicate?: boolean;
+  duplicate_key?: string;
+  original_node_id?: number;
+}
+
 // — Flightmaps list
 export const fetchFlightmaps = async () => {
     const token = sessionStorage.getItem('accessToken');
@@ -28,7 +37,7 @@ export function useFlightmaps() {
 
 // — Node positions (milestone/workstream)
 export type NodeType = 'milestone'|'workstream';
-export interface NodePos { node_type: NodeType; node_id: number; rel_y: number; }
+export interface NodePos { node_type: NodeType; node_id: number | string; rel_y: number; }
 
 const fetchPositions = async (flightmap: number, nodeType: NodeType) => {
   const token = sessionStorage.getItem('accessToken');
@@ -49,21 +58,47 @@ export function useNodePositions(flightmap: number, nodeType: NodeType) {
   });
 }
 
-const upsertPosition = async (flightmap: number, nodeType: NodeType, nodeId: number, relY: number) => {
+// Update the upsert function to handle duplicates
+const upsertPosition = async (
+  flightmap: number, 
+  nodeType: NodeType, 
+  nodeId: number | string, 
+  relY: number,
+  isDuplicate = false,
+  duplicateKey?: string,
+  originalNodeId?: number
+) => {
   const token = sessionStorage.getItem('accessToken');
   const res = await fetch(`${API}/positions/`, {
     method: 'POST',
     headers: { 'Content-Type':'application/json', ...(token && { Authorization:`Bearer ${token}` }) },
-    body: JSON.stringify({ flightmap, node_type: nodeType, node_id: nodeId, rel_y: relY })
+    body: JSON.stringify({ 
+      flightmap, 
+      node_type: nodeType, 
+      // Use duplicateKey as the node_id for duplicates instead of original ID
+      node_id: isDuplicate && duplicateKey ? duplicateKey : nodeId, 
+      rel_y: relY,
+      is_duplicate: isDuplicate,
+      duplicate_key: duplicateKey || "",
+      original_node_id: originalNodeId
+    })
   });
   if (!res.ok) throw new Error('Failed to save position');
 };
 
 export function useUpsertPosition() {
   const qc = useQueryClient();
-  return useMutation<void, Error, { flightmap: number; nodeType: NodeType; nodeId: number; relY: number }>({
-    mutationFn: ({ flightmap, nodeType, nodeId, relY }) =>
-      upsertPosition(flightmap, nodeType, nodeId, relY),
+  return useMutation<void, Error, { 
+    flightmap: number; 
+    nodeType: NodeType; 
+    nodeId: number | string; 
+    relY: number;
+    isDuplicate?: boolean;
+    duplicateKey?: string;
+    originalNodeId?: number;
+  }>({
+    mutationFn: ({ flightmap, nodeType, nodeId, relY, isDuplicate, duplicateKey, originalNodeId }) =>
+      upsertPosition(flightmap, nodeType, nodeId, relY, isDuplicate, duplicateKey, originalNodeId),
      onSuccess: (_data, variables) => {
        qc.invalidateQueries({ queryKey: ['positions', variables.flightmap, variables.nodeType] });
      },

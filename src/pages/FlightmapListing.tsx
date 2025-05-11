@@ -4,8 +4,8 @@
 import { useState, useContext } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ThemeContext } from '@/contexts/ThemeContext';
-import Modal from '@/components/Roadmap/Modal';
-import FlightmapSwitcher from '@/components/Roadmap/FlightmapSwitcher';
+import Modal from '@/components/Flightmap/Modal';
+import FlightmapSwitcher from '@/components/Flightmap/FlightmapSwitcher';
 import FlightmapCard from './components/FlightmapCard';
 import { FlightmapData } from '@/types/roadmap';
 import { useFlightmaps } from '@/api/flightmap';
