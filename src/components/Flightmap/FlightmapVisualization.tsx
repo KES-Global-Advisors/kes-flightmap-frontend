@@ -984,7 +984,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
   const createWorkstreamDragBehavior = useCallback(() => {
     let pendingPositionUpdates: Record<number, { y: number }> = {};
     let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
-
+  
     return d3.drag<SVGGElement, any>()
       .on("start", function () {
         d3.select(this).classed("dragging", true);
@@ -997,28 +997,40 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         const offset = newY - d.initialY;
         const actualDeltaY = newY - (d.lastY || d.initialY);
         d.lastY = newY;
-
+  
         // Apply transform to the workstream group during drag
         d3.select(this).attr("transform", `translate(0, ${offset})`);
-
-        // ADDED: Update workstream line coordinates directly during drag for visual consistency
+  
+        // Update workstream line coordinates directly during drag for visual consistency
         d3.select(this).select("line")
           .attr("y1", newY)
           .attr("y2", newY);
-
+  
         d3.select(this).select("text")
           .attr("y", newY);
-
-        // Move all milestone nodes for this workstream
+  
+        // ENHANCED MILESTONE SELECTION LOGIC:
+        // Move all milestone nodes for this workstream with improved filtering
         if (milestonesGroup.current) {
           milestonesGroup.current
             .selectAll(".milestone")
-            .filter((p: any) => p.placementWorkstreamId === d.id)
+            .filter(function(p: any) {
+              if (!p) return false;
+              
+              // For original nodes, ensure they genuinely belong to this workstream
+              // by checking their milestone's workstreamId, not just placementWorkstreamId
+              if (!p.isDuplicate) {
+                return p.milestone && p.milestone.workstreamId === d.id;
+              }
+              
+              // For duplicates, use placementWorkstreamId
+              return p.placementWorkstreamId === d.id;
+            })
             .each(function (placementData: any) {
               // Update placement coordinates
               if (placementCoordinates[placementData.id]) {
                 placementCoordinates[placementData.id].y += actualDeltaY;
-
+  
                 // Also update the appropriate reference storage
                 if (placementData.isDuplicate) {
                   if (duplicateNodeCoordinates.current[placementData.id]) {
@@ -1030,7 +1042,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
                   }
                 }
               }
-
+  
               // Update the visual position
               const currentTransform = d3.select(this).attr("transform") || "";
               const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
@@ -1038,7 +1050,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
               d3.select(this).attr("transform", `translate(0, ${currentY + actualDeltaY})`);
             });
         }
-
+  
         // Update visual connections during drag
         activities.forEach(activity => {
           if (activity.workstreamId === d.id) {
@@ -1051,22 +1063,22 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         const minAllowedY = 20;
         const constrainedY = Math.max(minAllowedY, event.y);
         delete d.lastY;
-
+  
         // CRITICAL: Update the line coordinates immediately after drag
         // This ensures the line doesn't snap back before the state update
         d3.select(this).select("line")
           .attr("y1", constrainedY)
           .attr("y2", constrainedY);
-
+  
         d3.select(this).select("text")
           .attr("y", constrainedY);
-
+  
         // Reset the transform to prevent double transformation
         d3.select(this).attr("transform", "translate(0, 0)");
-
+  
         // Store position in pending updates
         pendingPositionUpdates[d.id] = { y: constrainedY };
-
+  
         // Batch position updates with debouncing
         if (dragEndTimeout) clearTimeout(dragEndTimeout);
         dragEndTimeout = setTimeout(() => {
@@ -1075,7 +1087,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
             ...prev,
             ...pendingPositionUpdates
           }));
-
+  
           // Debounce API call
           const relY = (constrainedY - margin.top) / contentHeight;
           debouncedUpsertPosition(
@@ -1086,13 +1098,21 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
             false,
             ""
           );
-
+  
           // Collect milestone positions that need updating
           const updatedMilestonePositions: Record<string, { y: number }> = {};
           if (milestonesGroup.current) {
             milestonesGroup.current
               .selectAll(".milestone")
-              .filter((p: any) => p.placementWorkstreamId === d.id)
+              .filter(function(p: any) {
+                if (!p) return false;
+                
+                // Same enhanced filtering logic as in the drag handler
+                if (!p.isDuplicate) {
+                  return p.milestone && p.milestone.workstreamId === d.id;
+                }
+                return p.placementWorkstreamId === d.id;
+              })
               .each(function (placementData: any) {
                 if (placementCoordinates[placementData.id]) {
                   updatedMilestonePositions[placementData.id] = {
@@ -1101,7 +1121,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
                 }
               });
           }
-
+  
           // Update milestone positions if any changed
           if (Object.keys(updatedMilestonePositions).length > 0) {
             setMilestonePositions(prev => ({
@@ -1109,10 +1129,10 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
               ...updatedMilestonePositions
             }));
           }
-
+  
           pendingPositionUpdates = {};
         }, 200); // Debounce for 200ms
-
+  
         // Update visual connections
         updateActivities();
         updateDependencies();
