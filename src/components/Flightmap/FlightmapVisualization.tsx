@@ -29,22 +29,7 @@ import {
   getWorkstreamPositionsKey,
   saveWorkstreamPositions,
 } from './Utils/storageHelpers';
-
-// Simple debounce utility
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  
-  return function(...args: Parameters<T>) {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => {
-      func(...args);
-      timeout = null;
-    }, wait);
-  };
-}
+import { debounce } from './Utils/debounce';
 
 interface FlightmapVisualizationProps {
   data: FlightmapData;
@@ -90,29 +75,28 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     } 
   } = useRef({}).current;
 
-  // Debounced API call reference
-// Debounced API call reference with support for duplicate node parameters
-const debouncedUpsertPosition = useRef(
-  debounce((
-    flightmapId: number, 
-    nodeType: 'milestone'|'workstream', 
-    nodeId: number, 
-    relY: number, 
-    isDuplicate: boolean = false, 
-    duplicateKey: string = "", 
-    originalNodeId?: number
-  ) => {
-    upsertPos.mutate({
-      flightmap: flightmapId,
-      nodeType,
-      nodeId,
-      relY,
-      isDuplicate,
-      duplicateKey,
-      originalNodeId
-    });
-  }, 500)
-).current;
+  // Debounced API call reference with support for duplicate node parameters
+  const debouncedUpsertPosition = useRef(
+    debounce((
+      flightmapId: number, 
+      nodeType: 'milestone'|'workstream', 
+      nodeId: number | string, 
+      relY: number, 
+      isDuplicate: boolean = false, 
+      duplicateKey: string = "", 
+      originalNodeId?: number
+    ) => {
+      upsertPos.mutate({
+        flightmap: flightmapId,
+        nodeType,
+        nodeId,
+        relY,
+        isDuplicate,
+        duplicateKey,
+        originalNodeId
+      });
+    }, 500)
+  ).current;
 
   const width = window.innerWidth;
   const height = window.innerHeight * 0.8;
