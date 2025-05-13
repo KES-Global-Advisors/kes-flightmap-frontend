@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams roadmaps Flightmap
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import '../../style.css'
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
 import { FlightmapData } from "@/types/flightmap";
@@ -30,6 +31,22 @@ import {
   saveWorkstreamPositions,
 } from './Utils/storageHelpers';
 import { debounce } from './Utils/debounce';
+import { 
+  calculateNodeSpacing, 
+  enforceWorkstreamContainment 
+} from './Utils/layoutUtils';
+import { updateWorkstreamLines } from './Utils/visualUpdateUtils';
+import { trackNodePosition } from './Utils/nodeTracking';
+import { ensureDuplicateNodeBackendRecord } from './Utils/apiUtils';
+import { useTooltip } from '../../hooks/useTooltip';
+import { createLegend } from './Utils/legendUtils';
+import { setupZoomBehavior, resetZoom } from './Utils/zoomUtils';
+import { initializeVisualizationSVG, addResetViewButton, SvgContainers } from './Utils/svgSetup';
+import { 
+  WORKSTREAM_AREA_HEIGHT, 
+  WORKSTREAM_AREA_PADDING, 
+  NODE_RADIUS,
+} from './Utils/types';
 
 interface FlightmapVisualizationProps {
   data: FlightmapData;
@@ -40,12 +57,12 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   const queryClient = useQueryClient();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>(null);
-  const [tooltip, setTooltip] = useState({
-    content: "",
-    left: 0,
-    top: 0,
-    visible: false,
-  });
+  const {
+    tooltip,
+    handleD3MouseOver,
+    handleD3MouseMove,
+    handleD3MouseOut
+  } = useTooltip();
   const [milestonePositions, setMilestonePositions] = useState<{ [id: string]: { y: number } }>({});
   const [workstreamPositions, setWorkstreamPositions] = useState<{ [id: number]: { y: number } }>({});
   const dataId = useRef<string>(`${data.id || new Date().getTime()}`);
@@ -58,12 +75,14 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   const milestonesGroup = useRef<d3.Selection<SVGGElement, unknown, null, undefined>>(null);
   const dependencyGroup = useRef<d3.Selection<SVGGElement, unknown, null, undefined>>(null);
 
+  // Create a ref for SVG containers
+  const svgContainers = useRef<SvgContainers | null>(null);
+
   // Separate trackers for original and duplicate node positions
   const originalNodeCoordinates = useRef<{ [id: string]: { x: number; y: number } }>({});
   const duplicateNodeCoordinates = useRef<{ [id: string]: { x: number; y: number } }>({});
   const processedDuplicates = useRef(new Set<string>());
 
-  // Reference to track all placement coordinates for rendering
   const placementCoordinates: { 
     [id: string]: { 
       x: number; 
@@ -74,7 +93,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       workstreamId: number; // Track the workstream ID
     } 
   } = useRef({}).current;
-
+  
   // Debounced API call reference with support for duplicate node parameters
   const debouncedUpsertPosition = useRef(
     debounce((
@@ -100,7 +119,12 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
 
   const width = window.innerWidth;
   const height = window.innerHeight * 0.8;
-  const margin = { top: 40, right: 150, bottom: 30, left: 150 };
+  const margin = useMemo(() => ({ 
+    top: 40, 
+    right: 150, 
+    bottom: 30, 
+    left: 150 
+  }), []);
   const contentWidth = width - margin.left - margin.right;
   const contentHeight = height - margin.top - margin.bottom;
 
@@ -122,52 +146,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     }, 500)
   ).current;
 
-  // Add this function after the other utility functions (around line 270)
-  const ensureDuplicateNodeBackendRecord = useCallback((placement: MilestonePlacement) => {
-    // Only process duplicate nodes with a duplicateKey
-    if (!placement.isDuplicate || !placement.duplicateKey || !placement.originalMilestoneId) {
-      return;
-    }
-  
-    // Skip if we've already processed this duplicate
-    const duplicateKey = String(placement.duplicateKey);
-    if (processedDuplicates.current.has(duplicateKey)) {
-      return;
-    }
-  
-    // Check if this duplicate already exists in remoteMilestonePos
-    const existingPos = remoteMilestonePos.find(p => 
-      p.is_duplicate && 
-      p.duplicate_key === duplicateKey
-    );
-  
-    // Only create if it doesn't already exist in the backend
-    if (!existingPos) {
-      // Get the workstream's y position
-      const workstreamId = placement.placementWorkstreamId;
-      const workstreamY = workstreamPositions[workstreamId]?.y || 0;
-  
-      // Calculate relative Y position (0-1 scale for backend)
-      const relY = (workstreamY - margin.top) / contentHeight;
-  
-      console.log(`Creating backend record for duplicate milestone: ${duplicateKey}`);
-  
-      // Store the duplicate node in the backend
-      upsertPos.mutate({
-        flightmap: data.id,
-        nodeType: 'milestone',
-        // Use duplicateKey as the node_id for backend storage
-        nodeId: duplicateKey, // Use duplicateKey instead of original milestone ID
-        relY: relY > 0 && relY <= 1 ? relY : 0.5,
-        isDuplicate: true,
-        duplicateKey: duplicateKey,
-        originalNodeId: placement.originalMilestoneId
-      });
-    }
-  
-    // Mark as processed
-    processedDuplicates.current.add(duplicateKey);
-  }, [data.id, remoteMilestonePos, workstreamPositions, margin.top, contentHeight, upsertPos]);
 
   useEffect(() => {
     if (remoteMilestonePos.length) {
@@ -205,201 +183,38 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     }
   }, [milestonePositions, workstreamPositions, debouncedSaveMilestonePositions, debouncedSaveWorkstreamPositions]);
 
-  // Function to store coordinates in the appropriate tracker
-  const trackNodePosition = useCallback((
-    placement: MilestonePlacement, 
-    x: number, 
-    y: number
-  ) => {
-    if (placement.isDuplicate) {
-      duplicateNodeCoordinates.current[placement.id] = { x, y };
-      // Store original reference for cross-referencing
-      placementCoordinates[placement.id] = { 
-        x, 
-        y, 
-        isDuplicate: true, 
-        originalId: placement.originalMilestoneId,
-        duplicateKey: placement.duplicateKey, // Track the duplicate key
-        workstreamId: placement.placementWorkstreamId // Add workstream ID
-      };
-    } else {
-      originalNodeCoordinates.current[placement.id] = { x, y };
-      placementCoordinates[placement.id] = { 
-        x, 
-        y, 
-        isDuplicate: false,
-        workstreamId: placement.placementWorkstreamId // Add workstream ID
-      };
-    }
-  }, [placementCoordinates]);
-
   // 1. Canvas setup - runs once on mount and when dimensions change
   useEffect(() => {
     if (!svgRef.current) return;
     
-    const svgEl = d3.select(svgRef.current);
-    svgEl.selectAll("*").remove();
-  
-    svgEl
-      .attr("width", width)
-      .attr("height", height)
-      .attr("viewBox", `0 0 ${width} ${height}`)
-      .attr("class", "bg-white");
-  
-    // Create container group
-    container.current = svgEl.append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
-      
-    // Create layer groups
-    timelineGroup.current = container.current.append("g").attr("class", "timeline");
-    activitiesGroup.current = container.current.append("g").attr("class", "activities");
-    workstreamGroup.current = container.current.append("g").attr("class", "workstreams");
-    milestonesGroup.current = container.current.append("g").attr("class", "milestones");
-    dependencyGroup.current = container.current.append("g").attr("class", "dependencies");
+    // Initialize SVG with all containers
+    svgContainers.current = initializeVisualizationSVG(svgRef, {
+      width,
+      height,
+      margin,
+      className: "bg-white"
+    });
     
-    // Define arrow markers
-    svgEl
-      .append("defs")
-      .append("marker")
-      .attr("id", "arrow")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 73)
-      .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#64748b");
-  
-    svgEl
-      .append("defs")
-      .append("marker")
-      .attr("id", "dependency-arrow")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 73)
-      .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
-      .attr("orient", "auto")
-      .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#6b7280");
+    if (!svgContainers.current) return;
       
-    // Add legend
-    const legend = svgEl
-      .append("g")
-      .attr("class", "legend")
-      .attr("transform", `translate(${width - margin.right + -50}, ${margin.top})`);
-    const legendItemHeight = 30;
-    legend
-      .selectAll(".legend-item")
-      .data(legendData)
-      .enter()
-      .append("g")
-      .attr("class", "legend-item")
-      .attr("transform", (_, i) => `translate(0, ${i * legendItemHeight})`)
-      .each(function (d) {
-        const g = d3.select(this);
-        const shapeSize = 15;
-        if (d.type === "milestone") {
-          g.append("circle")
-            .attr("cx", shapeSize / 2)
-            .attr("cy", shapeSize / 2)
-            .attr("r", shapeSize / 2)
-            .attr("fill", d.status === "completed" ? "#ccc" : "#6366f1")
-            .attr("stroke", d.status === "completed" ? "#ccc" : "#4f46e5")
-            .attr("stroke-width", 1);
-        } else if (d.type === "status") {
-          g.append("circle")
-            .attr("cx", shapeSize / 2)
-            .attr("cy", shapeSize / 2)
-            .attr("r", 5)
-            .attr("fill", "white")
-            .attr("stroke", getStatusColor(d.status || ""))
-            .attr("stroke-width", 1);
-          if (d.status === "completed") {
-            g.append("path")
-              .attr("d", "M-2,0 L-1,1 L2,-2")
-              .attr("transform", `translate(${shapeSize / 2},${shapeSize / 2})`)
-              .attr("stroke", getStatusColor(d.status))
-              .attr("stroke-width", 1.5)
-              .attr("fill", "none");
-          } else if (d.status === "in_progress") {
-            g.append("circle")
-              .attr("cx", shapeSize / 2)
-              .attr("cy", shapeSize / 2)
-              .attr("r", 2)
-              .attr("fill", getStatusColor(d.status));
-          } else {
-            g.append("line")
-              .attr("x1", shapeSize / 2 - 2)
-              .attr("y1", shapeSize / 2)
-              .attr("x2", shapeSize / 2 + 2)
-              .attr("y2", shapeSize / 2)
-              .attr("stroke", getStatusColor(d.status || ""))
-              .attr("stroke-width", 1.5);
-          }
-        } else if (d.type === "instruction") {
-          g.append("path")
-            .attr("d", "M3,0 L7,0 M5,-2 L5,2 M3,5 L7,5 M5,3 L5,7")
-            .attr("transform", `translate(${shapeSize / 2 - 5},${shapeSize / 2 - 5})`)
-            .attr("stroke", "#4b5563")
-            .attr("stroke-width", 1.5)
-            .attr("stroke-linecap", "round");
-        } else if (d.type === "dependency") {
-          g.append("line")
-            .attr("x1", 0)
-            .attr("y1", shapeSize / 2)
-            .attr("x2", shapeSize)
-            .attr("y2", shapeSize / 2)
-            .attr("stroke", "#6b7280")
-            .attr("stroke-width", 1.5)
-            .attr("stroke-dasharray", "4 3");
-          g.append("path")
-            .attr("d", "M0,-2L4,0L0,2")
-            .attr("transform", `translate(${shapeSize - 4},${shapeSize / 2})`)
-            .attr("fill", "#6b7280");
-        } else if (d.type === "duplicate") {
-          g.append("line")
-            .attr("x1", 0)
-            .attr("y1", shapeSize / 2)
-            .attr("x2", shapeSize)
-            .attr("y2", shapeSize / 2)
-            .attr("stroke", "#6366f1")
-            .attr("stroke-width", 1.5)
-            .attr("stroke-dasharray", "5 5");
-        } else if (d.type === "cross-workstream-activity") {
-          g.append("line")
-            .attr("x1", 0)
-            .attr("y1", shapeSize / 2)
-            .attr("x2", shapeSize)
-            .attr("y2", shapeSize / 2)
-            .attr("stroke", "#6366f1")
-            .attr("stroke-width", 1.5)
-            .attr("stroke-dasharray", "4 3");
-          g.append("path")
-            .attr("d", "M0,-2L4,0L0,2")
-            .attr("transform", `translate(${shapeSize - 4},${shapeSize / 2})`)
-            .attr("fill", "#6366f1");
-        }
-        g.append("text")
-          .attr("x", shapeSize + 5)
-          .attr("y", shapeSize / 2 + 4)
-          .attr("fill", "black")
-          .style("font-size", "12px")
-          .text(d.label);
-      });
-
-    // Add a button to reset node positions
-    const resetButton = svgEl
-      .append("g")
-      .attr("class", "reset-positions-button")
-      .attr("transform", `translate(${width - margin.right + -50}, ${margin.top + (legendData.length + 1) * legendItemHeight})`)
-      .attr("cursor", "pointer")
-      .on("click", () => {
+    // Assign container references
+    container.current = svgContainers.current.container;
+    timelineGroup.current = svgContainers.current.timelineGroup;
+    activitiesGroup.current = svgContainers.current.activitiesGroup;
+    workstreamGroup.current = svgContainers.current.workstreamGroup;
+    milestonesGroup.current = svgContainers.current.milestonesGroup;
+    dependencyGroup.current = svgContainers.current.dependencyGroup;    
+      
+    // Create legend
+    createLegend(
+      svgContainers.current.svg, 
+      legendData,
+      { x: width - margin.right + -50, y: margin.top },
+      // Reset button callback
+      () => {
         // Show a loading state
-        resetButton.select("text").text("Resetting positions...");
+        const resetButton = svgContainers.current?.svg.select(".reset-positions-button");
+        resetButton?.select("text").text("Resetting positions...");
         
         // Clear local storage
         localStorage.removeItem(getMilestonePositionsKey(dataId.current));
@@ -409,11 +224,10 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         setMilestonePositions({});
         setWorkstreamPositions({});
         
-        // Call the new reset endpoint
+        // Call the reset endpoint
         const resetPositions = async () => {
           const token = sessionStorage.getItem('accessToken');
           try {
-            // Use the new reset endpoint to create default positions
             const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/positions/reset/?flightmap=${data.id}`, {
               method: 'DELETE',
               headers: {
@@ -431,74 +245,42 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             queryClient.invalidateQueries({ queryKey: ['positions', data.id, 'workstream'] });
             
             // Reset button text
-            resetButton.select("text").text("Reset Node Positions");
+            resetButton?.select("text").text("Reset Node Positions");
           } catch (error) {
             console.error('Error resetting positions:', error);
-            resetButton.select("text").text("Reset Node Positions");
+            resetButton?.select("text").text("Reset Node Positions");
           }
         };
         
         resetPositions();
-      });
+      }
+    );
 
-    resetButton
-      .append("rect")
-      .attr("width", 150)
-      .attr("height", 30)
-      .attr("rx", 3)
-      .attr("ry", 3)
-      .attr("fill", "#e5e7eb")
-      .attr("stroke", "#9ca3af")
-      .attr("stroke-width", 1);
+    // Add reset view button
+    addResetViewButton(
+      svgContainers.current.svg,
+      () => {
+        if (svgRef.current && zoomRef.current) {
+          resetZoom(svgRef, zoomRef.current);
+        }
+      },
+      { right: width - margin.right + 10, bottom: height - 40 }
+    );
 
-    resetButton
-      .append("text")
-      .attr("x", 75)
-      .attr("y", 18)
-      .attr("text-anchor", "middle")
-      .attr("font-size", "12px")
-      .attr("fill", "#4b5563")
-      .text("Reset Node Positions");
-
-  }, [width, height, margin.left, margin.top, margin.right, data.id, queryClient]);
+  }, [width, height, margin, data.id, queryClient]);
 
   // 2. Initialize zoom behavior - executed once after container is created
   useEffect(() => {
     if (!svgRef.current || !container.current) return;
     
-    const svgEl = d3.select(svgRef.current);
-    
-    // Create zoom behavior with proper constraints
-    const zoom = d3.zoom<Element, unknown>()
-      .scaleExtent([0.5, 5])
-      .on("zoom", (event) => {
-        // Create a constrained transform
-        const { x, y, k } = event.transform;
-        
-        // Important: Constrain only the minimum Y to prevent going above margin.top
-        // But preserve the X position and scale factors exactly as user intended
-        const constrainedY = Math.min(y, margin.top);
-        
-        container.current?.attr(
-          "transform", 
-          `translate(${x}, ${constrainedY}) scale(${k})`
-        );
-      });
-      
-    // Apply zoom and disable double-click zoom
-    svgEl
-      .call(zoom as any)
-      .on("dblclick.zoom", null);
-      
-    // Prevent default wheel behavior
-    svgEl.on("wheel", function(event) {
-      event.preventDefault();
+    // Setup zoom behavior
+    zoomRef.current = setupZoomBehavior(svgRef, container, {
+      minScale: 0.5,
+      maxScale: 5,
+      constrained: true,
+      margin
     });
-    
-    // Store reference for reset button
-    zoomRef.current = zoom;
-    
-  }, [margin.top]);
+  }, [margin]);
 
   // 3. Data processing - runs when data changes
   const { 
@@ -608,219 +390,194 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   }, [workstreams, contentHeight]);
 
   // Function to update only connections related to a specific node
-const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => {
-  // Skip if SVG groups don't exist yet
-  if (!activitiesGroup.current || !dependencyGroup.current) return;
+  const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => {
+    // Skip if SVG groups don't exist yet
+    if (!activitiesGroup.current || !dependencyGroup.current) return;
 
-  // Get the node data
-  const nodeIdStr = nodeId.toString();
-  const nodeData = placementCoordinates[nodeIdStr];
-  if (!nodeData) return;
-  
-  const isDuplicate = Boolean(nodeData.isDuplicate);
-  
-  // Find activities that involve this specific node only (no cross-referencing with original/duplicate counterparts)
-  const activitiesToUpdate = activities.filter(activity => {
-    // Check if this node is the source or target of the activity
-    const isSource = activity.sourceMilestoneId.toString() === nodeIdStr;
-    const isTarget = activity.targetMilestoneIds && activity.targetMilestoneIds.some(
-      (id: number) => id.toString() === nodeIdStr
+    // Get the node data
+    const nodeIdStr = nodeId.toString();
+    const nodeData = placementCoordinates[nodeIdStr];
+    if (!nodeData) return;
+
+    const isDuplicate = Boolean(nodeData.isDuplicate);
+
+    // Find activities that involve this specific node only (no cross-referencing with original/duplicate counterparts)
+    const activitiesToUpdate = activities.filter(activity => {
+      // Check if this node is the source or target of the activity
+      const isSource = activity.sourceMilestoneId.toString() === nodeIdStr;
+      const isTarget = activity.targetMilestoneIds && activity.targetMilestoneIds.some(
+        (id: number) => id.toString() === nodeIdStr
+      );
+
+      return isSource || isTarget;
+    });
+
+    // Update each affected activity path
+    activitiesToUpdate.forEach(activity => {
+      const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
+      if (!sourceCoord) return;
+
+      // For each target milestone, update the connection
+      (activity.targetMilestoneIds || []).forEach((targetId: number) => {
+        const targetCoord = placementCoordinates[targetId.toString()];
+        if (!targetCoord) return;
+
+        // Find the path element for this activity connection
+        const activityPath = activitiesGroup.current!
+          .selectAll(".same-workstream-activity, .cross-workstream-activity")
+          .filter((d: any) => 
+            d.id === activity.id && 
+            d.sourceMilestoneId === activity.sourceMilestoneId && 
+            d.targetMilestoneIds && 
+            d.targetMilestoneIds.includes(targetId)
+          );
+        
+        // Update the path if found
+        if (!activityPath.empty()) {
+          activityPath.attr(
+            "d",
+            d3.linkHorizontal()({
+              source: [sourceCoord.x, sourceCoord.y],
+              target: [targetCoord.x, targetCoord.y],
+            } as DefaultLinkObject) ?? ""
+          );
+
+          // Update activity label position
+          const pathNode = activityPath.node();
+          if (pathNode) {
+            const pathLength = (pathNode as SVGPathElement).getTotalLength();
+            const midpoint = (pathNode as SVGPathElement).getPointAtLength(pathLength / 2);
+
+            // Find and update the label rectangle and text
+            const labelRect = activitiesGroup.current!
+              .selectAll("rect")
+              .filter((d: any) => d && d.id === activity.id);
+
+            const labelText = activitiesGroup.current!
+              .selectAll("text")
+              .filter((d: any) => d && d.id === activity.id);
+
+            if (!labelRect.empty()) {
+              labelRect
+                .attr("x", midpoint.x - 100)
+                .attr("y", midpoint.y - 10);
+            }
+
+            if (!labelText.empty()) {
+              labelText
+                .attr("x", midpoint.x)
+                .attr("y", midpoint.y);
+            }
+          }
+        }
+      });
+    });
+
+    // Find dependencies that involve this specific node only (no cross-referencing)
+    const dependenciesToUpdate = dependencies.filter(dep => 
+      dep.source.toString() === nodeIdStr || 
+      dep.target.toString() === nodeIdStr
     );
-    
-    return isSource || isTarget;
-  });
 
-  // Update each affected activity path
-  activitiesToUpdate.forEach(activity => {
-    const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
-    if (!sourceCoord) return;
-    
-    // For each target milestone, update the connection
-    (activity.targetMilestoneIds || []).forEach((targetId: number) => {
-      const targetCoord = placementCoordinates[targetId.toString()];
-      if (!targetCoord) return;
-      
-      // Find the path element for this activity connection
-      const activityPath = activitiesGroup.current!
-        .selectAll(".same-workstream-activity, .cross-workstream-activity")
+    // Update each affected dependency line
+    dependenciesToUpdate.forEach(dep => {
+      const sourceCoord = placementCoordinates[dep.source.toString()];
+      const targetCoord = placementCoordinates[dep.target.toString()];
+
+      if (!sourceCoord || !targetCoord) return;
+
+      // Find the dependency line for this connection
+      const dependencyLine = dependencyGroup.current!
+        .selectAll(".dependency-line, .duplicate-dependency-line")
         .filter((d: any) => 
-          d.id === activity.id && 
-          d.sourceMilestoneId === activity.sourceMilestoneId && 
-          d.targetMilestoneIds && 
-          d.targetMilestoneIds.includes(targetId)
+          d && d.source === dep.source && d.target === dep.target
         );
       
-      // Update the path if found
-      if (!activityPath.empty()) {
-        activityPath.attr(
+      // Update the line if found
+      if (!dependencyLine.empty()) {
+        dependencyLine.attr(
           "d",
           d3.linkHorizontal()({
             source: [sourceCoord.x, sourceCoord.y],
             target: [targetCoord.x, targetCoord.y],
           } as DefaultLinkObject) ?? ""
         );
-        
-        // Update activity label position
-        const pathNode = activityPath.node();
-        if (pathNode) {
-          const pathLength = (pathNode as SVGPathElement).getTotalLength();
-          const midpoint = (pathNode as SVGPathElement).getPointAtLength(pathLength / 2);
-          
-          // Find and update the label rectangle and text
-          const labelRect = activitiesGroup.current!
-            .selectAll("rect")
-            .filter((d: any) => d && d.id === activity.id);
-            
-          const labelText = activitiesGroup.current!
-            .selectAll("text")
-            .filter((d: any) => d && d.id === activity.id);
-            
-          if (!labelRect.empty()) {
-            labelRect
-              .attr("x", midpoint.x - 100)
-              .attr("y", midpoint.y - 10);
-          }
-          
-          if (!labelText.empty()) {
-            labelText
-              .attr("x", midpoint.x)
-              .attr("y", midpoint.y);
-          }
-        }
       }
     });
-  });
 
-  // Find dependencies that involve this specific node only (no cross-referencing)
-  const dependenciesToUpdate = dependencies.filter(dep => 
-    dep.source.toString() === nodeIdStr || 
-    dep.target.toString() === nodeIdStr
-  );
-  
-  // Update each affected dependency line
-  dependenciesToUpdate.forEach(dep => {
-    const sourceCoord = placementCoordinates[dep.source.toString()];
-    const targetCoord = placementCoordinates[dep.target.toString()];
-    
-    if (!sourceCoord || !targetCoord) return;
-    
-    // Find the dependency line for this connection
-    const dependencyLine = dependencyGroup.current!
-      .selectAll(".dependency-line, .duplicate-dependency-line")
-      .filter((d: any) => 
-        d && d.source === dep.source && d.target === dep.target
+    // For duplicate nodes, also update the special visual connection with the target milestone
+    if (isDuplicate && nodeData.originalId) {
+      const workstreamId = nodeData.workstreamId; // Use the workstreamId directly
+
+      // Find dependencies where this duplicate's original is the source
+      const relevantDeps = dependencies.filter(dep => 
+        dep.source === nodeData.originalId &&
+        allMilestones.find(m => m.id === dep.target)?.workstreamId === workstreamId
       );
-    
-    // Update the line if found
-    if (!dependencyLine.empty()) {
-      dependencyLine.attr(
-        "d",
-        d3.linkHorizontal()({
-          source: [sourceCoord.x, sourceCoord.y],
-          target: [targetCoord.x, targetCoord.y],
-        } as DefaultLinkObject) ?? ""
-      );
+
+      // Update the special duplicate connection
+      relevantDeps.forEach(dep => {
+        const targetCoord = placementCoordinates[dep.target.toString()];
+        if (targetCoord) {
+          // Find the duplicate connection
+          const duplicateConn = dependencyGroup.current!
+            .selectAll(".duplicate-dependency-line")
+            .filter((d: any) => 
+              (d && d.source === nodeIdStr && d.target === dep.target) ||
+              (d && d.originalId === nodeData.originalId && d.duplicateId === nodeIdStr)
+            );
+
+          // Update the connection if found
+          if (!duplicateConn.empty()) {
+            duplicateConn.attr(
+              "d",
+              d3.linkHorizontal()({
+                source: [nodeData.x, nodeData.y],
+                target: [targetCoord.x, targetCoord.y],
+              } as DefaultLinkObject) ?? ""
+            );
+          }
+        }
+      });
+
+      // Also update cross-workstream activity connections
+      const relevantActivities = activities.filter(activity => {
+        const supportedMilestones = [
+          ...(activity.supported_milestones || []),
+          ...(activity.additional_milestones || [])
+        ];
+        return (
+          activity.workstreamId === workstreamId && 
+          supportedMilestones.includes(nodeData.originalId)
+        );
+      });
+
+      relevantActivities.forEach(activity => {
+        const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
+        if (sourceCoord) {
+          // Find the cross-workstream activity line
+          const activityLine = activitiesGroup.current!
+            .selectAll(".cross-workstream-activity")
+            .filter((d: any) => 
+              d && d.id === activity.id && 
+              d.targetMilestoneIds && 
+              d.targetMilestoneIds.includes(nodeData.originalId)
+            );
+
+          // Update the line if found
+          if (!activityLine.empty()) {
+            activityLine.attr(
+              "d",
+              d3.linkHorizontal()({
+                source: [sourceCoord.x, sourceCoord.y],
+                target: [nodeData.x, nodeData.y],
+              } as DefaultLinkObject) ?? ""
+            );
+          }
+        }
+      });
     }
-  });
-
-  // For duplicate nodes, also update the special visual connection with the target milestone
-  if (isDuplicate && nodeData.originalId) {
-    const workstreamId = nodeData.workstreamId; // Use the workstreamId directly
-    
-    // Find dependencies where this duplicate's original is the source
-    const relevantDeps = dependencies.filter(dep => 
-      dep.source === nodeData.originalId &&
-      allMilestones.find(m => m.id === dep.target)?.workstreamId === workstreamId
-    );
-    
-    // Update the special duplicate connection
-    relevantDeps.forEach(dep => {
-      const targetCoord = placementCoordinates[dep.target.toString()];
-      if (targetCoord) {
-        // Find the duplicate connection
-        const duplicateConn = dependencyGroup.current!
-          .selectAll(".duplicate-dependency-line")
-          .filter((d: any) => 
-            (d && d.source === nodeIdStr && d.target === dep.target) ||
-            (d && d.originalId === nodeData.originalId && d.duplicateId === nodeIdStr)
-          );
-          
-        // Update the connection if found
-        if (!duplicateConn.empty()) {
-          duplicateConn.attr(
-            "d",
-            d3.linkHorizontal()({
-              source: [nodeData.x, nodeData.y],
-              target: [targetCoord.x, targetCoord.y],
-            } as DefaultLinkObject) ?? ""
-          );
-        }
-      }
-    });
-    
-    // Also update cross-workstream activity connections
-    const relevantActivities = activities.filter(activity => {
-      const supportedMilestones = [
-        ...(activity.supported_milestones || []),
-        ...(activity.additional_milestones || [])
-      ];
-      return (
-        activity.workstreamId === workstreamId && 
-        supportedMilestones.includes(nodeData.originalId)
-      );
-    });
-    
-    relevantActivities.forEach(activity => {
-      const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
-      if (sourceCoord) {
-        // Find the cross-workstream activity line
-        const activityLine = activitiesGroup.current!
-          .selectAll(".cross-workstream-activity")
-          .filter((d: any) => 
-            d && d.id === activity.id && 
-            d.targetMilestoneIds && 
-            d.targetMilestoneIds.includes(nodeData.originalId)
-          );
-          
-        // Update the line if found
-        if (!activityLine.empty()) {
-          activityLine.attr(
-            "d",
-            d3.linkHorizontal()({
-              source: [sourceCoord.x, sourceCoord.y],
-              target: [nodeData.x, nodeData.y],
-            } as DefaultLinkObject) ?? ""
-          );
-        }
-      }
-    });
-  }
-}, [activities, dependencies, placementCoordinates, allMilestones]);
-
-  // Function to update workstream line positions
-  const updateWorkstreamLines = useCallback(() => {
-    if (!workstreamGroup.current) return;
-    
-    workstreamGroup.current.selectAll(".workstream").each(function(d: any) {
-      const workstreamId = d.id;
-      const wsGroup = d3.select(this);
-      
-      // Get the current position from state - this is the source of truth
-      const y = workstreamPositions[workstreamId]?.y || d.initialY;
-      
-      // Update the actual line y-coordinates 
-      wsGroup.select("line")
-        .attr("y1", y)
-        .attr("y2", y);
-        
-      // Update workstream label y-coordinate
-      wsGroup.select("text")
-        .attr("y", y);
-        
-      // IMPORTANT: Reset the transform to prevent double transformations
-      wsGroup.attr("transform", "translate(0, 0)");
-    });
-  }, [workstreamPositions]);
+  }, [activities, dependencies, placementCoordinates, allMilestones]);
 
   // Add an effect to update workstream lines when workstream positions change
   useEffect(() => {
@@ -830,19 +587,19 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
       debouncedSaveWorkstreamPositions(dataId.current, workstreamPositions);
 
       // Immediate update of line positions
-      updateWorkstreamLines();
+      updateWorkstreamLines(workstreamGroup, workstreamPositions);
     }
-  }, [workstreamPositions, debouncedSaveWorkstreamPositions, updateWorkstreamLines]);
+  }, [workstreamPositions, debouncedSaveWorkstreamPositions]);
 
   // Also add an effect to ensure workstream lines are updated after the component fully mounts
   useEffect(() => {
     // This ensures lines are correctly positioned after initial render
     if (workstreamGroup.current && Object.keys(workstreamPositions).length > 0) {
-      updateWorkstreamLines();
+      updateWorkstreamLines(workstreamGroup, workstreamPositions);
     }
-  }, [updateWorkstreamLines, workstreamPositions]);
+  }, [workstreamPositions]);
 
-  // Lightweight function to update only visual appearance without full redraw
+  // Lightweight functions to update only visual appearance without full redraw
   const updateActivities = useCallback(() => {
     if (!activitiesGroup.current) return;
     activities.forEach(activity => {
@@ -850,7 +607,6 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
     });
   }, [activities, updateVisualConnectionsForNode]);
 
-  // Lightweight function to update only visual appearance without full redraw
   const updateDependencies = useCallback(() => {
     if (!dependencyGroup.current) return;
     dependencies.forEach(dep => {
@@ -865,21 +621,47 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
     let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
     
     return d3.drag<SVGGElement, any>()
-      .on("start", function() {
+      .on("start", function(event, d) {
         d3.select(this).classed("dragging", true);
+        // Store the initial position at drag start
+        d.dragStartX = event.x;
+        d.dragStartY = event.y;
         // Clear any pending updates
         if (dragEndTimeout) clearTimeout(dragEndTimeout);
         pendingPositionUpdates = {};
       })
       .on("drag", function(event, d) {
-        const deltaX = event.x - d.initialX;
-        const deltaY = event.y - d.initialY;
-        d3.select(this).attr("transform", `translate(${deltaX}, ${deltaY})`);
+        // Get current workstream position (may have updated)
+        const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
+        const currentWsPosition = workstreamPositions[workstreamId] || { y: 0 };
+        
+        // Recalculate boundaries based on *current* workstream position
+        const wsTopBoundary = currentWsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
+        const wsBottomBoundary = currentWsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
+        
+        // Calculate deltas from original position
+        const deltaX = event.x - d.dragStartX;
+        const rawNewY = d.initialY + (event.y - d.dragStartY);
+        
+        // Apply strict containment with current boundaries
+        const constrainedY = Math.max(wsTopBoundary, Math.min(wsBottomBoundary, rawNewY));
+        
+        // Apply transform from original position
+        d3.select(this)
+          .attr("transform", `translate(${deltaX}, ${constrainedY - d.initialY})`);
+        
+        // Update all visual elements for consistency
+        d3.select(this).select("circle")
+          .attr("cy", d.initialY); // Keep base position consistent
+          
+        d3.select(this).select("line.connection-line")
+          .attr("y1", d.initialY)
+          .attr("y2", currentWsPosition.y);
         
         // Update placement coordinates temporarily for visual updates
         if (placementCoordinates[d.id]) {
-          // const origX = placementCoordinates[d.id].x;
-          placementCoordinates[d.id].y = d.initialY + deltaY;
+          // Update only the Y position since X is controlled by timeline constraints
+          placementCoordinates[d.id].y = rawNewY;
         }
         
         // Update only the visual connections without state changes
@@ -887,8 +669,21 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
       })
       .on("end", function(event, d) {
         d3.select(this).classed("dragging", false);
-        const minAllowedY = 20;
-        const constrainedY = Math.max(minAllowedY, event.y);
+        
+        // Determine which workstream this node belongs to
+        const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
+        
+        // Find workstream area boundaries - first get the position
+        const wsPosition = workstreamPositions[workstreamId] || { y: 0 };
+        
+        // Calculate workstream area boundaries
+        const wsTopBoundary = wsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
+        const wsBottomBoundary = wsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
+        
+        // Constrain final Y position to stay within workstream area
+        const constrainedY = Math.max(wsTopBoundary, Math.min(wsBottomBoundary, d.initialY + (event.y - d.initialY)));
+        
+        // Horizontal (X) position is controlled by timeline
         const droppedX = d.initialX + (event.x - d.initialX);
         
         // Find closest timeline marker
@@ -904,6 +699,11 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         // Apply visual changes immediately
         d3.select(this).attr("transform", 
           `translate(${snappedX - d.initialX}, ${constrainedY - d.initialY})`);
+        
+        // Update connection line with final position
+        d3.select(this).select("line.connection-line")
+          .attr("y1", constrainedY)
+          .attr("y2", wsPosition.y);
         
         // Update placement coordinates with final position
         if (placementCoordinates[d.id]) {
@@ -926,14 +726,13 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
           // Only call API with the final position after interaction is complete
           if (constrainedY !== d.initialY) {
             const relY = (constrainedY - margin.top) / contentHeight;
-
+  
             // Handle position updates differently for duplicates
             if (d.isDuplicate) {
               debouncedUpsertPosition(
                 data.id, 
                 'milestone', 
                 // Use the duplicateKey as the node_id for duplicates
-                // instead of using the original milestone ID
                 d.id, // Use the duplicate key directly
                 relY,
                 true, // isDuplicate
@@ -959,26 +758,54 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
                     d3.select(this)
                       .transition().duration(300)
                       .attr("transform", `translate(${origX - d.initialX}, ${constrainedY - d.initialY})`);
-
+  
                     // Also update the placement coordinates
                     if (placementCoordinates[d.id]) {
                       placementCoordinates[d.id].x = origX;
                     }
-
+  
                     // Update connections after rollback
                     updateVisualConnectionsForNode(d.id);
                   }
                 });
             }
           }
-
+  
           pendingPositionUpdates = {};
         }, 200); // Debounce for 200ms
         
         // Update visual connections immediately without full redraw
         updateVisualConnectionsForNode(d.id);
+
+              // Add verification step after position update
+      setTimeout(() => {
+        // Verify node is still within boundaries after all updates
+        const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
+        const currentWsPosition = workstreamPositions[workstreamId] || { y: 0 };
+        const wsTopBoundary = currentWsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
+        const wsBottomBoundary = currentWsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
+        
+        // Get current position from state
+        const nodeCurrentPos = milestonePositions[d.id] || { y: d.initialY };
+        
+        // If somehow outside boundaries, force back
+        if (nodeCurrentPos.y < wsTopBoundary || nodeCurrentPos.y > wsBottomBoundary) {
+          const correctedY = Math.max(wsTopBoundary, Math.min(wsBottomBoundary, nodeCurrentPos.y));
+          
+          // Update state and visuals with corrected position
+          setMilestonePositions(prev => ({
+            ...prev,
+            [d.id]: { y: correctedY }
+          }));
+          
+          // Force visual update
+          d3.select(this)
+            .transition().duration(300)
+            .attr("transform", `translate(${snappedX - d.initialX}, ${correctedY - d.initialY})`);
+        }
+      }, 250);
       });
-  }, [data.id, contentHeight, margin.top, timelineMarkers, xScale, debouncedUpsertPosition, onMilestoneDeadlineChange, updateVisualConnectionsForNode, placementCoordinates]);
+  }, [workstreamPositions, placementCoordinates, updateVisualConnectionsForNode, timelineMarkers, xScale, margin.top, contentHeight, debouncedUpsertPosition, data.id, onMilestoneDeadlineChange, milestonePositions]);
 
   // Fix createWorkstreamDragBehavior function
   const createWorkstreamDragBehavior = useCallback(() => {
@@ -994,18 +821,20 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
       .on("drag", function (event, d) {
         const minAllowedY = 20;
         const newY = Math.max(minAllowedY, event.y);
-        const offset = newY - d.initialY;
         const actualDeltaY = newY - (d.lastY || d.initialY);
         d.lastY = newY;
   
-        // Apply transform to the workstream group during drag
-        d3.select(this).attr("transform", `translate(0, ${offset})`);
+        // Apply visual changes to the workstream components
+        // Update the rectangle position
+        d3.select(this).select("rect.workstream-area")
+          .attr("y", newY - WORKSTREAM_AREA_HEIGHT / 2);
   
-        // Update workstream line coordinates directly during drag for visual consistency
-        d3.select(this).select("line")
+        // Update the guideline position
+        d3.select(this).select("line.workstream-guideline")
           .attr("y1", newY)
           .attr("y2", newY);
   
+        // Update the text label position
         d3.select(this).select("text")
           .attr("y", newY);
   
@@ -1018,7 +847,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
               if (!p) return false;
               
               // For original nodes, ensure they genuinely belong to this workstream
-              // by checking their milestone's workstreamId, not just placementWorkstreamId
+              // by checking their milestone's workstreamId
               if (!p.isDuplicate) {
                 return p.milestone && p.milestone.workstreamId === d.id;
               }
@@ -1044,10 +873,25 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
               }
   
               // Update the visual position
+              // Get current transform
               const currentTransform = d3.select(this).attr("transform") || "";
-              const match = currentTransform.match(/translate\(0,\s*([-\d.]+)\)/);
-              const currentY = match ? parseFloat(match[1]) : 0;
-              d3.select(this).attr("transform", `translate(0, ${currentY + actualDeltaY})`);
+              let deltaX = 0;
+              let currentY = 0;
+              
+              // Parse the existing transform to maintain x position
+              const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+              if (translateMatch) {
+                deltaX = parseFloat(translateMatch[1]);
+                currentY = parseFloat(translateMatch[2]);
+              }
+              
+              // Apply new transform with updated y position
+              d3.select(this).attr("transform", `translate(${deltaX}, ${currentY + actualDeltaY})`);
+              
+              // Also update any connection lines
+              d3.select(this).select("line.connection-line")
+                .attr("y1", placementData.initialY + currentY + actualDeltaY)
+                .attr("y2", newY);
             });
         }
   
@@ -1064,9 +908,12 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         const constrainedY = Math.max(minAllowedY, event.y);
         delete d.lastY;
   
-        // CRITICAL: Update the line coordinates immediately after drag
-        // This ensures the line doesn't snap back before the state update
-        d3.select(this).select("line")
+        // CRITICAL: Update the workstream area components with final position
+        // This ensures the area and guideline don't snap back before the state update
+        d3.select(this).select("rect.workstream-area")
+          .attr("y", constrainedY - WORKSTREAM_AREA_HEIGHT / 2);
+  
+        d3.select(this).select("line.workstream-guideline")
           .attr("y1", constrainedY)
           .attr("y2", constrainedY);
   
@@ -1136,8 +983,20 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         // Update visual connections
         updateActivities();
         updateDependencies();
+
+        // Enforce containment for all nodes after workstream position changes
+        setTimeout(() => {
+          enforceWorkstreamContainment(
+            d.id, 
+            workstreamPositions, 
+            milestonePositions, 
+            milestonePlacements, 
+            milestonesGroup, 
+            setMilestonePositions
+          );
+        }, 10);
       });
-  }, [activities, data.id, debouncedUpsertPosition, margin.top, contentHeight, updateActivities, updateDependencies, updateVisualConnectionsForNode, placementCoordinates]);
+  }, [activities, placementCoordinates, updateVisualConnectionsForNode, updateActivities, updateDependencies, margin.top, contentHeight, debouncedUpsertPosition, data.id, workstreamPositions, milestonePositions, milestonePlacements]);
 
   // 5. Main visualization rendering - execute when data, scales, or container changes
   useEffect(() => {
@@ -1178,7 +1037,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
     const workstreamDragBehavior = createWorkstreamDragBehavior();
     const milestoneDragBehavior = createMilestoneDragBehavior();
     
-    // Draw workstreams
+    // Draw workstreams as areas instead of lines
     workstreams.forEach((workstream) => {
       let y = yScale(workstream.id.toString()) || 0;
       if (workstreamPositions[workstream.id]) {
@@ -1189,29 +1048,50 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         .append("g")
         .datum({ ...workstream, initialY: y })
         .attr("class", "workstream")
+        .attr("data-id", workstream.id) // Add data attribute for easier selection
         .attr("cursor", "ns-resize")
         .call(workstreamDragBehavior as any);
     
       // IMPORTANT: Remove any default transform on the workstream group
-      // and only rely on explicit coordinates for the line and text
+      // and only rely on explicit coordinates for the elements
       wsGroup.attr("transform", "translate(0, 0)");
     
+      // Add workstream label (keep existing code)
       wsGroup
         .append("text")
         .attr("x", -10)
-        .attr("y", y) // Explicit y-coordinate
+        .attr("y", y)
         .attr("text-anchor", "end")
         .attr("dominant-baseline", "middle")
         .attr("font-weight", "bold")
         .attr("fill", workstream.color)
         .text(workstream.name);
     
+      // Create workstream area instead of just a line
+      wsGroup
+        .append("rect")
+        .attr("class", "workstream-area")
+        .attr("x", 0)
+        .attr("y", y - WORKSTREAM_AREA_HEIGHT / 2) // Center around the y position
+        .attr("width", contentWidth)
+        .attr("height", WORKSTREAM_AREA_HEIGHT)
+        .attr("fill", workstream.color)
+        .attr("fill-opacity", 0.05) // Very subtle fill
+        .attr("stroke", workstream.color)
+        .attr("stroke-width", 1)
+        .attr("stroke-opacity", 0.4)
+        .attr("stroke-dasharray", "4 2")
+        .attr("rx", 5) // Rounded corners
+        .attr("ry", 5);
+    
+      // Add a center guideline to help with alignment
       wsGroup
         .append("line")
+        .attr("class", "workstream-guideline")
         .attr("x1", 0)
-        .attr("y1", y) // Explicit y-coordinate
+        .attr("y1", y)
         .attr("x2", contentWidth)
-        .attr("y2", y) // Explicit y-coordinate
+        .attr("y2", y)
         .attr("stroke", workstream.color)
         .attr("stroke-width", 1)
         .attr("stroke-opacity", 0.3)
@@ -1223,35 +1103,72 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
     
     // Draw milestones
     Object.values(placementGroups).forEach((group) => {
-      const maxOffset = 200;
-      const offsetStep = group.length > 1 ? maxOffset / (group.length - 1) : 0;
+      // Extract the workstream ID and deadline from the first placement in the group
+      const workstreamId = group[0].placementWorkstreamId;
+      const deadline = group[0].milestone.deadline ? 
+        new Date(group[0].milestone.deadline) : new Date();
+      const timelineX = xScale(deadline);
 
-      group.forEach((placement, index) => {
+      // Calculate spacing for nodes on this timeline in this workstream
+      const nodePositions = calculateNodeSpacing(
+        group, 
+        workstreamId, 
+        timelineX, 
+        xScale, 
+        workstreamPositions, 
+        milestonePositions
+      );
+      
+
+      group.forEach((placement) => {
         const milestone = placement.milestone;
         const workstreamId = placement.placementWorkstreamId;
         const workstream = workstreams.find((ws) => ws.id === workstreamId);
         if (!workstream) return;
 
+        // Set X position based on timeline
         const x = milestone.deadline ? xScale(new Date(milestone.deadline)) : 20;
-        let y = yScale(workstream.id.toString()) || 0;
-        if (workstreamPositions[workstream.id]) {
-          y = workstreamPositions[workstream.id].y;
-        }
-        if (group.length > 1) {
-          const totalOffset = (group.length - 1) * offsetStep;
-          const startOffset = -totalOffset / 2;
-          y += startOffset + index * offsetStep;
-        }
-        if (milestonePositions[placement.id]) {
+
+        // Set Y position based on workstream and spacing
+        let y = workstreamPositions[workstream.id]?.y || 
+          yScale(workstream.id.toString()) || 0;
+
+        // If we have calculated positions for grouped nodes, use that
+        if (nodePositions.length > 0) {
+          const nodePos = nodePositions.find(np => np.id === placement.id);
+          if (nodePos) {
+            y = nodePos.y;
+          }
+        } else if (milestonePositions[placement.id]) {
+          // Otherwise use existing stored position
           y = milestonePositions[placement.id].y;
         }
 
-        // Use trackNodePosition instead of direct assignment
-        trackNodePosition(placement, x, y);
+          // Important: Set the initialY property to match the calculated position
+        // This ensures drag behavior has the correct reference point
+        const initialPosition = { 
+          x: x, 
+          y: y 
+        };
+        
+        // Track the node position with consistent reference points
+        trackNodePosition(
+          placement, 
+          initialPosition.x, 
+          initialPosition.y, 
+          duplicateNodeCoordinates, 
+          originalNodeCoordinates, 
+          placementCoordinates
+        );
 
         const milestoneGroup = milestonesGroup.current!
           .append("g")
-          .datum({ ...placement, initialX: x, initialY: y })
+          .datum({ 
+            ...placement, 
+            initialX: initialPosition.x, 
+            initialY: initialPosition.y,
+            workstreamRef: workstreamId // Add direct workstream reference
+          })
           .attr("class", "milestone")
           .attr("cursor", "move")
           .call(milestoneDragBehavior as any);
@@ -1260,36 +1177,27 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         const fillColor =
           milestone.status === "completed" ? "#ccc" : originalWorkstream?.color || "#6366f1";
 
+        // Draw the node circle
         milestoneGroup
+          .attr("transform", `translate(0, 0)`) 
           .append("circle")
           .attr("cx", x)
           .attr("cy", y)
-          .attr("r", 55)
+          .attr("r", NODE_RADIUS)
           .attr("fill", fillColor)
           .attr("stroke", d3.color(fillColor)?.darker(0.5) + "")
-          .attr("stroke-width", placement.activityId ? 2 : 1) // Make border thicker for activity duplicates
+          .attr("stroke-width", placement.activityId ? 2 : 1)
           .attr("opacity", placement.isDuplicate ? 0.7 : 1)
-          .attr("stroke-dasharray", placement.activityId ? "0" : (placement.isDuplicate ? "4 3" : "0")) // Different dash pattern based on duplicate type
+          .attr("stroke-dasharray", placement.activityId ? "0" : (placement.isDuplicate ? "4 3" : "0"))
           .on("mouseover", (event) => {
-            const tooltipText = getTooltipContent({ data: milestone }) + 
-                              (placement.isDuplicate ? (placement.activityId ? " (Activity Duplicate)" : " (Dependency Duplicate)") : "");
-            setTooltip({
-              content: tooltipText,
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-              visible: true,
-            });
+            handleD3MouseOver(
+              event, 
+              getTooltipContent({ data: milestone }) + 
+              (placement.isDuplicate ? (placement.activityId ? " (Activity Duplicate)" : " (Dependency Duplicate)") : "")
+            );
           })
-          .on("mousemove", (event) => {
-            setTooltip((prev) => ({
-              ...prev,
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-            }));
-          })
-          .on("mouseout", () => {
-            setTooltip((prev) => ({ ...prev, visible: false }));
-          });
+          .on("mousemove", handleD3MouseMove)
+          .on("mouseout", handleD3MouseOut);
 
         const textEl = milestoneGroup
           .append("text")
@@ -1302,14 +1210,16 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
           .text(milestone.name);
         wrapText(textEl as d3.Selection<SVGTextElement, unknown, null, undefined>, 100);
 
-        const workstreamY = yScale(workstream.id.toString()) || 0;
+         // Add connection line to workstream
+        const workstreamY = workstreamPositions[workstream.id]?.y || 
+         yScale(workstream.id.toString()) || 0;
         milestoneGroup
           .append("line")
           .attr("class", "connection-line")
           .attr("x1", x)
           .attr("y1", y)
           .attr("x2", x)
-          .attr("y2", Math.max(20, workstreamY))
+          .attr("y2", workstreamY)
           .attr("stroke", workstream.color)
           .attr("stroke-width", 0.5)
           .attr("stroke-opacity", 0.5)
@@ -1353,7 +1263,16 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         }
 
         if (placement.isDuplicate) {
-          ensureDuplicateNodeBackendRecord(placement);
+          ensureDuplicateNodeBackendRecord(
+            placement, 
+            data.id, 
+            remoteMilestonePos, 
+            workstreamPositions, 
+            margin.top, 
+            contentHeight, 
+            processedDuplicates, 
+            upsertPos
+          );
         }
 
         // Draw dotted line for duplicates
@@ -1390,23 +1309,13 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
                 .attr("opacity", 2)
                 .attr("marker-end", "url(#dependency-arrow)")
                 .on("mouseover", (event) => {
-                  setTooltip({
-                    content: `Dependency: ${milestone.name} → ${allMilestones.find(m => m.id === targetMilestoneId)?.name}`,
-                    left: event.pageX + 10,
-                    top: event.pageY - 28,
-                    visible: true,
-                  });
+                  handleD3MouseOver(
+                    event, 
+                    `Dependency: ${milestone.name} → ${allMilestones.find(m => m.id === targetMilestoneId)?.name}`
+                  );
                 })
-                .on("mousemove", (event) => {
-                  setTooltip((prev) => ({
-                    ...prev,
-                    left: event.pageX + 10,
-                    top: event.pageY - 28,
-                  }));
-                })
-                .on("mouseout", () => {
-                  setTooltip((prev) => ({ ...prev, visible: false }));
-                });
+                .on("mousemove", handleD3MouseMove)
+                .on("mouseout", handleD3MouseOut);
             }
           }
         }
@@ -1511,23 +1420,13 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
           })
           .on("mouseover", (event) => {
             const targetMilestone = allMilestones.find(m => m.id === targetId);
-            setTooltip({
-              content: `${getTooltipContent({ data: activity })} → ${targetMilestone?.name || "Unknown"} (Cross-workstream)`,
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-              visible: true,
-            });
+            handleD3MouseOver(
+              event, 
+              `${getTooltipContent({ data: activity })} → ${targetMilestone?.name || "Unknown"} (Cross-workstream)`
+            );
           })
-          .on("mousemove", (event) => {
-            setTooltip(prev => ({
-              ...prev,
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-            }));
-          })
-          .on("mouseout", () => {
-            setTooltip(prev => ({ ...prev, visible: false }));
-          });
+          .on("mousemove", handleD3MouseMove)
+          .on("mouseout", handleD3MouseOut);
         
         addActivityLabel(path, {
           ...activity,
@@ -1568,23 +1467,10 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
             targetMilestoneIds: [targetId]
           })
           .on("mouseover", (event) => {
-            setTooltip({
-              content: getTooltipContent({ data: activity }),
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-              visible: true,
-            });
+            handleD3MouseOver(event, getTooltipContent({ data: activity }));
           })
-          .on("mousemove", (event) => {
-            setTooltip((prev) => ({
-              ...prev,
-              left: event.pageX + 10,
-              top: event.pageY - 28,
-            }));
-          })
-          .on("mouseout", () => {
-            setTooltip((prev) => ({ ...prev, visible: false }));
-          });
+          .on("mousemove", handleD3MouseMove)
+          .on("mouseout", handleD3MouseOut);
         
         addActivityLabel(path, activity);
       } else {
@@ -1625,23 +1511,10 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
               targetMilestoneIds: [targetId]
             })
             .on("mouseover", (event) => {
-              setTooltip({
-                content: getTooltipContent({ data: activity }),
-                left: event.pageX + 10,
-                top: event.pageY - 28,
-                visible: true,
-              });
+              handleD3MouseOver(event, getTooltipContent({ data: activity }));
             })
-            .on("mousemove", (event) => {
-              setTooltip((prev) => ({
-                ...prev,
-                left: event.pageX + 10,
-                top: event.pageY - 28,
-              }));
-            })
-            .on("mouseout", () => {
-              setTooltip((prev) => ({ ...prev, visible: false }));
-            });
+            .on("mousemove", handleD3MouseMove)
+            .on("mouseout", handleD3MouseOut);
 
           addActivityLabel(path, activity);
         });
@@ -1677,23 +1550,10 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
             .attr("stroke-dasharray", "4 3")
             .datum(dep)
             .on("mouseover", (event) => {
-              setTooltip({
-                content: "Dependency relationship",
-                left: event.pageX + 10,
-                top: event.pageY - 28,
-                visible: true,
-              });
+              handleD3MouseOver(event, "Dependency relationship");
             })
-            .on("mousemove", (event) => {
-              setTooltip((prev) => ({
-                ...prev,
-                left: event.pageX + 10,
-                top: event.pageY - 28,
-              }));
-            })
-            .on("mouseout", () => {
-              setTooltip((prev) => ({ ...prev, visible: false }));
-            });
+            .on("mousemove", handleD3MouseMove)
+            .on("mouseout", handleD3MouseOut);            
         }
       }
     });
@@ -1723,7 +1583,7 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
     activitiesGroup.current.lower();
     dependencyGroup.current.lower();
     
-  }, [data, timelineMarkers, workstreams, activities, dependencies, xScale, yScale, milestonePositions, workstreamPositions, allMilestones, contentWidth, milestonePlacements, createMilestoneDragBehavior, createWorkstreamDragBehavior, placementCoordinates, trackNodePosition, ensureDuplicateNodeBackendRecord]);
+  }, [data, timelineMarkers, workstreams, activities, dependencies, xScale, yScale, milestonePositions, workstreamPositions, allMilestones, contentWidth, milestonePlacements, createMilestoneDragBehavior, createWorkstreamDragBehavior, remoteMilestonePos, margin.top, contentHeight, upsertPos, placementCoordinates, handleD3MouseMove, handleD3MouseOut, handleD3MouseOver]);
 
   return (
     <div className="w-full h-full relative">
@@ -1734,19 +1594,6 @@ const updateVisualConnectionsForNode = useCallback((nodeId: string | number) => 
         top={tooltip.top}
         visible={tooltip.visible}
       />
-      <button
-        onClick={() => {
-          if (svgRef.current && zoomRef.current) {
-            d3.select(svgRef.current)
-              .transition()
-              .duration(500)
-              .call(zoomRef.current.transform as any, d3.zoomIdentity);
-          }
-        }}
-        className="absolute bottom-4 right-4 p-2 bg-white rounded shadow hover:bg-gray-50 transition-colors"
-      >
-        Reset View
-      </button>
       <div className="absolute top-4 left-4 flex flex-col gap-2">
         <ScreenshotButton svgRef={svgRef} />
       </div>
