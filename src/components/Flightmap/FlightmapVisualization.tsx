@@ -985,16 +985,14 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         updateDependencies();
 
         // Enforce containment for all nodes after workstream position changes
-        setTimeout(() => {
-          enforceWorkstreamContainment(
-            d.id, 
-            workstreamPositions, 
-            milestonePositions, 
-            milestonePlacements, 
-            milestonesGroup, 
-            setMilestonePositions
-          );
-        }, 10);
+        enforceWorkstreamContainment(
+          d.id, 
+          workstreamPositions, 
+          milestonePositions, 
+          milestonePlacements, 
+          milestonesGroup, 
+          setMilestonePositions
+        );
       });
   }, [activities, placementCoordinates, updateVisualConnectionsForNode, updateActivities, updateDependencies, margin.top, contentHeight, debouncedUpsertPosition, data.id, workstreamPositions, milestonePositions, milestonePlacements]);
 
