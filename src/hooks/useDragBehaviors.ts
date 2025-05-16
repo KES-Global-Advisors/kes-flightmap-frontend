@@ -4,7 +4,6 @@ import { useCallback } from 'react';
 import * as d3 from 'd3';
 import { DefaultLinkObject } from 'd3-shape';
 import { MilestonePlacement } from '@/components/Flightmap/Utils/dataProcessing';
-import { enforceWorkstreamContainment } from '@/components/Flightmap/Utils/layoutUtils';
 import { 
   WORKSTREAM_AREA_HEIGHT, 
 } from '@/components/Flightmap/Utils/types';
@@ -20,10 +19,8 @@ export function useDragBehaviors({
   allMilestones,
   activities,
   dependencies,
-  milestonePlacements,
   workstreamPositions,
   setWorkstreamPositions,
-  milestonePositions,
   setMilestonePositions,
   placementCoordinates,
   milestonesGroup,
@@ -506,94 +503,66 @@ const createMilestoneDragBehavior = useCallback(() => {
    * Creates drag behavior for workstream lanes
    */
 const createWorkstreamDragBehavior = useCallback(() => {
-    let pendingPositionUpdates: Record<number, { y: number }> = {};
-    let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
-  
-    return d3.drag<SVGGElement, any>()
-      .on("start", function () {
-        d3.select(this).classed("dragging", true);
-        if (dragEndTimeout) clearTimeout(dragEndTimeout);
-        pendingPositionUpdates = {};
-      })
-      .on("drag", function (event, d) {
-        const minAllowedY = 20;
-        const newY = Math.max(minAllowedY, event.y);
-        const actualDeltaY = newY - (d.lastY || d.initialY);
-        d.lastY = newY;
-  
-        // Update workstream visual elements
-        updateWorkstreamVisuals(d3.select(this), newY);
-  
-        // Move all milestone nodes for this workstream
-        if (milestonesGroup.current) {
-          moveNodesWithWorkstream(
-            milestonesGroup.current,
-            d.id,
-            actualDeltaY,
-            newY,
-            placementCoordinates,
-            // milestonePlacements
-          );
-        }
-  
-        // Update visual connections during drag
-        updateActivities();
-        updateDependencies();
-      })
-      .on("end", function (event, d) {
-        d3.select(this).classed("dragging", false);
-        const minAllowedY = 20;
-        const constrainedY = Math.max(minAllowedY, event.y);
-        delete d.lastY;
-  
-        // Update workstream visuals
-        updateWorkstreamVisuals(d3.select(this), constrainedY);
-  
-        // Reset workstream transform
-        d3.select(this).attr("transform", "translate(0, 0)");
-  
-        // Store position in pending updates
-        pendingPositionUpdates[d.id] = { y: constrainedY };
-  
-        // Batch position updates with debouncing
-        if (dragEndTimeout) clearTimeout(dragEndTimeout);
-        dragEndTimeout = setTimeout(() => {
-          // Apply all pending workstream position updates at once
-          setWorkstreamPositions(prev => ({
-            ...prev,
-            ...pendingPositionUpdates
-          }));
-  
-          // Debounce API call
-          const relY = (constrainedY - margin.top) / contentHeight;
-          debouncedUpsertPosition(
-            data.id, 
-            'workstream', 
-            d.id, 
-            relY,
-            false,
-            ""
-          );
-  
-          // Enforce containment for all nodes in this workstream
-          enforceWorkstreamContainment(
-            d.id, 
-            workstreamPositions,
-            milestonePositions, 
-            milestonePlacements, 
-            milestonesGroup, 
-            setMilestonePositions,
-            placementCoordinates
-          );
-  
-          pendingPositionUpdates = {};
-        }, DEBOUNCE_TIMEOUT);
-  
-        // Update visual connections
-        updateActivities();
-        updateDependencies();
-      });
-  }, [updateWorkstreamVisuals, milestonesGroup, updateActivities, updateDependencies, moveNodesWithWorkstream, placementCoordinates, milestonePlacements, setWorkstreamPositions, margin.top, contentHeight, debouncedUpsertPosition, data.id, workstreamPositions, milestonePositions, setMilestonePositions]);
+  return d3.drag<SVGGElement, any>()
+    .on("start", function () {
+      d3.select(this).classed("dragging", true);
+    })
+    .on("drag", function (event, d) {
+      const minAllowedY = 20;
+      const newY = Math.max(minAllowedY, event.y);
+      const actualDeltaY = newY - (d.lastY || d.initialY);
+      d.lastY = newY;
+
+      // Update workstream visual elements during drag for immediate responsiveness
+      updateWorkstreamVisuals(d3.select(this), newY);
+
+      // Move all milestone nodes for this workstream during drag
+      if (milestonesGroup.current) {
+        moveNodesWithWorkstream(
+          milestonesGroup.current,
+          d.id,
+          actualDeltaY,
+          newY,
+          placementCoordinates
+        );
+      }
+
+      // Update visual connections during drag for responsive experience
+      updateActivities();
+      updateDependencies();
+    })
+    .on("end", function (event, d) {
+      d3.select(this).classed("dragging", false);
+      const minAllowedY = 20;
+      const constrainedY = Math.max(minAllowedY, event.y);
+      delete d.lastY;
+
+      // Reset workstream transform to avoid double transformation
+      d3.select(this).attr("transform", "translate(0, 0)");
+
+      // Update React state IMMEDIATELY
+      setWorkstreamPositions(prev => ({
+        ...prev,
+        [d.id]: { y: constrainedY }
+      }));
+
+      // Only debounce the API call, not state updates
+      const relY = (constrainedY - margin.top) / contentHeight;
+      debouncedUpsertPosition(
+        data.id, 
+        'workstream', 
+        d.id, 
+        relY,
+        false,
+        ""
+      );
+
+      // All visual updates will be handled by the useEffect that watches workstreamPositions:
+      // 1. updateWorkstreamLines
+      // 2. enforceWorkstreamContainment
+      // 3. Visual connection updates
+    });
+}, [updateWorkstreamVisuals, milestonesGroup, updateActivities, updateDependencies, moveNodesWithWorkstream, placementCoordinates, setWorkstreamPositions, margin.top, contentHeight, debouncedUpsertPosition, data.id]);
   
 
   return {
