@@ -7,7 +7,7 @@ import { MilestonePlacement } from '@/components/Flightmap/Utils/dataProcessing'
 import { 
   WORKSTREAM_AREA_HEIGHT, 
 } from '@/components/Flightmap/Utils/types';
-import { DEBOUNCE_TIMEOUT, updateNodePosition, calculateConstrainedY } from '@/components/Flightmap/Utils/positionManager';
+import { DEBOUNCE_TIMEOUT, updateNodePosition, calculateConstrainedY, updateWorkstreamPosition } from '@/components/Flightmap/Utils/positionManager';
 
 /**
  * Custom hook providing drag behaviors for milestones and workstreams
@@ -282,7 +282,7 @@ export function useDragBehaviors({
     });
   }, [dependencies, updateVisualConnectionsForNode]);
 
-    // Add this helper function within the useDragBehaviors hook
+  // Add this helper function within the useDragBehaviors hook
   const updateWorkstreamVisuals = useCallback((
     wsGroup: d3.Selection<SVGGElement, any, null, undefined>,
     y: number
@@ -308,7 +308,6 @@ export function useDragBehaviors({
     deltaY: number,
     workstreamY: number,
     placementCoordinates: Record<string, any>,
-    // milestonePlacements: MilestonePlacement[]
   ) => {
     milestonesGroup
       .selectAll(".milestone")
@@ -324,6 +323,11 @@ export function useDragBehaviors({
         return p.placementWorkstreamId === workstreamId;
       })
       .each(function (placementData: any) {
+        // PRINCIPLE: Update data first
+        if (placementCoordinates[placementData.id]) {
+          placementCoordinates[placementData.id].y += deltaY;
+        }
+        
         // Get current transform 
         const currentTransform = d3.select(this).attr("transform") || "";
         let deltaX = 0;
@@ -335,12 +339,10 @@ export function useDragBehaviors({
           currentY = parseFloat(translateMatch[2]);
         }
         
-        // Update placement coordinates
-        if (placementCoordinates[placementData.id]) {
-          placementCoordinates[placementData.id].y += deltaY;
-        }
+        // PRINCIPLE: Reset transform first
+        d3.select(this).attr("transform", "translate(0, 0)");
         
-        // Apply new transform with updated y position
+        // PRINCIPLE: Apply complete transform based on current state
         d3.select(this).attr("transform", `translate(${deltaX}, ${currentY + deltaY})`);
         
         // Update connection line
@@ -540,29 +542,21 @@ const createWorkstreamDragBehavior = useCallback(() => {
       // Reset workstream transform to avoid double transformation
       d3.select(this).attr("transform", "translate(0, 0)");
 
-      // Update React state IMMEDIATELY
-      setWorkstreamPositions(prev => ({
-        ...prev,
-        [d.id]: { y: constrainedY }
-      }));
-
-      // Only debounce the API call, not state updates
-      const relY = (constrainedY - margin.top) / contentHeight;
-      debouncedUpsertPosition(
-        data.id, 
-        'workstream', 
+      // Use the centralized position management function
+      updateWorkstreamPosition(
         d.id, 
-        relY,
-        false,
-        ""
+        constrainedY, 
+        {
+          placementCoordinates,
+          margin,
+          contentHeight,
+          dataId: data.id,
+          setWorkstreamPositions,
+          debouncedUpsertPosition
+        }
       );
-
-      // All visual updates will be handled by the useEffect that watches workstreamPositions:
-      // 1. updateWorkstreamLines
-      // 2. enforceWorkstreamContainment
-      // 3. Visual connection updates
     });
-}, [updateWorkstreamVisuals, milestonesGroup, updateActivities, updateDependencies, moveNodesWithWorkstream, placementCoordinates, setWorkstreamPositions, margin.top, contentHeight, debouncedUpsertPosition, data.id]);
+}, [updateWorkstreamVisuals, milestonesGroup, updateActivities, updateDependencies, moveNodesWithWorkstream, placementCoordinates, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition]);
   
 
   return {
