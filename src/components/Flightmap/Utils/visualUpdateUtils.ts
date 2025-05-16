@@ -19,20 +19,18 @@ export function updateWorkstreamLines(
     // Get the current position from state - this is the source of truth
     const y = workstreamPositions[workstreamId]?.y || d.initialY;
     
-    // Update the line y-coordinates 
+    // PRINCIPLE: First reset the transform to avoid double transformation
+    wsGroup.attr("transform", "translate(0, 0)");
+    
+    // PRINCIPLE: Then update all element positions based on state
     wsGroup.select("line.workstream-guideline")
       .attr("y1", y)
       .attr("y2", y);
       
-    // Update workstream label y-coordinate
     wsGroup.select("text")
       .attr("y", y);
       
-    // Update the workstream area
     wsGroup.select("rect.workstream-area")
       .attr("y", y - WORKSTREAM_AREA_HEIGHT / 2);
-      
-    // IMPORTANT: Reset the transform to prevent double transformations
-    wsGroup.attr("transform", "translate(0, 0)");
   });
 }
