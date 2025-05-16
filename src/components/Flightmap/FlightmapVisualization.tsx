@@ -417,75 +417,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     onMilestoneDeadlineChange
   });
 
-  // Add an effect to update workstream lines when workstream positions change
-  useEffect(() => {
-    // Make sure the workstream lines are updated after any position changes
-    if (Object.keys(workstreamPositions).length > 0) {
-      // Call the existing debounced save
-      debouncedSaveWorkstreamPositions(dataId.current, workstreamPositions);
-
-      // Immediate update of line positions
-      updateWorkstreamLines(workstreamGroup, workstreamPositions);
-    }
-  }, [workstreamPositions, debouncedSaveWorkstreamPositions]);
-
-  // Also add an effect to ensure workstream lines are updated after the component fully mounts
-  useEffect(() => {
-    // This ensures lines are correctly positioned after initial render
-    if (workstreamGroup.current && Object.keys(workstreamPositions).length > 0) {
-      updateWorkstreamLines(workstreamGroup, workstreamPositions);
-    }
-  }, [workstreamPositions]);
-
-  // FlightmapVisualization.tsx - Add this effect after the existing workstream update effect
-  useEffect(() => {
-    // This effect ensures node containment is enforced whenever workstream positions change
-    if (Object.keys(workstreamPositions).length > 0 && workstreamGroup.current) {
-      // First update workstream lines visually
-      updateWorkstreamLines(workstreamGroup, workstreamPositions);
-
-      // Then enforce containment for each workstream
-      workstreams.forEach(workstream => {
-        enforceWorkstreamContainment(
-          workstream.id,
-          workstreamPositions,
-          milestonePositions,
-          milestonePlacements,
-          milestonesGroup,
-          setMilestonePositions,
-          placementCoordinates
-        );
-      });
-
-      // Finally, ensure all visual connections are updated
-      const updateAllConnections = () => {
-        activities.forEach(activity => {
-          updateVisualConnectionsForNode(activity.sourceMilestoneId);
-        });
-
-        dependencies.forEach(dep => {
-          updateVisualConnectionsForNode(dep.source);
-        });
-      };
-
-      // Defer connection updates to ensure DOM is ready
-      setTimeout(updateAllConnections, 50);
-    }
-  }, [
-    workstreamPositions, 
-    workstreamGroup, 
-    workstreams, 
-    milestonePositions, 
-    milestonePlacements, 
-    milestonesGroup, 
-    setMilestonePositions, 
-    placementCoordinates, 
-    activities, 
-    dependencies, 
-    updateVisualConnectionsForNode
-  ]);
-
-  // FlightmapVisualization.tsx - Add this effect
   useEffect(() => {
     // Update visual elements when milestone positions change
     if (milestonesGroup.current && Object.keys(milestonePositions).length > 0) {
@@ -540,25 +471,59 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     updateVisualConnectionsForNode
   ]);
 
-  // 5. Main visualization rendering - execute when data, scales, or container changes
+  // This single effect handles all workstream position-related updates
   useEffect(() => {
-    // Make sure the workstream lines are updated after any position changes
-    if (Object.keys(workstreamPositions).length > 0) {
-      // Call the existing debounced save
+    if (Object.keys(workstreamPositions).length > 0 && workstreamGroup.current) {
+      // 1. Persist to storage (debounced)
       debouncedSaveWorkstreamPositions(dataId.current, workstreamPositions);
-
-      // Immediate update of line positions
+      
+      // 2. Update workstream visuals immediately
       updateWorkstreamLines(workstreamGroup, workstreamPositions);
+      
+      // 3. Ensure milestones stay within their workstreams
+      workstreams.forEach(workstream => {
+        enforceWorkstreamContainment(
+          workstream.id,
+          workstreamPositions,
+          milestonePositions,
+          milestonePlacements,
+          milestonesGroup,
+          setMilestonePositions,
+          placementCoordinates
+        );
+      });
+      
+      // 4. Update all connections with a slight delay to ensure DOM nodes are positioned
+      const updateVisualConnections = () => {
+        // Update connections for activities
+        activities.forEach(activity => {
+          updateVisualConnectionsForNode(activity.sourceMilestoneId);
+        });
+        
+        // Update connections for dependencies
+        dependencies.forEach(dep => {
+          updateVisualConnectionsForNode(dep.source);
+        });
+      };
+      
+      // Use requestAnimationFrame for smoother visual updates
+      requestAnimationFrame(updateVisualConnections);
     }
-  }, [workstreamPositions, debouncedSaveWorkstreamPositions]);
-
-  // Also add an effect to ensure workstream lines are updated after the component fully mounts
-  useEffect(() => {
-    // This ensures lines are correctly positioned after initial render
-    if (workstreamGroup.current && Object.keys(workstreamPositions).length > 0) {
-      updateWorkstreamLines(workstreamGroup, workstreamPositions);
-    }
-  }, [workstreamPositions]);
+  }, [
+    workstreamPositions,
+    workstreamGroup,
+    debouncedSaveWorkstreamPositions,
+    workstreams,
+    milestonePositions,
+    milestonePlacements,
+    milestonesGroup,
+    setMilestonePositions,
+    placementCoordinates,
+    activities,
+    dependencies,
+    updateVisualConnectionsForNode,
+    dataId
+  ]);
 
   // 5. Main visualization rendering - execute when data, scales, or container changes
   useEffect(() => {
