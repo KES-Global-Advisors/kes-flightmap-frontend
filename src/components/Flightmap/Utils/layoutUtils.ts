@@ -84,21 +84,26 @@ export function enforceWorkstreamContainment(
   milestonePositions: MilestonePositions,
   milestonePlacements: MilestonePlacement[],
   milestonesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
-  setMilestonePositions: React.Dispatch<React.SetStateAction<MilestonePositions>>
+  setMilestonePositions: React.Dispatch<React.SetStateAction<MilestonePositions>>,
+  placementCoordinates?: Record<string, any>
 ) {
   const wsPosition = workstreamPositions[workstreamId] || { y: 0 };
   const wsTopBoundary = wsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
   const wsBottomBoundary = wsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
 
-  // Find all milestone nodes for this workstream
+  // Find all milestone nodes for this workstream with explicit type checking
   const relatedNodes = Object.entries(milestonePositions)
     .filter(([nodeId]) => {
-      // Check both original and duplicate nodes
       const placement = milestonePlacements.find(p => p.id === nodeId);
       if (!placement) return false;
 
-      return (placement.isDuplicate && placement.placementWorkstreamId === workstreamId) ||
-             (!placement.isDuplicate && placement.milestone.workstreamId === workstreamId);
+      if (placement.isDuplicate) {
+        // For duplicates, check ONLY the placement workstream
+        return placement.placementWorkstreamId === workstreamId;
+      } else {
+        // For originals, check ONLY the milestone's workstream
+        return placement.milestone.workstreamId === workstreamId;
+      }
     });
   
   // Check if any nodes are outside boundaries and correct them
@@ -106,9 +111,13 @@ export function enforceWorkstreamContainment(
   relatedNodes.forEach(([nodeId, position]) => {
     if (position.y < wsTopBoundary || position.y > wsBottomBoundary) {
       // Constrain to boundaries
-      updatedPositions[nodeId] = { 
-        y: Math.max(wsTopBoundary, Math.min(wsBottomBoundary, position.y)) 
-      };
+      const constrainedY = Math.max(wsTopBoundary, Math.min(wsBottomBoundary, position.y));
+      updatedPositions[nodeId] = { y: constrainedY };
+      
+      // Also update placement coordinates if available
+      if (placementCoordinates && placementCoordinates[nodeId]) {
+        placementCoordinates[nodeId].y = constrainedY;
+      }
     }
   });
 
@@ -122,20 +131,36 @@ export function enforceWorkstreamContainment(
     // Force visual update for affected nodes
     if (milestonesGroup.current) {
       Object.entries(updatedPositions).forEach(([nodeId, position]) => {
-        milestonesGroup.current!.selectAll(".milestone")
-          .filter((d: any) => d && d.id === nodeId)
-          .each(function(d: any) {
-            // Update transform to match constrained position
-            d3.select(this)
-              .transition().duration(300)
-              .attr("transform", `translate(0, ${position.y - d.initialY})`);
+        const nodeSelection = milestonesGroup.current!.selectAll(".milestone")
+          .filter((d: any) => d && d.id === nodeId);
+          
+        nodeSelection.each(function(d: any) {
+          // Get current transform to preserve x translation
+          const currentTransform = d3.select(this).attr("transform") || "";
+          let currentX = 0;
+          
+          const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+          if (translateMatch) {
+            currentX = parseFloat(translateMatch[1]);
+          }
+          
+          // Reset transform first to avoid compounding
+          d3.select(this)
+            .attr("transform", "translate(0, 0)");
+            
+          // Then apply proper transform with constrained Y position
+          d3.select(this)
+            .transition().duration(300)
+            .attr("transform", `translate(${currentX}, ${position.y - d.initialY})`);
 
-            // Update connection lines
-            d3.select(this).select("line.connection-line")
-              .attr("y1", position.y)
-              .attr("y2", wsPosition.y);
-          });
+          // Update connection line
+          d3.select(this).select("line.connection-line")
+            .attr("y1", position.y)
+            .attr("y2", wsPosition.y);
+        });
       });
     }
   }
+
+  return updatedPositions;
 }

@@ -6,6 +6,7 @@ export type D3Selection = d3.Selection<SVGGElement, unknown, null, undefined>;
 export type D3SelectionRef = RefObject<D3Selection | null>;
 
 // Constants used across multiple utilities
+export const DEBOUNCE_TIMEOUT = 250; // ms
 export const NODE_RADIUS = 55;
 export const WORKSTREAM_AREA_HEIGHT = 600;
 export const WORKSTREAM_AREA_PADDING = 15;

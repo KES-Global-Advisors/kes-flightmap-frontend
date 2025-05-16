@@ -7,8 +7,8 @@ import { MilestonePlacement } from '@/components/Flightmap/Utils/dataProcessing'
 import { enforceWorkstreamContainment } from '@/components/Flightmap/Utils/layoutUtils';
 import { 
   WORKSTREAM_AREA_HEIGHT, 
-  WORKSTREAM_AREA_PADDING,
 } from '@/components/Flightmap/Utils/types';
+import { DEBOUNCE_TIMEOUT, updateNodePosition, calculateConstrainedY } from '@/components/Flightmap/Utils/positionManager';
 
 /**
  * Custom hook providing drag behaviors for milestones and workstreams
@@ -285,10 +285,78 @@ export function useDragBehaviors({
     });
   }, [dependencies, updateVisualConnectionsForNode]);
 
+    // Add this helper function within the useDragBehaviors hook
+  const updateWorkstreamVisuals = useCallback((
+    wsGroup: d3.Selection<SVGGElement, any, null, undefined>,
+    y: number
+  ) => {
+    // Update the rectangle position
+    wsGroup.select("rect.workstream-area")
+      .attr("y", y - WORKSTREAM_AREA_HEIGHT / 2);
+  
+    // Update the guideline position
+    wsGroup.select("line.workstream-guideline")
+      .attr("y1", y)
+      .attr("y2", y);
+  
+    // Update the text label position
+    wsGroup.select("text")
+      .attr("y", y);
+  }, []);
+      
+  // Add this helper function within the useDragBehaviors hook
+  const moveNodesWithWorkstream = useCallback((
+    milestonesGroup: d3.Selection<SVGGElement, unknown, null, undefined>,
+    workstreamId: number,
+    deltaY: number,
+    workstreamY: number,
+    placementCoordinates: Record<string, any>,
+    // milestonePlacements: MilestonePlacement[]
+  ) => {
+    milestonesGroup
+      .selectAll(".milestone")
+      .filter(function(p: any) {
+        if (!p) return false;
+        
+        // For original nodes, ensure they belong to this workstream
+        if (!p.isDuplicate) {
+          return p.milestone && p.milestone.workstreamId === workstreamId;
+        }
+        
+        // For duplicates, use placementWorkstreamId
+        return p.placementWorkstreamId === workstreamId;
+      })
+      .each(function (placementData: any) {
+        // Get current transform 
+        const currentTransform = d3.select(this).attr("transform") || "";
+        let deltaX = 0;
+        let currentY = 0;
+        
+        const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+        if (translateMatch) {
+          deltaX = parseFloat(translateMatch[1]);
+          currentY = parseFloat(translateMatch[2]);
+        }
+        
+        // Update placement coordinates
+        if (placementCoordinates[placementData.id]) {
+          placementCoordinates[placementData.id].y += deltaY;
+        }
+        
+        // Apply new transform with updated y position
+        d3.select(this).attr("transform", `translate(${deltaX}, ${currentY + deltaY})`);
+        
+        // Update connection line
+        d3.select(this).select("line.connection-line")
+          .attr("y1", placementData.initialY + currentY + deltaY)
+          .attr("y2", workstreamY);
+      });
+  }, []);
+
   /**
    * Creates drag behavior for milestone nodes
    */
-  const createMilestoneDragBehavior = useCallback(() => {
+const createMilestoneDragBehavior = useCallback(() => {
     // Batch state to reduce renders
     let pendingPositionUpdates: Record<string, { y: number }> = {};
     let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -306,35 +374,32 @@ export function useDragBehaviors({
       .on("drag", function(event, d) {
         // Get current workstream position (may have updated)
         const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
-        const currentWsPosition = workstreamPositions[workstreamId] || { y: 0 };
-        
-        // Recalculate boundaries based on *current* workstream position
-        const wsTopBoundary = currentWsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
-        const wsBottomBoundary = currentWsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
         
         // Calculate deltas from original position
         const deltaX = event.x - d.dragStartX;
         const rawNewY = d.initialY + (event.y - d.dragStartY);
         
         // Apply strict containment with current boundaries
-        const constrainedY = Math.max(wsTopBoundary, Math.min(wsBottomBoundary, rawNewY));
+        const constrainedY = calculateConstrainedY(
+          rawNewY,
+          workstreamId,
+          workstreamPositions
+        );
         
         // Apply transform from original position
         d3.select(this)
           .attr("transform", `translate(${deltaX}, ${constrainedY - d.initialY})`);
         
         // Update all visual elements for consistency
-        d3.select(this).select("circle")
-          .attr("cy", d.initialY); // Keep base position consistent
-          
+        const currentWsPosition = workstreamPositions[workstreamId] || { y: 0 };
         d3.select(this).select("line.connection-line")
-          .attr("y1", d.initialY)
+          .attr("y1", constrainedY)
           .attr("y2", currentWsPosition.y);
         
         // Update placement coordinates temporarily for visual updates
         if (placementCoordinates[d.id]) {
           // Update only the Y position since X is controlled by timeline constraints
-          placementCoordinates[d.id].y = rawNewY;
+          placementCoordinates[d.id].y = constrainedY;
         }
         
         // Update only the visual connections without state changes
@@ -346,15 +411,13 @@ export function useDragBehaviors({
         // Determine which workstream this node belongs to
         const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
         
-        // Find workstream area boundaries - first get the position
-        const wsPosition = workstreamPositions[workstreamId] || { y: 0 };
-        
-        // Calculate workstream area boundaries
-        const wsTopBoundary = wsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
-        const wsBottomBoundary = wsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
-        
         // Constrain final Y position to stay within workstream area
-        const constrainedY = Math.max(wsTopBoundary, Math.min(wsBottomBoundary, d.initialY + (event.y - d.initialY)));
+        const rawNewY = d.initialY + (event.y - d.dragStartY);
+        const constrainedY = calculateConstrainedY(
+          rawNewY,
+          workstreamId,
+          workstreamPositions
+        );
         
         // Horizontal (X) position is controlled by timeline
         const droppedX = d.initialX + (event.x - d.initialX);
@@ -369,22 +432,28 @@ export function useDragBehaviors({
         const newDeadline = closestMarker;
         const snappedX = xScale(newDeadline);
         
-        // Apply visual changes immediately
-        d3.select(this).attr("transform", 
-          `translate(${snappedX - d.initialX}, ${constrainedY - d.initialY})`);
-        
-        // Update connection line with final position
-        d3.select(this).select("line.connection-line")
-          .attr("y1", constrainedY)
-          .attr("y2", wsPosition.y);
-        
         // Update placement coordinates with final position
         if (placementCoordinates[d.id]) {
-          placementCoordinates[d.id].x = snappedX;
-          placementCoordinates[d.id].y = constrainedY;
+          updateNodePosition(
+            d.id,
+            { x: snappedX, y: constrainedY },
+            {
+              milestonesGroup,
+              placementCoordinates,
+              margin,
+              contentHeight,
+              dataId: data.id,
+              isDuplicate: d.isDuplicate,
+              originalMilestoneId: d.originalMilestoneId,
+              debouncedUpsertPosition,
+              updateDOM: true,
+              updateConnections: true,
+              updateConnectionsFunction: updateVisualConnectionsForNode
+            }
+          );
         }
         
-        // Store position in pending updates instead of immediate state change
+        // Store position in pending updates for batched state update
         pendingPositionUpdates[d.id] = { y: constrainedY };
         
         // Batch position updates with debouncing
@@ -396,28 +465,6 @@ export function useDragBehaviors({
             ...pendingPositionUpdates
           }));
           
-          // Only call API with the final position after interaction is complete
-          if (constrainedY !== d.initialY) {
-            const relY = (constrainedY - margin.top) / contentHeight;
-  
-            // Handle position updates differently for duplicates
-            if (d.isDuplicate) {
-              debouncedUpsertPosition(
-                data.id, 
-                'milestone', 
-                // Use the duplicateKey as the node_id for duplicates
-                d.id, // Use the duplicate key directly
-                relY,
-                true, // isDuplicate
-                d.id, // duplicateKey
-                d.originalMilestoneId // originalNodeId
-              );
-            } else {
-              // For original nodes, no duplicate params needed
-              debouncedUpsertPosition(data.id, 'milestone', Number(d.milestone.id), relY);
-            }
-          }
-          
           // Handle deadline changes only for original nodes
           if (!d.isDuplicate) {
             const originalDateMs = new Date(d.milestone.deadline).getTime();
@@ -426,77 +473,39 @@ export function useDragBehaviors({
               onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
                 .then((ok) => {
                   if (!ok) {
-                    // Rollback X-axis
+                    // Rollback X-axis position
                     const origX = xScale(new Date(d.milestone.deadline));
-                    d3.select(this)
-                      .transition().duration(300)
-                      .attr("transform", `translate(${origX - d.initialX}, ${constrainedY - d.initialY})`);
-  
-                    // Also update the placement coordinates
-                    if (placementCoordinates[d.id]) {
-                      placementCoordinates[d.id].x = origX;
-                    }
-  
-                    // Update connections after rollback
-                    updateVisualConnectionsForNode(d.id);
+                    updateNodePosition(
+                      d.id,
+                      { x: origX },
+                      {
+                        milestonesGroup,
+                        placementCoordinates,
+                        margin,
+                        contentHeight,
+                        dataId: data.id,
+                        isDuplicate: d.isDuplicate,
+                        originalMilestoneId: d.originalMilestoneId,
+                        debouncedUpsertPosition,
+                        updateDOM: true,
+                        updateConnections: true,
+                        updateConnectionsFunction: updateVisualConnectionsForNode
+                      }
+                    );
                   }
                 });
             }
           }
   
           pendingPositionUpdates = {};
-        }, 200); // Debounce for 200ms
-        
-        // Update visual connections immediately without full redraw
-        updateVisualConnectionsForNode(d.id);
-
-        // Add verification step after position update
-        setTimeout(() => {
-          // Verify node is still within boundaries after all updates
-          const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
-          const currentWsPosition = workstreamPositions[workstreamId] || { y: 0 };
-          const wsTopBoundary = currentWsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
-          const wsBottomBoundary = currentWsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
-          
-          // Get current position from state
-          const nodeCurrentPos = milestonePositions[d.id] || { y: d.initialY };
-          
-          // If somehow outside boundaries, force back
-          if (nodeCurrentPos.y < wsTopBoundary || nodeCurrentPos.y > wsBottomBoundary) {
-            const correctedY = Math.max(wsTopBoundary, Math.min(wsBottomBoundary, nodeCurrentPos.y));
-            
-            // Update state and visuals with corrected position
-            setMilestonePositions(prev => ({
-              ...prev,
-              [d.id]: { y: correctedY }
-            }));
-            
-            // Force visual update
-            d3.select(this)
-              .transition().duration(300)
-              .attr("transform", `translate(${snappedX - d.initialX}, ${correctedY - d.initialY})`);
-          }
-        }, 250);
+        }, DEBOUNCE_TIMEOUT);
       });
-  }, [
-    workstreamPositions, 
-    placementCoordinates, 
-    updateVisualConnectionsForNode, 
-    timelineMarkers, 
-    xScale, 
-    margin.top, 
-    contentHeight, 
-    debouncedUpsertPosition, 
-    data.id, 
-    onMilestoneDeadlineChange, 
-    milestonePositions, 
-    setMilestonePositions
-  ]);
+  }, [workstreamPositions, placementCoordinates, updateVisualConnectionsForNode, timelineMarkers, xScale, milestonesGroup, margin, contentHeight, data.id, debouncedUpsertPosition, setMilestonePositions, onMilestoneDeadlineChange]);
 
   /**
    * Creates drag behavior for workstream lanes
    */
-  const createWorkstreamDragBehavior = useCallback(() => {
+const createWorkstreamDragBehavior = useCallback(() => {
     let pendingPositionUpdates: Record<number, { y: number }> = {};
     let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
   
@@ -512,70 +521,24 @@ export function useDragBehaviors({
         const actualDeltaY = newY - (d.lastY || d.initialY);
         d.lastY = newY;
   
-        // Apply visual changes to the workstream components
-        // Update the rectangle position
-        d3.select(this).select("rect.workstream-area")
-          .attr("y", newY - WORKSTREAM_AREA_HEIGHT / 2);
+        // Update workstream visual elements
+        updateWorkstreamVisuals(d3.select(this), newY);
   
-        // Update the guideline position
-        d3.select(this).select("line.workstream-guideline")
-          .attr("y1", newY)
-          .attr("y2", newY);
-  
-        // Update the text label position
-        d3.select(this).select("text")
-          .attr("y", newY);
-  
-        // Move all milestone nodes for this workstream with improved filtering
+        // Move all milestone nodes for this workstream
         if (milestonesGroup.current) {
-          milestonesGroup.current
-            .selectAll(".milestone")
-            .filter(function(p: any) {
-              if (!p) return false;
-              
-              // For original nodes, ensure they genuinely belong to this workstream
-              if (!p.isDuplicate) {
-                return p.milestone && p.milestone.workstreamId === d.id;
-              }
-              
-              // For duplicates, use placementWorkstreamId
-              return p.placementWorkstreamId === d.id;
-            })
-            .each(function (placementData: any) {
-              // Update placement coordinates
-              if (placementCoordinates[placementData.id]) {
-                placementCoordinates[placementData.id].y += actualDeltaY;
-              }
-  
-              // Update the visual position
-              // Get current transform
-              const currentTransform = d3.select(this).attr("transform") || "";
-              let deltaX = 0;
-              let currentY = 0;
-              
-              // Parse the existing transform to maintain x position
-              const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-              if (translateMatch) {
-                deltaX = parseFloat(translateMatch[1]);
-                currentY = parseFloat(translateMatch[2]);
-              }
-              
-              // Apply new transform with updated y position
-              d3.select(this).attr("transform", `translate(${deltaX}, ${currentY + actualDeltaY})`);
-              
-              // Also update any connection lines
-              d3.select(this).select("line.connection-line")
-                .attr("y1", placementData.initialY + currentY + actualDeltaY)
-                .attr("y2", newY);
-            });
+          moveNodesWithWorkstream(
+            milestonesGroup.current,
+            d.id,
+            actualDeltaY,
+            newY,
+            placementCoordinates,
+            // milestonePlacements
+          );
         }
   
         // Update visual connections during drag
-        activities.forEach(activity => {
-          if (activity.workstreamId === d.id) {
-            updateVisualConnectionsForNode(activity.sourceMilestoneId);
-          }
-        });
+        updateActivities();
+        updateDependencies();
       })
       .on("end", function (event, d) {
         d3.select(this).classed("dragging", false);
@@ -583,18 +546,10 @@ export function useDragBehaviors({
         const constrainedY = Math.max(minAllowedY, event.y);
         delete d.lastY;
   
-        // Update the workstream area components with final position
-        d3.select(this).select("rect.workstream-area")
-          .attr("y", constrainedY - WORKSTREAM_AREA_HEIGHT / 2);
+        // Update workstream visuals
+        updateWorkstreamVisuals(d3.select(this), constrainedY);
   
-        d3.select(this).select("line.workstream-guideline")
-          .attr("y1", constrainedY)
-          .attr("y2", constrainedY);
-  
-        d3.select(this).select("text")
-          .attr("y", constrainedY);
-  
-        // Reset the transform to prevent double transformation
+        // Reset workstream transform
         d3.select(this).attr("transform", "translate(0, 0)");
   
         // Store position in pending updates
@@ -620,71 +575,26 @@ export function useDragBehaviors({
             ""
           );
   
-          // Collect milestone positions that need updating
-          const updatedMilestonePositions: Record<string, { y: number }> = {};
-          if (milestonesGroup.current) {
-            milestonesGroup.current
-              .selectAll(".milestone")
-              .filter(function(p: any) {
-                if (!p) return false;
-                
-                // Same enhanced filtering logic as in the drag handler
-                if (!p.isDuplicate) {
-                  return p.milestone && p.milestone.workstreamId === d.id;
-                }
-                return p.placementWorkstreamId === d.id;
-              })
-              .each(function (placementData: any) {
-                if (placementCoordinates[placementData.id]) {
-                  updatedMilestonePositions[placementData.id] = {
-                    y: placementCoordinates[placementData.id].y,
-                  };
-                }
-              });
-          }
-  
-          // Update milestone positions if any changed
-          if (Object.keys(updatedMilestonePositions).length > 0) {
-            setMilestonePositions(prev => ({
-              ...prev,
-              ...updatedMilestonePositions
-            }));
-          }
+          // Enforce containment for all nodes in this workstream
+          enforceWorkstreamContainment(
+            d.id, 
+            workstreamPositions,
+            milestonePositions, 
+            milestonePlacements, 
+            milestonesGroup, 
+            setMilestonePositions,
+            placementCoordinates
+          );
   
           pendingPositionUpdates = {};
-        }, 200); // Debounce for 200ms
+        }, DEBOUNCE_TIMEOUT);
   
         // Update visual connections
         updateActivities();
         updateDependencies();
-
-        // Enforce containment for all nodes after workstream position changes
-        enforceWorkstreamContainment(
-          d.id, 
-          workstreamPositions, 
-          milestonePositions, 
-          milestonePlacements, 
-          milestonesGroup, 
-          setMilestonePositions
-        );
       });
-  }, [
-    activities, 
-    placementCoordinates, 
-    updateVisualConnectionsForNode, 
-    updateActivities, 
-    updateDependencies, 
-    margin.top, 
-    contentHeight, 
-    debouncedUpsertPosition, 
-    data.id, 
-    workstreamPositions,
-    setWorkstreamPositions, 
-    milestonePositions, 
-    milestonePlacements, 
-    milestonesGroup, 
-    setMilestonePositions
-  ]);
+  }, [updateWorkstreamVisuals, milestonesGroup, updateActivities, updateDependencies, moveNodesWithWorkstream, placementCoordinates, milestonePlacements, setWorkstreamPositions, margin.top, contentHeight, debouncedUpsertPosition, data.id, workstreamPositions, milestonePositions, setMilestonePositions]);
+  
 
   return {
     createMilestoneDragBehavior,

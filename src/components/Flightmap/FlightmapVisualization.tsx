@@ -32,7 +32,8 @@ import {
 } from './Utils/storageHelpers';
 import { debounce } from './Utils/debounce';
 import { 
-  calculateNodeSpacing, 
+  calculateNodeSpacing,
+  enforceWorkstreamContainment,
 } from './Utils/layoutUtils';
 import { updateWorkstreamLines } from './Utils/visualUpdateUtils';
 import { trackNodePosition } from './Utils/nodeTracking';
@@ -44,6 +45,7 @@ import { initializeVisualizationSVG, addResetViewButton, SvgContainers } from '.
 import { 
   WORKSTREAM_AREA_HEIGHT, 
   NODE_RADIUS,
+  DEBOUNCE_TIMEOUT,
 } from './Utils/types';
 
 // Import our new custom hook for drag behaviors
@@ -115,7 +117,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         duplicateKey,
         originalNodeId
       });
-    }, 500)
+    }, DEBOUNCE_TIMEOUT)
   ).current;
 
   const width = window.innerWidth;
@@ -138,13 +140,13 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   const debouncedSaveMilestonePositions = useRef(
     debounce((dataId: string, positions: Record<string, { y: number }>) => {
       saveMilestonePositions(dataId, positions);
-    }, 500)
+    }, DEBOUNCE_TIMEOUT)
   ).current;
 
   const debouncedSaveWorkstreamPositions = useRef(
     debounce((dataId: string, positions: Record<number, { y: number }>) => {
       saveWorkstreamPositions(dataId, positions);
-    }, 500)
+    }, DEBOUNCE_TIMEOUT)
   ).current;
 
   useEffect(() => {
@@ -393,6 +395,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   const {
     createMilestoneDragBehavior,
     createWorkstreamDragBehavior,
+    updateVisualConnectionsForNode,
   } = useDragBehaviors({
     data,
     timelineMarkers,
@@ -433,6 +436,109 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       updateWorkstreamLines(workstreamGroup, workstreamPositions);
     }
   }, [workstreamPositions]);
+
+  // FlightmapVisualization.tsx - Add this effect after the existing workstream update effect
+  useEffect(() => {
+    // This effect ensures node containment is enforced whenever workstream positions change
+    if (Object.keys(workstreamPositions).length > 0 && workstreamGroup.current) {
+      // First update workstream lines visually
+      updateWorkstreamLines(workstreamGroup, workstreamPositions);
+
+      // Then enforce containment for each workstream
+      workstreams.forEach(workstream => {
+        enforceWorkstreamContainment(
+          workstream.id,
+          workstreamPositions,
+          milestonePositions,
+          milestonePlacements,
+          milestonesGroup,
+          setMilestonePositions,
+          placementCoordinates
+        );
+      });
+
+      // Finally, ensure all visual connections are updated
+      const updateAllConnections = () => {
+        activities.forEach(activity => {
+          updateVisualConnectionsForNode(activity.sourceMilestoneId);
+        });
+
+        dependencies.forEach(dep => {
+          updateVisualConnectionsForNode(dep.source);
+        });
+      };
+
+      // Defer connection updates to ensure DOM is ready
+      setTimeout(updateAllConnections, 50);
+    }
+  }, [
+    workstreamPositions, 
+    workstreamGroup, 
+    workstreams, 
+    milestonePositions, 
+    milestonePlacements, 
+    milestonesGroup, 
+    setMilestonePositions, 
+    placementCoordinates, 
+    activities, 
+    dependencies, 
+    updateVisualConnectionsForNode
+  ]);
+
+  // FlightmapVisualization.tsx - Add this effect
+  useEffect(() => {
+    // Update visual elements when milestone positions change
+    if (milestonesGroup.current && Object.keys(milestonePositions).length > 0) {
+      // For each milestone node with a stored position
+      Object.entries(milestonePositions).forEach(([nodeId, position]) => {
+        milestonesGroup.current!.selectAll(".milestone")
+          .filter((d: any) => d && d.id === nodeId)
+          .each(function(d: any) {
+            // Get current transform to preserve X position 
+            const currentTransform = d3.select(this).attr("transform") || "";
+            let currentX = 0;
+
+            const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+            if (translateMatch) {
+              currentX = parseFloat(translateMatch[1]);
+            }
+
+            // Apply proper transform
+            d3.select(this)
+              .attr("transform", `translate(${currentX}, ${position.y - d.initialY})`);
+
+            // Update connections
+            const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
+            const workstreamY = workstreamPositions[workstreamId]?.y || d.initialY;
+
+            d3.select(this).select("line.connection-line")
+              .attr("y1", position.y)
+              .attr("y2", workstreamY);
+          });
+      });
+
+      // Defer connection updates
+      setTimeout(() => {
+        if (!milestonesGroup.current) return;
+
+        // Update all connections
+        activities.forEach(activity => {
+          updateVisualConnectionsForNode(activity.sourceMilestoneId);
+        });
+
+        dependencies.forEach(dep => {
+          updateVisualConnectionsForNode(dep.source);
+        });
+      }, 50);
+    }
+  }, [
+    milestonePositions, 
+    milestonesGroup, 
+    workstreamPositions,
+    activities,
+    dependencies,
+    updateVisualConnectionsForNode
+  ]);
 
   // 5. Main visualization rendering - execute when data, scales, or container changes
   useEffect(() => {
