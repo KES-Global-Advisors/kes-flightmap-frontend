@@ -129,3 +129,64 @@ export function calculateConstrainedY(
   
   return Math.max(wsTopBoundary, Math.min(wsBottomBoundary, currentY));
 }
+
+/**
+ * Updates workstream position across all state representations
+ */
+export function updateWorkstreamPosition(
+  workstreamId: number,
+  newY: number,
+  options: {
+    placementCoordinates: Record<string, any>,
+    margin: { top: number },
+    contentHeight: number,
+    dataId: number,
+    setWorkstreamPositions: React.Dispatch<React.SetStateAction<Record<number, { y: number }>>>,
+    debouncedUpsertPosition: (
+      flightmapId: number, 
+      nodeType: 'milestone'|'workstream', 
+      nodeId: number | string, 
+      relY: number, 
+      isDuplicate?: boolean, 
+      duplicateKey?: string, 
+      originalNodeId?: number
+    ) => void,
+  }
+) {
+  const { 
+    placementCoordinates, 
+    margin, 
+    contentHeight, 
+    dataId,
+    setWorkstreamPositions,
+    debouncedUpsertPosition,
+  } = options;
+  
+  // 1. Update reference collection (placementCoordinates)
+  const wsKey = `ws-${workstreamId}`;
+  if (placementCoordinates[wsKey]) {
+    placementCoordinates[wsKey].y = newY;
+  } else {
+    placementCoordinates[wsKey] = { x: 0, y: newY, workstreamId };
+  }
+  
+  // 2. Update React state immediately
+  setWorkstreamPositions(prev => ({
+    ...prev,
+    [workstreamId]: { y: newY }
+  }));
+  
+  // 3. Queue backend update (debounced)
+  const relY = (newY - margin.top) / contentHeight;
+  debouncedUpsertPosition(
+    dataId,
+    'workstream',
+    workstreamId,
+    relY,
+    false,
+    "",
+    undefined
+  );
+  
+  return { y: newY };
+}
