@@ -150,7 +150,6 @@ export function enforceWorkstreamContainment(
             
           // Then apply proper transform with constrained Y position
           d3.select(this)
-            .transition().duration(300)
             .attr("transform", `translate(${currentX}, ${position.y - d.initialY})`);
 
           // Update connection line
