@@ -8,6 +8,7 @@ import {
   WORKSTREAM_AREA_HEIGHT, 
 } from '@/components/Flightmap/Utils/types';
 import { DEBOUNCE_TIMEOUT, updateNodePosition, calculateConstrainedY, updateWorkstreamPosition } from '@/components/Flightmap/Utils/positionManager';
+import { updateWorkstreamLines } from '@/components/Flightmap/Utils/visualUpdateUtils';
 
 /**
  * Custom hook providing drag behaviors for milestones and workstreams
@@ -24,6 +25,7 @@ export function useDragBehaviors({
   setMilestonePositions,
   placementCoordinates,
   milestonesGroup,
+  workstreamGroup,
   margin,
   contentHeight,
   xScale,
@@ -54,6 +56,7 @@ export function useDragBehaviors({
     workstreamId: number;
   }>;
   milestonesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
+  workstreamGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
   
   // Layout and scaling
   margin: { top: number; right: number; bottom: number; left: number };
@@ -306,7 +309,6 @@ export function useDragBehaviors({
     milestonesGroup: d3.Selection<SVGGElement, unknown, null, undefined>,
     workstreamId: number,
     deltaY: number,
-    workstreamY: number,
     placementCoordinates: Record<string, any>,
   ) => {
     milestonesGroup
@@ -344,11 +346,6 @@ export function useDragBehaviors({
         
         // PRINCIPLE: Apply complete transform based on current state
         d3.select(this).attr("transform", `translate(${deltaX}, ${currentY + deltaY})`);
-        
-        // Update connection line
-        d3.select(this).select("line.connection-line")
-          .attr("y1", placementData.initialY + currentY + deltaY)
-          .attr("y2", workstreamY);
       });
   }, []);
 
@@ -388,12 +385,6 @@ const createMilestoneDragBehavior = useCallback(() => {
         // Apply transform from original position
         d3.select(this)
           .attr("transform", `translate(${deltaX}, ${constrainedY - d.initialY})`);
-        
-        // Update all visual elements for consistency
-        const currentWsPosition = workstreamPositions[workstreamId] || { y: 0 };
-        d3.select(this).select("line.connection-line")
-          .attr("y1", constrainedY)
-          .attr("y2", currentWsPosition.y);
         
         // Update placement coordinates temporarily for visual updates
         if (placementCoordinates[d.id]) {
@@ -515,23 +506,39 @@ const createWorkstreamDragBehavior = useCallback(() => {
       const actualDeltaY = newY - (d.lastY || d.initialY);
       d.lastY = newY;
 
-      // Update workstream visual elements during drag for immediate responsiveness
+      // Update ONLY this workstream's visual elements during drag
       updateWorkstreamVisuals(d3.select(this), newY);
 
-      // Move all milestone nodes for this workstream during drag
+      // Move ONLY this workstream's milestone nodes during drag
       if (milestonesGroup.current) {
         moveNodesWithWorkstream(
           milestonesGroup.current,
           d.id,
           actualDeltaY,
-          newY,
           placementCoordinates
         );
       }
 
-      // Update visual connections during drag for responsive experience
-      updateActivities();
-      updateDependencies();
+      // Update only the connections related to this workstream
+      // (Instead of updating ALL activities and dependencies)
+      if (milestonesGroup.current) {
+        milestonesGroup.current
+          .selectAll(".milestone")
+          .filter(function(p: any) {
+            if (!p) return false;
+            
+            // For original nodes, ensure they belong to this workstream
+            if (!p.isDuplicate) {
+              return p.milestone && p.milestone.workstreamId === d.id;
+            }
+            
+            // For duplicates, use placementWorkstreamId
+            return p.placementWorkstreamId === d.id;
+          })
+          .each(function(p: any) {
+            updateVisualConnectionsForNode(p.id);
+          });
+      }
     })
     .on("end", function (event, d) {
       d3.select(this).classed("dragging", false);
@@ -542,7 +549,7 @@ const createWorkstreamDragBehavior = useCallback(() => {
       // Reset workstream transform to avoid double transformation
       d3.select(this).attr("transform", "translate(0, 0)");
 
-      // Use the centralized position management function
+      // Use the centralized position management function with direct workstream update
       updateWorkstreamPosition(
         d.id, 
         constrainedY, 
@@ -552,11 +559,13 @@ const createWorkstreamDragBehavior = useCallback(() => {
           contentHeight,
           dataId: data.id,
           setWorkstreamPositions,
-          debouncedUpsertPosition
+          debouncedUpsertPosition,
+          updateWorkstreamLines, // Pass the function directly
+          workstreamGroup,  // Pass the workstream group ref
         }
       );
     });
-}, [updateWorkstreamVisuals, milestonesGroup, updateActivities, updateDependencies, moveNodesWithWorkstream, placementCoordinates, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition]);
+}, [updateWorkstreamVisuals, milestonesGroup, updateVisualConnectionsForNode, moveNodesWithWorkstream, placementCoordinates, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup]);
   
 
   return {

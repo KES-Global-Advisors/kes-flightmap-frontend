@@ -35,7 +35,6 @@ import {
   calculateNodeSpacing,
   enforceWorkstreamContainment,
 } from './Utils/layoutUtils';
-import { updateWorkstreamLines } from './Utils/visualUpdateUtils';
 import { trackNodePosition } from './Utils/nodeTracking';
 import { ensureDuplicateNodeBackendRecord } from './Utils/apiUtils';
 import { useTooltip } from '../../hooks/useTooltip';
@@ -409,11 +408,12 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     setMilestonePositions,
     placementCoordinates,
     milestonesGroup,
+    workstreamGroup, // Pass workstreamGroup to enable direct updates
     margin,
     contentHeight,
     contentWidth,
     xScale,
-    debouncedUpsertPosition: debouncedUpsertPosition,
+    debouncedUpsertPosition,
     onMilestoneDeadlineChange
   });
 
@@ -477,9 +477,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       // 1. Persist to storage (debounced)
       debouncedSaveWorkstreamPositions(dataId.current, workstreamPositions);
       
-      // 2. Update workstream visuals immediately
-      updateWorkstreamLines(workstreamGroup, workstreamPositions);
-      
       // 3. Ensure milestones stay within their workstreams
       workstreams.forEach(workstream => {
         enforceWorkstreamContainment(
@@ -493,21 +490,22 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         );
       });
       
-      // 4. Update all connections with a slight delay to ensure DOM nodes are positioned
-      const updateVisualConnections = () => {
-        // Update connections for activities
-        activities.forEach(activity => {
-          updateVisualConnectionsForNode(activity.sourceMilestoneId);
-        });
-        
-        // Update connections for dependencies
-        dependencies.forEach(dep => {
-          updateVisualConnectionsForNode(dep.source);
+      // 4. Only update connections that are affected by workstream moves
+      // (Instead of ALL connections)
+      const updateRelevantConnections = () => {
+        // Find milestones belonging to moved workstreams and update their connections
+        milestonesGroup.current?.selectAll(".milestone").each(function(d: any) {
+          if (!d) return;
+          
+          const wsId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
+          if (workstreamPositions[wsId]) {
+            updateVisualConnectionsForNode(d.id);
+          }
         });
       };
       
       // Use requestAnimationFrame for smoother visual updates
-      requestAnimationFrame(updateVisualConnections);
+      requestAnimationFrame(updateRelevantConnections);
     }
   }, [
     workstreamPositions,
@@ -519,8 +517,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     milestonesGroup,
     setMilestonePositions,
     placementCoordinates,
-    activities,
-    dependencies,
     updateVisualConnectionsForNode,
     dataId
   ]);
@@ -736,21 +732,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           .attr("fill", "white")
           .text(milestone.name);
         wrapText(textEl as d3.Selection<SVGTextElement, unknown, null, undefined>, 100);
-
-         // Add connection line to workstream
-        const workstreamY = workstreamPositions[workstream.id]?.y || 
-         yScale(workstream.id.toString()) || 0;
-        milestoneGroup
-          .append("line")
-          .attr("class", "connection-line")
-          .attr("x1", x)
-          .attr("y1", y)
-          .attr("x2", x)
-          .attr("y2", workstreamY)
-          .attr("stroke", workstream.color)
-          .attr("stroke-width", 0.5)
-          .attr("stroke-opacity", 0.5)
-          .attr("stroke-dasharray", "3 2");
 
         if (milestone.status) {
           const statusStroke = getStatusColor(milestone.status);

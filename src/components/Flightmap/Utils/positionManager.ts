@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/utils/flightmap/positionManager.ts - New file
+// src/utils/flightmap/positionManager.ts
 import * as d3 from 'd3';
 import { 
   WORKSTREAM_AREA_HEIGHT, 
@@ -151,6 +151,12 @@ export function updateWorkstreamPosition(
       duplicateKey?: string, 
       originalNodeId?: number
     ) => void,
+    updateWorkstreamLines?: (
+      workstreamGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
+      workstreamPositions: Record<number, { y: number }>,
+      changedWorkstreamId?: number
+    ) => void,
+    workstreamGroup?: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
   }
 ) {
   const { 
@@ -160,6 +166,8 @@ export function updateWorkstreamPosition(
     dataId,
     setWorkstreamPositions,
     debouncedUpsertPosition,
+    updateWorkstreamLines,
+    workstreamGroup,
   } = options;
   
   // 1. Update reference collection (placementCoordinates)
@@ -170,13 +178,28 @@ export function updateWorkstreamPosition(
     placementCoordinates[wsKey] = { x: 0, y: newY, workstreamId };
   }
   
-  // 2. Update React state immediately
+  // 2. Update React state immediately - but include the changedWorkstreamId
   setWorkstreamPositions(prev => ({
     ...prev,
     [workstreamId]: { y: newY }
   }));
   
-  // 3. Queue backend update (debounced)
+  // 3. If updateWorkstreamLines is provided, update the DOM directly only for this workstream
+  if (updateWorkstreamLines && workstreamGroup) {
+    const updatedPositions = {
+      ...Object.fromEntries(
+        Object.entries(placementCoordinates)
+          .filter(([key]) => key.startsWith('ws-'))
+          .map(([key, value]) => [key.substring(3), { y: value.y }])
+      ),
+      [workstreamId]: { y: newY }
+    };
+    
+    // Only update the specific workstream that changed
+    updateWorkstreamLines(workstreamGroup, updatedPositions, workstreamId);
+  }
+  
+  // 4. Queue backend update (debounced)
   const relY = (newY - margin.top) / contentHeight;
   debouncedUpsertPosition(
     dataId,

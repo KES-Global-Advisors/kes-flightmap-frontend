@@ -5,14 +5,25 @@ import { WorkstreamPositions, WORKSTREAM_AREA_HEIGHT } from './types';
 
 /**
  * Updates workstream line positions based on current workstream positions
+ * @param workstreamGroup The D3 selection for workstream groups
+ * @param workstreamPositions Current positions of all workstreams
+ * @param changedWorkstreamId Optional ID of only the workstream that changed (to avoid updating all)
  */
 export function updateWorkstreamLines(
   workstreamGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
-  workstreamPositions: WorkstreamPositions
+  workstreamPositions: WorkstreamPositions,
+  changedWorkstreamId?: number
 ) {
   if (!workstreamGroup.current) return;
   
-  workstreamGroup.current.selectAll(".workstream").each(function(d: any) {
+  // If changedWorkstreamId is provided, only update that specific workstream
+  // Otherwise, update all workstreams (for initial render or explicit "update all" cases)
+  const workstreamsToUpdate = changedWorkstreamId !== undefined
+    ? workstreamGroup.current.selectAll(".workstream")
+        .filter((d: any) => d && d.id === changedWorkstreamId)
+    : workstreamGroup.current.selectAll(".workstream");
+  
+  workstreamsToUpdate.each(function(d: any) {
     const workstreamId = d.id;
     const wsGroup = d3.select(this);
     
