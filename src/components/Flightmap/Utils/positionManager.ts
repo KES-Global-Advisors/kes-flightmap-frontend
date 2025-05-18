@@ -57,31 +57,23 @@ export function updateNodePosition(
     if (newPosition.y !== undefined) placementCoordinates[nodeId].y = newPosition.y;
   }
   
-  // 2. Update DOM if needed
+  // 2. Update DOM if needed - CONSISTENTLY USING TRANSFORMS
   if (updateDOM && milestonesGroup.current) {
     milestonesGroup.current.selectAll(".milestone")
       .filter((d: any) => d && d.id === nodeId)
       .each(function(d: any) {
-        // Get current transform 
-        const currentTransform = d3.select(this).attr("transform") || "";
-        let currentX = 0;
-        let currentY = 0;
+        // Calculate transform based on the difference from initial position
+        // This ensures consistent transform application
+        const newX = newPosition.x !== undefined ? newPosition.x - d.initialX : 0;
+        const newY = newPosition.y !== undefined ? newPosition.y - d.initialY : 0;
         
-        const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-        if (translateMatch) {
-          currentX = parseFloat(translateMatch[1]);
-          currentY = parseFloat(translateMatch[2]);
-        }
-        
-        // Determine new transform coordinates
-        const newX = newPosition.x !== undefined ? newPosition.x - d.initialX : currentX;
-        const newY = newPosition.y !== undefined ? newPosition.y - d.initialY : currentY;
-        
-        // Reset transform first, then apply new one
+        // Apply transform directly without resetting first
+        // This is a key change - we're setting an absolute transform rather than
+        // modifying an existing one, which prevents transform compounding
         d3.select(this)
           .attr("transform", `translate(${newX}, ${newY})`);
           
-        // Update connection line if y position changed
+        // Update connection line position based on absolute coordinates
         if (newPosition.y !== undefined) {
           const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
           const workstreamY = placementCoordinates[`ws-${workstreamId}`]?.y || d.workstreamY || 0;
@@ -151,11 +143,6 @@ export function updateWorkstreamPosition(
       duplicateKey?: string, 
       originalNodeId?: number
     ) => void,
-    updateWorkstreamLines?: (
-      workstreamGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
-      workstreamPositions: Record<number, { y: number }>,
-      changedWorkstreamId?: number
-    ) => void,
     workstreamGroup?: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
   }
 ) {
@@ -166,7 +153,6 @@ export function updateWorkstreamPosition(
     dataId,
     setWorkstreamPositions,
     debouncedUpsertPosition,
-    updateWorkstreamLines,
     workstreamGroup,
   } = options;
   
@@ -184,19 +170,35 @@ export function updateWorkstreamPosition(
     [workstreamId]: { y: newY }
   }));
   
-  // Update the DOM directly ONLY for THIS workstream
-  if (updateWorkstreamLines && workstreamGroup) {
-    const updatedPositions = {
-      ...Object.fromEntries(
-        Object.entries(placementCoordinates)
-          .filter(([key]) => key.startsWith('ws-'))
-          .map(([key, value]) => [key.substring(3), { y: value.y }])
-      ),
-      [workstreamId]: { y: newY }
-    };
-    
-    // Only update the specific workstream that changed
-    updateWorkstreamLines(workstreamGroup, updatedPositions, workstreamId);
+  // Update the DOM directly using transforms for THIS workstream
+  if (workstreamGroup && workstreamGroup.current) {
+    workstreamGroup.current.selectAll(".workstream")
+      .filter((d: any) => d && d.id === workstreamId)
+      .each(function(d: any) {
+        // Calculate delta from initial position for a consistent transform
+        const deltaY = newY - d.initialY;
+        
+        // Apply transform directly based on delta from initial position
+        d3.select(this)
+          .attr("transform", `translate(0, ${deltaY})`);
+        
+        // Update internal elements that need direct positioning
+        // (these use absolute coordinates, not transforms)
+        const wsGroup = d3.select(this);
+        
+        // Adjust text vertical position relative to workstream center
+        wsGroup.select("text")
+          .attr("y", newY);
+        
+        // Adjust guideline position
+        wsGroup.select("line.workstream-guideline")
+          .attr("y1", newY)
+          .attr("y2", newY);
+        
+        // Adjust workstream area rectangle position, centered on workstream
+        wsGroup.select("rect.workstream-area")
+          .attr("y", newY - WORKSTREAM_AREA_HEIGHT / 2);
+      });
   }
   
   // Queue backend update (debounced)

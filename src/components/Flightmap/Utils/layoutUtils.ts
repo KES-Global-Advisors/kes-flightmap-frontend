@@ -76,7 +76,8 @@ export function calculateNodeSpacing(
 
 /**
  * Ensures all nodes remain within their workstream's boundaries
- * after any workstream position change
+ * after any workstream position change, while maintaining
+ * consistent transform-based positioning
  */
 export function enforceWorkstreamContainment(
   workstreamId: number,
@@ -127,29 +128,19 @@ export function enforceWorkstreamContainment(
       ...updatedPositions
     }));
 
-    // Force visual update for affected nodes
+    // Force visual update for affected nodes using consistent transforms
     if (milestonesGroup.current) {
       Object.entries(updatedPositions).forEach(([nodeId, position]) => {
         milestonesGroup.current!.selectAll(".milestone")
           .filter((d: any) => d && d.id === nodeId)
           .each(function(d: any) {
-            // Get current transform to preserve x translation
-            const currentTransform = d3.select(this).attr("transform") || "";
-            let currentX = 0;
+            // Calculate proper transform based on difference from initial position
+            const deltaY = position.y - d.initialY;
             
-            const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-            if (translateMatch) {
-              currentX = parseFloat(translateMatch[1]);
-            }
-            
-            // Reset transform first to avoid compounding
-            d3.select(this)
-              .attr("transform", "translate(0, 0)");
-              
-            // Then apply proper transform with constrained Y position
+            // Apply transform directly based on the delta
             d3.select(this)
               .transition().duration(300)
-              .attr("transform", `translate(${currentX}, ${position.y - d.initialY})`);
+              .attr("transform", `translate(0, ${deltaY})`);
           });
       });
     }

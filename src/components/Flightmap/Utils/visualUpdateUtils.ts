@@ -5,6 +5,9 @@ import { WorkstreamPositions, WORKSTREAM_AREA_HEIGHT } from './types';
 
 /**
  * Updates workstream line positions based on current workstream positions
+ * using a consistent transform approach for workstream groups and
+ * direct attributes for child elements
+ * 
  * @param workstreamGroup The D3 selection for workstream groups
  * @param workstreamPositions Current positions of all workstreams
  * @param changedWorkstreamId Optional ID of only the workstream that changed (to avoid updating all)
@@ -27,19 +30,23 @@ export function updateWorkstreamLines(
     const workstreamId = d.id;
     const wsGroup = d3.select(this);
     
-    // Get the current position from state - this is the source of truth
+    // Get the current position from state - this is the single source of truth
     const y = workstreamPositions[workstreamId]?.y || d.initialY;
     
-    // PRINCIPLE: First reset the transform to avoid double transformation
-    wsGroup.attr("transform", "translate(0, 0)");
+    // Calculate transform based on the difference from initial position
+    const deltaY = y - d.initialY;
     
-    // PRINCIPLE: Then update all element positions based on state
+    // Apply consistent transform to the group
+    wsGroup.attr("transform", `translate(0, ${deltaY})`);
+    
+    // Update absolute positions of child elements based on the true Y position
+    // These elements use absolute coordinates, not relative positions with transforms
+    wsGroup.select("text")
+      .attr("y", y);
+      
     wsGroup.select("line.workstream-guideline")
       .attr("y1", y)
       .attr("y2", y);
-      
-    wsGroup.select("text")
-      .attr("y", y);
       
     wsGroup.select("rect.workstream-area")
       .attr("y", y - WORKSTREAM_AREA_HEIGHT / 2);

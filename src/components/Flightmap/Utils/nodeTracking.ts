@@ -1,9 +1,9 @@
 // src/utils/flightmap/nodeTracking.ts
 import { MilestonePlacement } from './dataProcessing';
-import { PlacementCoordinate } from './types';
 
 /**
  * Tracks node positions in the appropriate coordinate storage
+ * to maintain a single source of truth for positions
  */
 export function trackNodePosition(
   placement: MilestonePlacement,
@@ -11,26 +11,32 @@ export function trackNodePosition(
   y: number,
   duplicateNodeCoordinates: React.MutableRefObject<Record<string, { x: number; y: number }>>,
   originalNodeCoordinates: React.MutableRefObject<Record<string, { x: number; y: number }>>,
-  placementCoordinates: Record<string, PlacementCoordinate>
+  placementCoordinates: Record<string, { 
+    x: number; 
+    y: number; 
+    isDuplicate?: boolean; 
+    originalId?: number; 
+    duplicateKey?: string | number;
+    workstreamId: number;
+  }>
 ) {
+  // Store position in dedicated tracking object based on node type
   if (placement.isDuplicate) {
     duplicateNodeCoordinates.current[placement.id] = { x, y };
-    // Store original reference for cross-referencing
-    placementCoordinates[placement.id] = {
-      x,
-      y,
-      isDuplicate: true,
-      originalId: placement.originalMilestoneId,
-      duplicateKey: placement.duplicateKey, // Track the duplicate key
-      workstreamId: placement.placementWorkstreamId // Add workstream ID
-    };
   } else {
     originalNodeCoordinates.current[placement.id] = { x, y };
-    placementCoordinates[placement.id] = {
-      x,
-      y,
-      isDuplicate: false,
-      workstreamId: placement.placementWorkstreamId // Add workstream ID
-    };
   }
+  
+  // Store position in unified placement coordinates object
+  // which serves as the single source of truth for all element positions
+  placementCoordinates[placement.id] = {
+    x,
+    y,
+    isDuplicate: !!placement.isDuplicate,
+    originalId: placement.originalMilestoneId,
+    duplicateKey: placement.duplicateKey,
+    workstreamId: placement.isDuplicate 
+      ? placement.placementWorkstreamId 
+      : placement.milestone.workstreamId
+  };
 }
