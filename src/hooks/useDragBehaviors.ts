@@ -4,12 +4,7 @@ import { useCallback } from 'react';
 import * as d3 from 'd3';
 import { DefaultLinkObject } from 'd3-shape';
 import { MilestonePlacement } from '@/components/Flightmap/Utils/dataProcessing';
-// import { 
-//   WORKSTREAM_AREA_HEIGHT, 
-// } from '@/components/Flightmap/Utils/types';
 import { DEBOUNCE_TIMEOUT, updateNodePosition, calculateConstrainedY, updateWorkstreamPosition } from '@/components/Flightmap/Utils/positionManager';
-import { updateWorkstreamLines } from '@/components/Flightmap/Utils/visualUpdateUtils';
-// import { enforceWorkstreamContainment } from '@/components/Flightmap/Utils/layoutUtils';
 
 /**
  * Custom hook providing drag behaviors for milestones and workstreams
@@ -291,67 +286,91 @@ export function useDragBehaviors({
   /**
    * Creates drag behavior for milestone nodes
    */
-const createMilestoneDragBehavior = useCallback(() => {
+  const createMilestoneDragBehavior = useCallback(() => {
     // Batch state to reduce renders
     let pendingPositionUpdates: Record<string, { y: number }> = {};
     let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
     
     return d3.drag<SVGGElement, any>()
       .on("start", function(event, d) {
+        // Add dragging class for CSS styling
         d3.select(this).classed("dragging", true);
-        // Store the initial position at drag start
+        
+        // Important: Raise this element to the top of the rendering order
+        // This ensures the node appears above connection lines during drag
+        d3.select(this).raise();
+        
+        // Store the initial drag position 
         d.dragStartX = event.x;
         d.dragStartY = event.y;
+        
         // Clear any pending updates
         if (dragEndTimeout) clearTimeout(dragEndTimeout);
         pendingPositionUpdates = {};
       })
       .on("drag", function(event, d) {
-        // Get current workstream position (may have updated)
+        // Get current workstream position
         const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
         
-        // Calculate deltas from original position
+        // Calculate position using delta from drag start
         const deltaX = event.x - d.dragStartX;
-        const rawNewY = d.initialY + (event.y - d.dragStartY);
+        const deltaY = event.y - d.dragStartY;
         
-        // Apply strict containment with current boundaries
+        // Calculate new absolute position
+        const newX = d.initialX + deltaX;
+        const newY = d.initialY + deltaY;
+        
+        // Apply boundary constraints
         const constrainedY = calculateConstrainedY(
-          rawNewY,
+          newY,
           workstreamId,
           workstreamPositions
         );
         
-        // Apply transform from original position
-        d3.select(this)
-          .attr("transform", `translate(${deltaX}, ${constrainedY - d.initialY})`);
+        // 1. First, update the node's position via transform
+        // This is critical - must ensure node visual update happens first
+        const node = d3.select(this);
+        node.attr("transform", `translate(${deltaX}, ${constrainedY - d.initialY})`);
         
-        // Update placement coordinates temporarily for visual updates
+        // 2. Ensure the circle and text move with the transform
+        // This ensures the visual elements are immediately updated
+        const circle = node.select("circle");
+        if (!circle.empty()) {
+          // Make sure circle gets explicit z-index priority in addition to transform
+          circle.raise();
+        }
+        
+        // 3. Update placement coordinates for visual connections
         if (placementCoordinates[d.id]) {
-          // Update only the Y position since X is controlled by timeline constraints
+          placementCoordinates[d.id].x = newX; // Also update X during drag for smoother motion
           placementCoordinates[d.id].y = constrainedY;
         }
         
-        // Update only the visual connections without state changes
+        // 4. Update the visual connections after node is already moved
+        // This ensures we don't see the node "lagging behind" the connections
         updateVisualConnectionsForNode(d.id);
       })
       .on("end", function(event, d) {
         d3.select(this).classed("dragging", false);
         
-        // Determine which workstream this node belongs to
+        // Determine workstream
         const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
         
-        // Constrain final Y position to stay within workstream area
-        const rawNewY = d.initialY + (event.y - d.dragStartY);
+        // Calculate final position
+        const deltaX = event.x - d.dragStartX;
+        const deltaY = event.y - d.dragStartY;
+        const newX = d.initialX + deltaX;
+        const newY = d.initialY + deltaY;
+        
+        // Apply constraints
         const constrainedY = calculateConstrainedY(
-          rawNewY,
+          newY,
           workstreamId,
           workstreamPositions
         );
         
-        // Horizontal (X) position is controlled by timeline
-        const droppedX = d.initialX + (event.x - d.initialX);
-        
-        // Find closest timeline marker
+        // Find closest timeline marker for X position
+        const droppedX = newX;
         const closestMarker = timelineMarkers.reduce((prev, curr) => {
           const prevDist = Math.abs(xScale(prev) - droppedX);
           const currDist = Math.abs(xScale(curr) - droppedX);
@@ -361,26 +380,24 @@ const createMilestoneDragBehavior = useCallback(() => {
         const newDeadline = closestMarker;
         const snappedX = xScale(newDeadline);
         
-        // Update placement coordinates with final position
-        if (placementCoordinates[d.id]) {
-          updateNodePosition(
-            d.id,
-            { x: snappedX, y: constrainedY },
-            {
-              milestonesGroup,
-              placementCoordinates,
-              margin,
-              contentHeight,
-              dataId: data.id,
-              isDuplicate: d.isDuplicate,
-              originalMilestoneId: d.originalMilestoneId,
-              debouncedUpsertPosition,
-              updateDOM: true,
-              updateConnections: true,
-              updateConnectionsFunction: updateVisualConnectionsForNode
-            }
-          );
-        }
+        // Update node position with consistent transform approach
+        updateNodePosition(
+          d.id,
+          { x: snappedX, y: constrainedY },
+          {
+            milestonesGroup,
+            placementCoordinates,
+            margin,
+            contentHeight,
+            dataId: data.id,
+            isDuplicate: d.isDuplicate,
+            originalMilestoneId: d.originalMilestoneId,
+            debouncedUpsertPosition,
+            updateDOM: true,
+            updateConnections: true,
+            updateConnectionsFunction: updateVisualConnectionsForNode
+          }
+        );
         
         // Store position in pending updates for batched state update
         pendingPositionUpdates[d.id] = { y: constrainedY };
@@ -425,11 +442,11 @@ const createMilestoneDragBehavior = useCallback(() => {
                 });
             }
           }
-  
+          
           pendingPositionUpdates = {};
         }, DEBOUNCE_TIMEOUT);
       });
-  }, [workstreamPositions, placementCoordinates, updateVisualConnectionsForNode, timelineMarkers, xScale, milestonesGroup, margin, contentHeight, data.id, debouncedUpsertPosition, setMilestonePositions, onMilestoneDeadlineChange]);
+  }, [workstreamPositions, timelineMarkers, xScale, updateVisualConnectionsForNode, milestonesGroup, placementCoordinates, margin, contentHeight, data.id, debouncedUpsertPosition, setMilestonePositions, onMilestoneDeadlineChange]);
 
   /**
    * Creates drag behavior for workstream lanes
@@ -547,7 +564,7 @@ const createMilestoneDragBehavior = useCallback(() => {
             dataId: data.id,
             setWorkstreamPositions,
             debouncedUpsertPosition,
-            updateWorkstreamLines, 
+            // updateWorkstreamLines, 
             workstreamGroup,
           }
         );
