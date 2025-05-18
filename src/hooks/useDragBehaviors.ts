@@ -4,11 +4,12 @@ import { useCallback } from 'react';
 import * as d3 from 'd3';
 import { DefaultLinkObject } from 'd3-shape';
 import { MilestonePlacement } from '@/components/Flightmap/Utils/dataProcessing';
-import { 
-  WORKSTREAM_AREA_HEIGHT, 
-} from '@/components/Flightmap/Utils/types';
+// import { 
+//   WORKSTREAM_AREA_HEIGHT, 
+// } from '@/components/Flightmap/Utils/types';
 import { DEBOUNCE_TIMEOUT, updateNodePosition, calculateConstrainedY, updateWorkstreamPosition } from '@/components/Flightmap/Utils/positionManager';
 import { updateWorkstreamLines } from '@/components/Flightmap/Utils/visualUpdateUtils';
+// import { enforceWorkstreamContainment } from '@/components/Flightmap/Utils/layoutUtils';
 
 /**
  * Custom hook providing drag behaviors for milestones and workstreams
@@ -20,8 +21,10 @@ export function useDragBehaviors({
   allMilestones,
   activities,
   dependencies,
+  // milestonePlacements,
   workstreamPositions,
   setWorkstreamPositions,
+  // milestonePositions,
   setMilestonePositions,
   placementCoordinates,
   milestonesGroup,
@@ -285,70 +288,6 @@ export function useDragBehaviors({
     });
   }, [dependencies, updateVisualConnectionsForNode]);
 
-  // Add this helper function within the useDragBehaviors hook
-  const updateWorkstreamVisuals = useCallback((
-    wsGroup: d3.Selection<SVGGElement, any, null, undefined>,
-    y: number
-  ) => {
-    // Update the rectangle position
-    wsGroup.select("rect.workstream-area")
-      .attr("y", y - WORKSTREAM_AREA_HEIGHT / 2);
-  
-    // Update the guideline position
-    wsGroup.select("line.workstream-guideline")
-      .attr("y1", y)
-      .attr("y2", y);
-  
-    // Update the text label position
-    wsGroup.select("text")
-      .attr("y", y);
-  }, []);
-      
-  // Add this helper function within the useDragBehaviors hook
-  const moveNodesWithWorkstream = useCallback((
-    milestonesGroup: d3.Selection<SVGGElement, unknown, null, undefined>,
-    workstreamId: number,
-    deltaY: number,
-    placementCoordinates: Record<string, any>,
-  ) => {
-    milestonesGroup
-      .selectAll(".milestone")
-      .filter(function(p: any) {
-        if (!p) return false;
-        
-        // For original nodes, ensure they belong to this workstream
-        if (!p.isDuplicate) {
-          return p.milestone && p.milestone.workstreamId === workstreamId;
-        }
-        
-        // For duplicates, use placementWorkstreamId
-        return p.placementWorkstreamId === workstreamId;
-      })
-      .each(function (placementData: any) {
-        // PRINCIPLE: Update data first
-        if (placementCoordinates[placementData.id]) {
-          placementCoordinates[placementData.id].y += deltaY;
-        }
-        
-        // Get current transform 
-        const currentTransform = d3.select(this).attr("transform") || "";
-        let deltaX = 0;
-        let currentY = 0;
-        
-        const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-        if (translateMatch) {
-          deltaX = parseFloat(translateMatch[1]);
-          currentY = parseFloat(translateMatch[2]);
-        }
-        
-        // PRINCIPLE: Reset transform first
-        d3.select(this).attr("transform", "translate(0, 0)");
-        
-        // PRINCIPLE: Apply complete transform based on current state
-        d3.select(this).attr("transform", `translate(${deltaX}, ${currentY + deltaY})`);
-      });
-  }, []);
-
   /**
    * Creates drag behavior for milestone nodes
    */
@@ -495,77 +434,133 @@ const createMilestoneDragBehavior = useCallback(() => {
   /**
    * Creates drag behavior for workstream lanes
    */
-const createWorkstreamDragBehavior = useCallback(() => {
-  return d3.drag<SVGGElement, any>()
-    .on("start", function () {
-      d3.select(this).classed("dragging", true);
-    })
-    .on("drag", function (event, d) {
-      const minAllowedY = 20;
-      const newY = Math.max(minAllowedY, event.y);
-      const actualDeltaY = newY - (d.lastY || d.initialY);
-      d.lastY = newY;
-
-      // Update ONLY this workstream's visual elements during drag
-      updateWorkstreamVisuals(d3.select(this), newY);
-
-      // Move ONLY this workstream's milestone nodes during drag
-      if (milestonesGroup.current) {
-        moveNodesWithWorkstream(
-          milestonesGroup.current,
-          d.id,
-          actualDeltaY,
-          placementCoordinates
-        );
-      }
-
-      // Update only the connections related to this workstream
-      // (Instead of updating ALL activities and dependencies)
-      if (milestonesGroup.current) {
-        milestonesGroup.current
-          .selectAll(".milestone")
-          .filter(function(p: any) {
-            if (!p) return false;
-            
-            // For original nodes, ensure they belong to this workstream
-            if (!p.isDuplicate) {
-              return p.milestone && p.milestone.workstreamId === d.id;
-            }
-            
-            // For duplicates, use placementWorkstreamId
-            return p.placementWorkstreamId === d.id;
-          })
-          .each(function(p: any) {
-            updateVisualConnectionsForNode(p.id);
-          });
-      }
-    })
-    .on("end", function (event, d) {
-      d3.select(this).classed("dragging", false);
-      const minAllowedY = 20;
-      const constrainedY = Math.max(minAllowedY, event.y);
-      delete d.lastY;
-
-      // Reset workstream transform to avoid double transformation
-      d3.select(this).attr("transform", "translate(0, 0)");
-
-      // Use the centralized position management function with direct workstream update
-      updateWorkstreamPosition(
-        d.id, 
-        constrainedY, 
-        {
-          placementCoordinates,
-          margin,
-          contentHeight,
-          dataId: data.id,
-          setWorkstreamPositions,
-          debouncedUpsertPosition,
-          updateWorkstreamLines, // Pass the function directly
-          workstreamGroup,  // Pass the workstream group ref
+  const createWorkstreamDragBehavior = useCallback(() => {
+    return d3.drag<SVGGElement, any>()
+      .on("start", function (event, d) {
+        d3.select(this).classed("dragging", true);
+              // Store the initial position for calculating delta
+        d.dragStartY = d.initialY;
+        d.dragStartMouseY = event.y;
+      })
+      .on("drag", function (event, d) {
+        const minAllowedY = 20;
+        const newY = Math.max(minAllowedY, event.y);
+        const deltaY = newY - d.dragStartMouseY;
+        
+        // Apply transform to move the entire workstream group
+        d3.select(this).attr("transform", `translate(0, ${deltaY})`);
+        
+        // Move ONLY THIS workstream's milestone nodes
+        if (milestonesGroup.current) {
+          milestonesGroup.current
+            .selectAll(".milestone")
+            .filter(function(p: any) {
+              if (!p) return false;
+              
+              // Filter to only THIS workstream's nodes
+              if (!p.isDuplicate) {
+                return p.milestone && p.milestone.workstreamId === d.id;
+              }
+              return p.placementWorkstreamId === d.id;
+            })
+            .each(function(p: any) {
+              // Get current transform to preserve X position
+              const currentTransform = d3.select(this).attr("transform") || "";
+              let currentX = 0;
+              // let currentY = 0;
+              
+              const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+              if (translateMatch) {
+                currentX = parseFloat(translateMatch[1]);
+              }
+              
+              // Apply transform to maintain relative position
+              d3.select(this).attr("transform", `translate(${currentX}, ${deltaY})`);
+              
+              // Update coordinates for visual connections
+              if (placementCoordinates[p.id]) {
+                placementCoordinates[p.id].y = p.initialY + deltaY;
+              }
+            });
+          
+          // Update visual connections for THIS workstream only
+          milestonesGroup.current
+            .selectAll(".milestone")
+            .filter(function(p: any) {
+              if (!p) return false;
+              if (!p.isDuplicate) {
+                return p.milestone && p.milestone.workstreamId === d.id;
+              }
+              return p.placementWorkstreamId === d.id;
+            })
+            .each(function(p: any) {
+              updateVisualConnectionsForNode(p.id);
+            });
         }
-      );
-    });
-}, [updateWorkstreamVisuals, milestonesGroup, updateVisualConnectionsForNode, moveNodesWithWorkstream, placementCoordinates, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup]);
+      })
+      .on("end", function (event, d) {
+        d3.select(this).classed("dragging", false);
+        const minAllowedY = 20;
+        const newY = Math.max(minAllowedY, event.y);
+        const deltaY = newY - d.dragStartMouseY;
+        
+        // Calculate final position
+        const finalY = d.dragStartY + deltaY;
+        
+        // Batch milestone position updates
+        const pendingMilestoneUpdates: Record<string, { y: number }> = {};
+        
+        // Gather milestone updates
+        if (milestonesGroup.current) {
+          milestonesGroup.current
+            .selectAll(".milestone")
+            .filter(function(p: any) {
+              if (!p) return false;
+              if (!p.isDuplicate) {
+                return p.milestone && p.milestone.workstreamId === d.id;
+              }
+              return p.placementWorkstreamId === d.id;
+            })
+            .each(function(p: any) {
+              if (!placementCoordinates[p.id]) return;
+              
+              // Calculate new Y position
+              const newY = p.initialY + deltaY;
+              pendingMilestoneUpdates[p.id] = { y: newY };
+              
+              // Reset transform to avoid double application
+              d3.select(this).attr("transform", `translate(0, 0)`);
+            });
+        }
+        
+        // Reset workstream group transform
+        d3.select(this).attr("transform", "translate(0, 0)");
+        
+        // Update ONLY this workstream's position
+        updateWorkstreamPosition(
+          d.id, 
+          finalY, 
+          {
+            placementCoordinates,
+            margin,
+            contentHeight,
+            dataId: data.id,
+            setWorkstreamPositions,
+            debouncedUpsertPosition,
+            updateWorkstreamLines, 
+            workstreamGroup,
+          }
+        );
+        
+        // Batch update milestone positions
+        if (Object.keys(pendingMilestoneUpdates).length > 0) {
+          setMilestonePositions(prev => ({
+            ...prev,
+            ...pendingMilestoneUpdates
+          }));
+        }
+      });
+  }, [milestonesGroup, placementCoordinates, updateVisualConnectionsForNode, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup, setMilestonePositions]);
   
 
   return {
