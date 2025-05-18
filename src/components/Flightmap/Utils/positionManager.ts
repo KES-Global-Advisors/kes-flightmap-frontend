@@ -170,7 +170,7 @@ export function updateWorkstreamPosition(
     workstreamGroup,
   } = options;
   
-  // 1. Update reference collection (placementCoordinates)
+  // Update reference collection for THIS workstream only
   const wsKey = `ws-${workstreamId}`;
   if (placementCoordinates[wsKey]) {
     placementCoordinates[wsKey].y = newY;
@@ -178,13 +178,13 @@ export function updateWorkstreamPosition(
     placementCoordinates[wsKey] = { x: 0, y: newY, workstreamId };
   }
   
-  // 2. Update React state immediately - but include the changedWorkstreamId
+  // Update React state for THIS workstream only
   setWorkstreamPositions(prev => ({
     ...prev,
     [workstreamId]: { y: newY }
   }));
   
-  // 3. If updateWorkstreamLines is provided, update the DOM directly only for this workstream
+  // Update the DOM directly ONLY for THIS workstream
   if (updateWorkstreamLines && workstreamGroup) {
     const updatedPositions = {
       ...Object.fromEntries(
@@ -199,7 +199,7 @@ export function updateWorkstreamPosition(
     updateWorkstreamLines(workstreamGroup, updatedPositions, workstreamId);
   }
   
-  // 4. Queue backend update (debounced)
+  // Queue backend update (debounced)
   const relY = (newY - margin.top) / contentHeight;
   debouncedUpsertPosition(
     dataId,

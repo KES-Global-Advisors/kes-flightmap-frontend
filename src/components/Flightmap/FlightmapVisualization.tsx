@@ -477,6 +477,11 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       // 1. Persist to storage (debounced)
       debouncedSaveWorkstreamPositions(dataId.current, workstreamPositions);
       
+    // Check if we're in the middle of dragging a milestone
+    // This prevents circular updates during milestone drags
+    const isCurrentlyDragging = milestonesGroup.current && milestonesGroup.current.select(".milestone.dragging").size() > 0;
+    
+    if (!isCurrentlyDragging) {
       // 3. Ensure milestones stay within their workstreams
       workstreams.forEach(workstream => {
         enforceWorkstreamContainment(
@@ -507,6 +512,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       // Use requestAnimationFrame for smoother visual updates
       requestAnimationFrame(updateRelevantConnections);
     }
+  }
   }, [
     workstreamPositions,
     workstreamGroup,

@@ -87,21 +87,20 @@ export function enforceWorkstreamContainment(
   setMilestonePositions: React.Dispatch<React.SetStateAction<MilestonePositions>>,
   placementCoordinates?: Record<string, any>
 ) {
+  // Only get THIS workstream's position
   const wsPosition = workstreamPositions[workstreamId] || { y: 0 };
   const wsTopBoundary = wsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
   const wsBottomBoundary = wsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
 
-  // Find all milestone nodes for this workstream with explicit type checking
+  // Find ONLY nodes that belong to THIS workstream
   const relatedNodes = Object.entries(milestonePositions)
     .filter(([nodeId]) => {
       const placement = milestonePlacements.find(p => p.id === nodeId);
       if (!placement) return false;
 
       if (placement.isDuplicate) {
-        // For duplicates, check ONLY the placement workstream
         return placement.placementWorkstreamId === workstreamId;
       } else {
-        // For originals, check ONLY the milestone's workstream
         return placement.milestone.workstreamId === workstreamId;
       }
     });
@@ -121,7 +120,7 @@ export function enforceWorkstreamContainment(
     }
   });
 
-  // Update positions if needed
+  // Only update positions if needed
   if (Object.keys(updatedPositions).length > 0) {
     setMilestonePositions(prev => ({
       ...prev,
@@ -131,32 +130,27 @@ export function enforceWorkstreamContainment(
     // Force visual update for affected nodes
     if (milestonesGroup.current) {
       Object.entries(updatedPositions).forEach(([nodeId, position]) => {
-        const nodeSelection = milestonesGroup.current!.selectAll(".milestone")
-          .filter((d: any) => d && d.id === nodeId);
-          
-        nodeSelection.each(function(d: any) {
-          // Get current transform to preserve x translation
-          const currentTransform = d3.select(this).attr("transform") || "";
-          let currentX = 0;
-          
-          const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-          if (translateMatch) {
-            currentX = parseFloat(translateMatch[1]);
-          }
-          
-          // Reset transform first to avoid compounding
-          d3.select(this)
-            .attr("transform", "translate(0, 0)");
+        milestonesGroup.current!.selectAll(".milestone")
+          .filter((d: any) => d && d.id === nodeId)
+          .each(function(d: any) {
+            // Get current transform to preserve x translation
+            const currentTransform = d3.select(this).attr("transform") || "";
+            let currentX = 0;
             
-          // Then apply proper transform with constrained Y position
-          d3.select(this)
-            .attr("transform", `translate(${currentX}, ${position.y - d.initialY})`);
-
-          // Update connection line
-          d3.select(this).select("line.connection-line")
-            .attr("y1", position.y)
-            .attr("y2", wsPosition.y);
-        });
+            const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+            if (translateMatch) {
+              currentX = parseFloat(translateMatch[1]);
+            }
+            
+            // Reset transform first to avoid compounding
+            d3.select(this)
+              .attr("transform", "translate(0, 0)");
+              
+            // Then apply proper transform with constrained Y position
+            d3.select(this)
+              .transition().duration(300)
+              .attr("transform", `translate(${currentX}, ${position.y - d.initialY})`);
+          });
       });
     }
   }
