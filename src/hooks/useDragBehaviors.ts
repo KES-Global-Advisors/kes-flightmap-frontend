@@ -1,10 +1,10 @@
 // src/hooks/useDragBehaviors.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { DefaultLinkObject } from 'd3-shape';
 import { MilestonePlacement } from '@/components/Flightmap/Utils/dataProcessing';
-import { DEBOUNCE_TIMEOUT, updateNodePosition, calculateConstrainedY, updateWorkstreamPosition } from '@/components/Flightmap/Utils/positionManager';
+import { updateNodePosition, calculateConstrainedY, updateWorkstreamPosition } from '@/components/Flightmap/Utils/positionManager';
 
 /**
  * Custom hook providing drag behaviors for milestones and workstreams
@@ -28,7 +28,8 @@ export function useDragBehaviors({
   contentHeight,
   xScale,
   debouncedUpsertPosition,
-  onMilestoneDeadlineChange
+  onMilestoneDeadlineChange,
+  connectionCache
 }: {
   // Data
   data: { id: number };
@@ -73,7 +74,62 @@ export function useDragBehaviors({
     originalNodeId?: number
   ) => void;
   onMilestoneDeadlineChange: (milestoneId: string, newDeadline: Date) => Promise<boolean>;
+  // Optional connection cache for performance
+  connectionCache?: {
+    activityMap: Map<string, any[]>;
+    dependencyMap: Map<string, any[]>;
+  };
 }) {
+  // Create connection cache if not provided
+  const internalConnectionCache = useMemo(() => {
+    // If cache already provided, use it
+    if (connectionCache) return connectionCache;
+    
+    // Otherwise create our own cache
+    const activityMap = new Map<string, any[]>();
+    const dependencyMap = new Map<string, any[]>();
+    
+    // Build activity lookup by node id
+    activities.forEach(activity => {
+      const sourceId = activity.sourceMilestoneId.toString();
+      
+      // Map source → activities
+      if (!activityMap.has(sourceId)) {
+        activityMap.set(sourceId, []);
+      }
+      activityMap.get(sourceId)?.push(activity);
+      
+      // Map targets → activities 
+      (activity.targetMilestoneIds || []).forEach((targetId: any) => {
+        const targetIdStr = targetId.toString();
+        if (!activityMap.has(targetIdStr)) {
+          activityMap.set(targetIdStr, []);
+        }
+        activityMap.get(targetIdStr)?.push(activity);
+      });
+    });
+    
+    // Build dependency lookup by node id
+    dependencies.forEach(dep => {
+      const sourceId = dep.source.toString();
+      const targetId = dep.target.toString();
+      
+      // Map source → dependencies
+      if (!dependencyMap.has(sourceId)) {
+        dependencyMap.set(sourceId, []);
+      }
+      dependencyMap.get(sourceId)?.push(dep);
+      
+      // Map target → dependencies
+      if (!dependencyMap.has(targetId)) {
+        dependencyMap.set(targetId, []);
+      }
+      dependencyMap.get(targetId)?.push(dep);
+    });
+    
+    return { activityMap, dependencyMap };
+  }, [connectionCache, activities, dependencies]);
+
   /**
    * Updates visual connections for a specific node
    */
@@ -88,18 +144,12 @@ export function useDragBehaviors({
 
     const isDuplicate = Boolean(nodeData.isDuplicate);
 
-    // Find activities that involve this specific node
-    const activitiesToUpdate = activities.filter(activity => {
-      const isSource = activity.sourceMilestoneId.toString() === nodeIdStr;
-      const isTarget = activity.targetMilestoneIds && activity.targetMilestoneIds.some(
-        (id: number) => id.toString() === nodeIdStr
-      );
-
-      return isSource || isTarget;
-    });
+    // Use connection cache to find relevant activities and dependencies instead of filtering
+    const relevantActivities = internalConnectionCache.activityMap.get(nodeIdStr) || [];
+    const relevantDependencies = internalConnectionCache.dependencyMap.get(nodeIdStr) || [];
 
     // Update each affected activity path
-    activitiesToUpdate.forEach(activity => {
+    relevantActivities.forEach(activity => {
       const sourceCoord = placementCoordinates[activity.sourceMilestoneId.toString()];
       if (!sourceCoord) return;
 
@@ -159,14 +209,8 @@ export function useDragBehaviors({
       });
     });
 
-    // Find dependencies that involve this specific node
-    const dependenciesToUpdate = dependencies.filter(dep => 
-      dep.source.toString() === nodeIdStr || 
-      dep.target.toString() === nodeIdStr
-    );
-
     // Update each affected dependency line
-    dependenciesToUpdate.forEach(dep => {
+    relevantDependencies.forEach(dep => {
       const sourceCoord = placementCoordinates[dep.source.toString()];
       const targetCoord = placementCoordinates[dep.target.toString()];
 
@@ -263,23 +307,37 @@ export function useDragBehaviors({
         }
       });
     }
-  }, [activities, dependencies, placementCoordinates, allMilestones, milestonesGroup]);
+  }, [activities, dependencies, placementCoordinates, allMilestones, milestonesGroup, internalConnectionCache]);
 
   /**
-   * Updates all activity connections
+   * Updates all activity connections efficiently by using the node cache
    */
   const updateActivities = useCallback(() => {
+    // Get unique source nodes to update
+    const sourceNodes = new Set<string>();
     activities.forEach(activity => {
-      updateVisualConnectionsForNode(activity.sourceMilestoneId);
+      sourceNodes.add(activity.sourceMilestoneId.toString());
+    });
+    
+    // Update each source node's connections
+    Array.from(sourceNodes).forEach(nodeId => {
+      updateVisualConnectionsForNode(nodeId);
     });
   }, [activities, updateVisualConnectionsForNode]);
 
   /**
-   * Updates all dependency connections
+   * Updates all dependency connections efficiently by using the node cache
    */
   const updateDependencies = useCallback(() => {
+    // Get unique source nodes to update
+    const sourceNodes = new Set<string>();
     dependencies.forEach(dep => {
-      updateVisualConnectionsForNode(dep.source);
+      sourceNodes.add(dep.source.toString());
+    });
+    
+    // Update each source node's connections
+    Array.from(sourceNodes).forEach(nodeId => {
+      updateVisualConnectionsForNode(nodeId);
     });
   }, [dependencies, updateVisualConnectionsForNode]);
 
@@ -287,10 +345,6 @@ export function useDragBehaviors({
    * Creates drag behavior for milestone nodes
    */
   const createMilestoneDragBehavior = useCallback(() => {
-    // Batch state to reduce renders
-    let pendingPositionUpdates: Record<string, { y: number }> = {};
-    let dragEndTimeout: ReturnType<typeof setTimeout> | null = null;
-    
     return d3.drag<SVGGElement, any>()
       .on("start", function(event, d) {
         // Add dragging class for CSS styling
@@ -303,10 +357,6 @@ export function useDragBehaviors({
         // Store the initial drag position 
         d.dragStartX = event.x;
         d.dragStartY = event.y;
-        
-        // Clear any pending updates
-        if (dragEndTimeout) clearTimeout(dragEndTimeout);
-        pendingPositionUpdates = {};
       })
       .on("drag", function(event, d) {
         // Get current workstream position
@@ -380,6 +430,12 @@ export function useDragBehaviors({
         const newDeadline = closestMarker;
         const snappedX = xScale(newDeadline);
         
+        // Check if position has actually changed significantly
+        const currentPosition = placementCoordinates[d.id];
+        const positionChanged = !currentPosition || 
+          Math.abs(currentPosition.y - constrainedY) > 1 ||
+          Math.abs(currentPosition.x - snappedX) > 1;
+        
         // Update node position with consistent transform approach
         updateNodePosition(
           d.id,
@@ -399,52 +455,46 @@ export function useDragBehaviors({
           }
         );
         
-        // Store position in pending updates for batched state update
-        pendingPositionUpdates[d.id] = { y: constrainedY };
-        
-        // Batch position updates with debouncing
-        if (dragEndTimeout) clearTimeout(dragEndTimeout);
-        dragEndTimeout = setTimeout(() => {
-          // Apply all pending position updates at once
+        // Only update state if position actually changed (prevents unnecessary re-renders)
+        if (positionChanged) {
+          // Update just this node's position directly (minimize state updates)
           setMilestonePositions(prev => ({
             ...prev,
-            ...pendingPositionUpdates
+            [d.id]: { y: constrainedY }
           }));
-          
-          // Handle deadline changes only for original nodes
-          if (!d.isDuplicate) {
-            const originalDateMs = new Date(d.milestone.deadline).getTime();
-            const newDateMs = newDeadline.getTime();
-            if (newDateMs !== originalDateMs) {
-              onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
-                .then((ok) => {
-                  if (!ok) {
-                    // Rollback X-axis position
-                    const origX = xScale(new Date(d.milestone.deadline));
-                    updateNodePosition(
-                      d.id,
-                      { x: origX },
-                      {
-                        milestonesGroup,
-                        placementCoordinates,
-                        margin,
-                        contentHeight,
-                        dataId: data.id,
-                        isDuplicate: d.isDuplicate,
-                        originalMilestoneId: d.originalMilestoneId,
-                        debouncedUpsertPosition,
-                        updateDOM: true,
-                        updateConnections: true,
-                        updateConnectionsFunction: updateVisualConnectionsForNode
-                      }
-                    );
-                  }
-                });
-            }
+        }
+        
+        // Handle deadline changes only for original nodes
+        if (!d.isDuplicate) {
+          const originalDateMs = new Date(d.milestone.deadline).getTime();
+          const newDateMs = newDeadline.getTime();
+          if (newDateMs !== originalDateMs) {
+            onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
+              .then((ok) => {
+                if (!ok) {
+                  // Rollback X-axis position
+                  const origX = xScale(new Date(d.milestone.deadline));
+                  updateNodePosition(
+                    d.id,
+                    { x: origX },
+                    {
+                      milestonesGroup,
+                      placementCoordinates,
+                      margin,
+                      contentHeight,
+                      dataId: data.id,
+                      isDuplicate: d.isDuplicate,
+                      originalMilestoneId: d.originalMilestoneId,
+                      debouncedUpsertPosition,
+                      updateDOM: true,
+                      updateConnections: true,
+                      updateConnectionsFunction: updateVisualConnectionsForNode
+                    }
+                  );
+                }
+              });
           }
-          
-          pendingPositionUpdates = {};
-        }, DEBOUNCE_TIMEOUT);
+        }
       });
   }, [workstreamPositions, timelineMarkers, xScale, updateVisualConnectionsForNode, milestonesGroup, placementCoordinates, margin, contentHeight, data.id, debouncedUpsertPosition, setMilestonePositions, onMilestoneDeadlineChange]);
 
@@ -452,12 +502,19 @@ export function useDragBehaviors({
    * Creates drag behavior for workstream lanes
    */
   const createWorkstreamDragBehavior = useCallback(() => {
+    // Track affected milestones to minimize updates
+    let affectedMilestoneIds = new Set<string>();
+    
     return d3.drag<SVGGElement, any>()
       .on("start", function (event, d) {
         d3.select(this).classed("dragging", true);
-              // Store the initial position for calculating delta
+        
+        // Store the initial position for calculating delta
         d.dragStartY = d.initialY;
         d.dragStartMouseY = event.y;
+        
+        // Clear affected milestones
+        affectedMilestoneIds = new Set<string>();
       })
       .on("drag", function (event, d) {
         const minAllowedY = 20;
@@ -481,10 +538,14 @@ export function useDragBehaviors({
               return p.placementWorkstreamId === d.id;
             })
             .each(function(p: any) {
+              // Track affected milestone
+              if (p && p.id) {
+                affectedMilestoneIds.add(p.id);
+              }
+              
               // Get current transform to preserve X position
               const currentTransform = d3.select(this).attr("transform") || "";
               let currentX = 0;
-              // let currentY = 0;
               
               const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
               if (translateMatch) {
@@ -500,19 +561,10 @@ export function useDragBehaviors({
               }
             });
           
-          // Update visual connections for THIS workstream only
-          milestonesGroup.current
-            .selectAll(".milestone")
-            .filter(function(p: any) {
-              if (!p) return false;
-              if (!p.isDuplicate) {
-                return p.milestone && p.milestone.workstreamId === d.id;
-              }
-              return p.placementWorkstreamId === d.id;
-            })
-            .each(function(p: any) {
-              updateVisualConnectionsForNode(p.id);
-            });
+          // Only update connections for affected milestones
+          Array.from(affectedMilestoneIds).forEach(nodeId => {
+            updateVisualConnectionsForNode(nodeId);
+          });
         }
       })
       .on("end", function (event, d) {
@@ -524,10 +576,27 @@ export function useDragBehaviors({
         // Calculate final position
         const finalY = d.dragStartY + deltaY;
         
-        // Batch milestone position updates
-        const pendingMilestoneUpdates: Record<string, { y: number }> = {};
+        // Only update milestone positions that actually changed
+        const workstreamMilestoneUpdates: Record<string, { y: number }> = {};
+        const previousWorkstreamY = workstreamPositions[d.id]?.y;
         
-        // Gather milestone updates
+        // Skip position updates if workstream position hasn't changed
+        if (Math.abs(finalY - (previousWorkstreamY || d.initialY)) <= 1) {
+          // Reset transforms if not changing positions
+          d3.select(this).attr("transform", "translate(0, 0)");
+          
+          if (milestonesGroup.current) {
+            milestonesGroup.current
+              .selectAll(".milestone")
+              .filter((p: any) => p && 
+                ((p.isDuplicate && p.placementWorkstreamId === d.id) || 
+                (!p.isDuplicate && p.milestone?.workstreamId === d.id)))
+              .attr("transform", "translate(0, 0)");
+          }
+          return;
+        }
+        
+        // Gather milestone updates for affected nodes
         if (milestonesGroup.current) {
           milestonesGroup.current
             .selectAll(".milestone")
@@ -543,7 +612,7 @@ export function useDragBehaviors({
               
               // Calculate new Y position
               const newY = p.initialY + deltaY;
-              pendingMilestoneUpdates[p.id] = { y: newY };
+              workstreamMilestoneUpdates[p.id] = { y: newY };
               
               // Reset transform to avoid double application
               d3.select(this).attr("transform", `translate(0, 0)`);
@@ -564,20 +633,19 @@ export function useDragBehaviors({
             dataId: data.id,
             setWorkstreamPositions,
             debouncedUpsertPosition,
-            // updateWorkstreamLines, 
             workstreamGroup,
           }
         );
         
-        // Batch update milestone positions
-        if (Object.keys(pendingMilestoneUpdates).length > 0) {
+        // Update milestone positions only if there are changes
+        if (Object.keys(workstreamMilestoneUpdates).length > 0) {
           setMilestonePositions(prev => ({
             ...prev,
-            ...pendingMilestoneUpdates
+            ...workstreamMilestoneUpdates
           }));
         }
       });
-  }, [milestonesGroup, placementCoordinates, updateVisualConnectionsForNode, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup, setMilestonePositions]);
+  }, [milestonesGroup, placementCoordinates, updateVisualConnectionsForNode, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup, setMilestonePositions, workstreamPositions]);
   
 
   return {
