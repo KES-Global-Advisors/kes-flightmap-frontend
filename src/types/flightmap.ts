@@ -1,4 +1,4 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat
+// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat flightmap
 
 /* ------------------------------------------------------------------
    1) Type Definitions

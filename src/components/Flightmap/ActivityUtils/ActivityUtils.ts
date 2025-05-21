@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // ActivityUtils.ts
-import { Activity } from '@/types/roadmap';
+import { Activity } from '@/types/flightmap';
 
 const API = import.meta.env.VITE_API_BASE_URL;
 const accessToken = sessionStorage.getItem('accessToken');

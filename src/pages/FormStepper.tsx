@@ -124,7 +124,7 @@ const FormStepper: React.FC = () => {
       case 'strategies': {
         return (data as StrategyFormData).strategies.map(strategy => {
           const payload: any = {
-            roadmap: strategy.roadmap,
+            flightmap: strategy.flightmap,
             name: strategy.name,
             tagline: strategy.tagline,
             vision: strategy.vision,
