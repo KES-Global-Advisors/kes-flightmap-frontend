@@ -1,5 +1,5 @@
 // cSpell:ignore workstream workstreams roadmaps
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Milestone, Activity } from '../../types/model';
@@ -38,7 +38,8 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
   const { register, control, watch, setValue } = useFormContext<ActivityFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "activities"
+    name: "activities",
+    shouldUnregister: true // Helps with cleanup when fields are removed
   });
 
   const API = import.meta.env.VITE_API_BASE_URL;
@@ -55,33 +56,41 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
 
   const milestoneOptions = milestones ? milestones.map((m: Milestone) => ({ label: m.name, value: m.id })) : [];
 
-  const addActivity = () => {
-    append({
-      workstream: undefined,
-      milestone: undefined,
-      name: "",
-      status: "not_started",
-      priority: 2,
-      target_start_date: "",
-      target_end_date: "",
-      prerequisite_activities: [],
-      parallel_activities: [],
-      successive_activities: [],
-      supported_milestones: [],
-      additional_milestones: [],
-      impacted_employee_groups: [],
-      change_leaders: [],
-      development_support: [],
-      external_resources: [],
-      corporate_resources: []
-    });
-  };
-
+  const addActivity = useCallback(() => {
+    console.log("Adding activity", { currentFields: fields.length });
+    
+    try {
+      append({
+        workstream: undefined,
+        milestone: undefined,
+        name: "",
+        status: "not_started",
+        priority: 2,
+        target_start_date: "",
+        target_end_date: "",
+        prerequisite_activities: [],
+        parallel_activities: [],
+        successive_activities: [],
+        supported_milestones: [],
+        additional_milestones: [],
+        impacted_employee_groups: [],
+        change_leaders: [],
+        development_support: [],
+        external_resources: [],
+        corporate_resources: []
+      });
+      
+      console.log("Activity added successfully", { newFields: fields.length + 1 });
+    } catch (error) {
+      console.error("Error adding activity:", error);
+    }
+  }, [append, fields.length]);
+  
   useEffect(() => {
     if (fields.length === 0) {
       addActivity();
     }
-  }, [fields.length]);
+  }, [fields.length, addActivity]);
 
   // Handler for selecting an existing activity for a specific row.
   const handleExistingSelect = (index: number, e: React.ChangeEvent<HTMLSelectElement>) => {

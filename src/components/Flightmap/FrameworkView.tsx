@@ -5,7 +5,7 @@ import {
   Strategy,
   Program,
   Workstream,
-} from '@/types/roadmap';
+} from '@/types/flightmap';
 
 interface FrameworkViewProps {
   data: FlightmapData;

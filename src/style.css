@@ -1,0 +1,15 @@
+.workstream-area {
+    transition: y 0.2s ease-out;
+  }
+  
+  .workstream-guideline {
+    transition: y1 0.2s ease-out, y2 0.2s ease-out;
+  }
+  
+  .milestone {
+    transition: transform 0.2s ease-out;
+  }
+  
+  .milestone.dragging, .workstream.dragging {
+    transition: none;
+  }

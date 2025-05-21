@@ -30,7 +30,8 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   const { register, control, watch, setValue } = useFormContext<MilestoneFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "milestones"
+    name: "milestones",
+    shouldUnregister: true
   });
   const API = import.meta.env.VITE_API_BASE_URL;
   
@@ -50,17 +51,25 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   ];
 
   const addMilestone = useCallback(() => {
-    append({
-      workstream: 0,
-      name: "",
-      description: "",
-      deadline: "",
-      status: "not_started",
-      strategic_goals: [],
-      parent_milestone: null
-    });
-  }, [append]);
-
+    console.log("Adding milestone", { currentFields: fields.length });
+    
+    try {
+      append({
+        workstream: 0,
+        name: "",
+        description: "",
+        deadline: "",
+        status: "not_started",
+        strategic_goals: [],
+        parent_milestone: null
+      });
+      
+      console.log("Milestone added successfully", { newFields: fields.length + 1 });
+    } catch (error) {
+      console.error("Error adding milestone:", error);
+    }
+  }, [append, fields.length]);
+  
   useEffect(() => {
     if (fields.length === 0) {
       addMilestone();

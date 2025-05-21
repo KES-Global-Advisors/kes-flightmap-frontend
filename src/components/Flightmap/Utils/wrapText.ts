@@ -10,7 +10,7 @@ export function wrapText(
     let word: string;
     let line: string[] = [];
     let lineNumber = 0;
-    const lineHeight = 1.1; // ems
+    const lineHeight = 1; // ems
     const x = text.attr("x") || 0;
     const y = text.attr("y") || 0;
     const dy = parseFloat(text.attr("dy") || "0") || 0;

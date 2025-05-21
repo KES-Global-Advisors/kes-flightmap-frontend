@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { FlightmapData } from "@/types/roadmap";
+// cSpell:ignore workstream workstreams roadmaps Flightmap
+import { FlightmapData } from "@/types/flightmap";
 
 export function buildHierarchy(data: FlightmapData): any {
   const mapNode = (node: any, type: string): any => ({

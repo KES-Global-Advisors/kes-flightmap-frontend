@@ -27,7 +27,8 @@ const WorkstreamForm: React.FC = () => {
   const { register, control, watch, setValue } = useFormContext<WorkstreamFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "workstreams"
+    name: "workstreams",
+    shouldUnregister: true
   });
   
   // State for existing workstreams for per-item editing.
@@ -56,19 +57,27 @@ const WorkstreamForm: React.FC = () => {
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
   const addWorkstream = useCallback(() => {
-    append({
-      program: 0,
-      name: "",
-      vision: "",
-      time_horizon: "",
-      workstream_leads: [],
-      team_members: [],
-      improvement_targets: [],
-      organizational_goals: [],
-      color: "#0000FF"
-    });
-  }, [append]);
-
+    console.log("Adding workstream", { currentFields: fields.length });
+    
+    try {
+      append({
+        program: 0,
+        name: "",
+        vision: "",
+        time_horizon: "",
+        workstream_leads: [],
+        team_members: [],
+        improvement_targets: [],
+        organizational_goals: [],
+        color: "#0000FF"
+      });
+      
+      console.log("Workstream added successfully", { newFields: fields.length + 1 });
+    } catch (error) {
+      console.error("Error adding workstream:", error);
+    }
+  }, [append, fields.length]);
+  
   useEffect(() => {
     if (fields.length === 0) {
       addWorkstream();

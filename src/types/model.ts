@@ -7,7 +7,7 @@
     role: string;
   };
   
-  export type Roadmap = {
+  export type Flightmap = {
     id: number;
     name: string;
     description?: string;
@@ -18,7 +18,7 @@
   
   export type Strategy = {
     id: number;
-    roadmap: number; // Reference to Roadmap
+    flightmap: number; // Reference to Flightmap
     name: string;
     tagline?: string;
     vision: string;
