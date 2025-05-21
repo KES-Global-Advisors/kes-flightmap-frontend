@@ -1,9 +1,9 @@
-// cSpell:ignore roadmaps
+// cSpell:ignore Flightmap Flightmaps
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
-import { Roadmap, User } from '../../types/model';
+import { Flightmap, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 
@@ -12,7 +12,7 @@ const API = import.meta.env.VITE_API_BASE_URL;
 export type StrategyFormData = {
   strategies: {
     id?: number;
-    roadmap: number;
+    flightmap: number;
     name: string;
     tagline?: string;
     vision: string;
@@ -27,7 +27,8 @@ export const StrategyForm: React.FC = () => {
   const { register, control, watch, setValue } = useFormContext<StrategyFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "strategies"
+    name: "strategies",
+    shouldUnregister: true
   });
 
   // State for existing strategies (for per-item selection)
@@ -48,27 +49,35 @@ export const StrategyForm: React.FC = () => {
         setExistingStrategies(items);
       })
       .catch((err) => console.error("Error fetching strategies", err));
-  }, [API, accessToken]);
+  }, [accessToken]);
 
-  // Fetch arrays for roadmaps and users.
-  const { data: roadmaps, loading: loadingRoadmaps, error: errorRoadmaps } = useFetch<Roadmap[]>(`${API}/flightmaps/`);
+  // Fetch arrays for Flightmaps and users.
+  const { data: flightmaps, loading: loadingFlightmaps, error: errorFlightmaps } = useFetch<Flightmap[]>(`${API}/flightmaps/`);
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
 
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
   const addStrategy = useCallback(() => {
-    append({
-      roadmap: 0,
-      name: "",
-      tagline: "",
-      vision: "",
-      time_horizon: "",
-      executive_sponsors: [],
-      strategy_leads: [],
-      communication_leads: []
-    });
-  }, [append]);
-
+    console.log("Adding strategy", { currentFields: fields.length });
+    
+    try {
+      append({
+        flightmap: 0,
+        name: "",
+        tagline: "",
+        vision: "",
+        time_horizon: "",
+        executive_sponsors: [],
+        strategy_leads: [],
+        communication_leads: []
+      });
+      
+      console.log("Strategy added successfully", { newFields: fields.length + 1 });
+    } catch (error) {
+      console.error("Error adding strategy:", error);
+    }
+  }, [append, fields.length]);
+  
   useEffect(() => {
     if (fields.length === 0) {
       addStrategy();
@@ -87,7 +96,7 @@ export const StrategyForm: React.FC = () => {
     } else {
       // Reset to default empty values if "New" is selected.
       setValue(`strategies.${index}`, {
-        roadmap: 0,
+        flightmap: 0,
         name: "",
         tagline: "",
         vision: "",
@@ -147,20 +156,20 @@ export const StrategyForm: React.FC = () => {
           <div className="space-y-4">
             {/* Roadmap Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Roadmap</label>
-              {loadingRoadmaps ? (
-                <p>Loading roadmaps...</p>
-              ) : errorRoadmaps ? (
-                <p>Error: {errorRoadmaps}</p>
+              <label className="block text-sm font-medium text-gray-700">Flightmap</label>
+              {loadingFlightmaps ? (
+                <p>Loading flightmaps...</p>
+              ) : errorFlightmaps ? (
+                <p>Error: {errorFlightmaps}</p>
               ) : (
                 <select
-                  {...register(`strategies.${index}.roadmap` as const)}
+                  {...register(`strategies.${index}.flightmap` as const)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 >
-                  <option value="">Select a roadmap</option>
-                  {(roadmaps || []).map((roadmap: Roadmap) => (
-                    <option key={roadmap.id} value={roadmap.id}>
-                      {roadmap.name}
+                  <option value="">Select a flightmap</option>
+                  {(flightmaps || []).map((flightmap: Flightmap) => (
+                    <option key={flightmap.id} value={flightmap.id}>
+                      {flightmap.name}
                     </option>
                   ))}
                 </select>

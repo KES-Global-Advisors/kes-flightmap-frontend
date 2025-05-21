@@ -28,7 +28,8 @@ export const ProgramForm: React.FC = () => {
   const { register, control, watch, setValue } = useFormContext<ProgramFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "programs"
+    name: "programs",
+    shouldUnregister: true
   });
   
   // State for existing programs for per-item editing.
@@ -48,7 +49,7 @@ export const ProgramForm: React.FC = () => {
         setExistingPrograms(items);
       })
       .catch((err) => console.error("Error fetching programs", err));
-  }, [API, accessToken]);
+  }, [accessToken]);
 
   // Fetch strategies, users, and strategic goals.
   const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>(`${API}/strategies/`);
@@ -61,19 +62,27 @@ export const ProgramForm: React.FC = () => {
     : [];
 
   const addProgram = useCallback(() => {
-    append({
-      strategy: 0,
-      name: "",
-      vision: "",
-      time_horizon: "",
-      executive_sponsors: [],
-      program_leads: [],
-      workforce_sponsors: [],
-      key_improvement_targets: [],
-      key_organizational_goals: []
-    });
-  }, [append]);
-
+    console.log("Adding program", { currentFields: fields.length });
+    
+    try {
+      append({
+        strategy: 0,
+        name: "",
+        vision: "",
+        time_horizon: "",
+        executive_sponsors: [],
+        program_leads: [],
+        workforce_sponsors: [],
+        key_improvement_targets: [],
+        key_organizational_goals: []
+      });
+      
+      console.log("Program added successfully", { newFields: fields.length + 1 });
+    } catch (error) {
+      console.error("Error adding program:", error);
+    }
+  }, [append, fields.length]);
+  
   useEffect(() => {
     if (fields.length === 0) {
       addProgram();

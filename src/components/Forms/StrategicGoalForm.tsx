@@ -20,7 +20,8 @@ export const StrategicGoalForm: React.FC = () => {
   const { register, control, setValue } = useFormContext<StrategicGoalFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "goals"
+    name: "goals",
+    shouldUnregister: true
   });
   
   // Fetch existing strategic goals for per-item editing.
@@ -40,19 +41,27 @@ export const StrategicGoalForm: React.FC = () => {
         setExistingGoals(items);
       })
       .catch((err) => console.error("Error fetching strategic goals", err));
-  }, [API, accessToken]);
+  }, [accessToken]);
 
   // Fetch strategies for the dropdown.
   const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>(`${API}/strategies/`);
 
   const addGoal = useCallback(() => {
-    append({
-      strategy: 0,
-      category: 'business',
-      goal_text: ""
-    });
-  }, [append]);
-
+    console.log("Adding strategic goal", { currentFields: fields.length });
+    
+    try {
+      append({
+        strategy: 0,
+        category: 'business',
+        goal_text: ""
+      });
+      
+      console.log("Strategic goal added successfully", { newFields: fields.length + 1 });
+    } catch (error) {
+      console.error("Error adding strategic goal:", error);
+    }
+  }, [append, fields.length]);
+  
   useEffect(() => {
     if (fields.length === 0) {
       addGoal();
