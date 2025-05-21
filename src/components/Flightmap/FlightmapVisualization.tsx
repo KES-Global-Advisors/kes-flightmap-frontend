@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams roadmaps Flightmap
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import '../../style.css'
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
@@ -91,8 +91,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       y: number; 
       isDuplicate?: boolean; 
       originalId?: number; 
-      duplicateKey?: string | number; // Track the duplicate key
-      workstreamId: number; // Track the workstream ID
+      duplicateKey?: string | number;
+      workstreamId: number;
     } 
   } = useRef({}).current;
   
@@ -197,7 +197,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     });
     
     if (!svgContainers.current) return;
-      
+
     // Assign container references
     container.current = svgContainers.current.container;
     timelineGroup.current = svgContainers.current.timelineGroup;
@@ -373,7 +373,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     };
   }, [data]);
 
-  // 4. Scales setup - recalculated when timeline markers or dimensions change
+    // Scales setup - recalculated when timeline markers or dimensions change
   const xScale = useMemo(() => {
     return d3
       .scaleTime()
@@ -389,6 +389,217 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       .range([100, contentHeight - 100])
       .padding(1.0);
   }, [workstreams, contentHeight]);
+
+  // OPTIMIZATION 1: Memoize placement groups
+  const placementGroups = useMemo(() => {
+    return groupPlacementsByDeadlineAndWorkstream(milestonePlacements);
+  }, [milestonePlacements]);
+
+  // OPTIMIZATION 2: Memoize node positions by group
+  const allNodePositions = useMemo(() => {
+    const positionsByGroup: Record<string, Array<{id: string, y: number, userPlaced: boolean}>> = {};
+    
+    Object.entries(placementGroups).forEach(([groupKey, group]) => {
+      // Extract workstream and timeline info from first placement in group
+      const workstreamId = group[0].placementWorkstreamId;
+      const deadline = group[0].milestone.deadline ? 
+        new Date(group[0].milestone.deadline) : new Date();
+      const timelineX = xScale(deadline);
+      
+      // Calculate spacing for this group
+      positionsByGroup[groupKey] = calculateNodeSpacing(
+        group, 
+        workstreamId, 
+        timelineX, 
+        xScale, 
+        workstreamPositions, 
+        milestonePositions
+      );
+    });
+    
+    return positionsByGroup;
+  }, [
+    placementGroups, 
+    xScale, 
+    workstreamPositions, 
+    milestonePositions
+  ]);
+
+  // OPTIMIZATION 3: Format timeline data once
+  const formattedTimelineData = useMemo(() => {
+    return timelineMarkers.map(date => ({
+      date,
+      xPosition: xScale(date),
+      formattedDate: date.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+    }));
+  }, [timelineMarkers, xScale]);
+
+  // OPTIMIZATION 4: Calculate workstream positions once
+  const workstreamInitialPositions = useMemo(() => {
+    const positions: Record<number, { y: number, hasCustomPosition: boolean }> = {};
+    
+    workstreams.forEach(workstream => {
+      // Default position from scale
+      let y = yScale(workstream.id.toString()) || 0;
+      let hasCustomPosition = false;
+      
+      // Override with custom position if available
+      if (workstreamPositions[workstream.id]) {
+        y = workstreamPositions[workstream.id].y;
+        hasCustomPosition = true;
+      }
+      
+      positions[workstream.id] = { y, hasCustomPosition };
+    });
+    
+    return positions;
+  }, [workstreams, yScale, workstreamPositions]);
+
+  // OPTIMIZATION 5: Create connection cache
+  const connectionCache = useMemo(() => {
+    const activityMap = new Map<string, any[]>();
+    const dependencyMap = new Map<string, any[]>();
+
+    // Build activity lookup by node id
+    activities.forEach(activity => {
+      const sourceId = activity.sourceMilestoneId.toString();
+
+      // Map source → activities
+      if (!activityMap.has(sourceId)) {
+        activityMap.set(sourceId, []);
+      }
+      activityMap.get(sourceId)?.push(activity);
+
+      // Map targets → activities 
+      (activity.targetMilestoneIds || []).forEach((targetId: any) => {
+        const targetIdStr = targetId.toString();
+        if (!activityMap.has(targetIdStr)) {
+          activityMap.set(targetIdStr, []);
+        }
+        activityMap.get(targetIdStr)?.push(activity);
+      });
+    });
+
+    // Build dependency lookup by node id
+    dependencies.forEach(dep => {
+      const sourceId = dep.source.toString();
+      const targetId = dep.target.toString();
+
+      // Map source → dependencies
+      if (!dependencyMap.has(sourceId)) {
+        dependencyMap.set(sourceId, []);
+      }
+      dependencyMap.get(sourceId)?.push(dep);
+
+      // Map target → dependencies
+      if (!dependencyMap.has(targetId)) {
+        dependencyMap.set(targetId, []);
+      }
+      dependencyMap.get(targetId)?.push(dep);
+    });
+
+    return { activityMap, dependencyMap };
+  }, [activities, dependencies]);
+
+  // OPTIMIZATION 6: Preprocess connection groups, Modified to include auto-connection logic BEFORE creating connection groups
+  const connectionGroups = useMemo(() => {
+    const groups: { [key: string]: any[] } = {};
+
+    // First apply auto-connect logic to modify activities
+    workstreams.forEach((workstream) => {
+      const wsMilestones = workstream.milestones
+        .slice()
+        .sort((a, b) => {
+          const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
+          const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
+          return dateA.getTime() - dateB.getTime();
+        });
+
+      activities
+        .filter((a) => a.workstreamId === workstream.id && a.autoConnect)
+        .forEach((activity) => {
+          const sourceMilestoneIndex = wsMilestones.findIndex(
+            (m) => m.id === activity.sourceMilestoneId
+          );
+          if (sourceMilestoneIndex >= 0 && sourceMilestoneIndex < wsMilestones.length - 1) {
+            activity.targetMilestoneIds = [wsMilestones[sourceMilestoneIndex + 1].id];
+          }
+        });
+    });
+
+    // Then build connection groups with the updated activities
+    activities.forEach((activity) => {
+      const sourceId = activity.sourceMilestoneId;
+      const activityWorkstreamId = activity.workstreamId;
+
+      // Process connections within the same workstream (solid lines)
+      (activity.targetMilestoneIds || []).forEach((targetId: number) => {
+        const targetMilestone = allMilestones.find(m => m.id === targetId);
+
+        // Skip if milestone not found or belongs to different workstream
+        if (!targetMilestone || targetMilestone.workstreamId !== activityWorkstreamId) {
+          return;
+        }
+
+        const key = `${sourceId}-${targetId}`;
+        if (!groups[key]) {
+          groups[key] = [];
+        }
+        groups[key].push(activity);
+      });
+    });
+
+    return groups;
+  }, [activities, allMilestones, workstreams]);
+
+  // OPTIMIZATION 7: Preprocess cross-workstream activities
+  const crossWorkstreamActivityData = useMemo(() => {
+    const result: Array<{
+      activity: any, 
+      sourceId: number, 
+      targetId: number,
+      duplicateId: string
+    }> = [];
+    
+    activities.forEach((activity) => {
+      const activityWorkstreamId = activity.workstreamId;
+      const sourceId = activity.sourceMilestoneId;
+      
+      // Process cross-workstream targets
+      const crossTargets = [
+        ...(activity.supported_milestones || []),
+        ...(activity.additional_milestones || [])
+      ].filter(targetId => {
+        const targetMilestone = allMilestones.find(m => m.id === targetId);
+        return targetMilestone && targetMilestone.workstreamId !== activityWorkstreamId;
+      });
+      
+      // Create data entries for each cross-workstream connection
+      crossTargets.forEach(targetId => {
+        const duplicateId = `activity-duplicate-${targetId}-${activity.id}`;
+        result.push({
+          activity,
+          sourceId,
+          targetId,
+          duplicateId
+        });
+      });
+    });
+    
+    return result;
+  }, [activities, allMilestones]);
+
+  // OPTIMIZATION 8: Preprocess same-workstream dependencies
+  const sameWorkstreamDependencies = useMemo(() => {
+    return dependencies.filter(dep => {
+      const sourceMilestone = allMilestones.find(m => m.id === dep.source);
+      const targetMilestone = allMilestones.find(m => m.id === dep.target);
+      
+      return sourceMilestone && 
+            targetMilestone && 
+            sourceMilestone.workstreamId === targetMilestone.workstreamId;
+    });
+  }, [dependencies, allMilestones]);
 
   // Initialize drag behaviors from our custom hook
   const {
@@ -408,14 +619,48 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     setMilestonePositions,
     placementCoordinates,
     milestonesGroup,
-    workstreamGroup, // Pass workstreamGroup to enable direct updates
+    workstreamGroup, 
     margin,
     contentHeight,
     contentWidth,
     xScale,
     debouncedUpsertPosition,
-    onMilestoneDeadlineChange
+    onMilestoneDeadlineChange,
+    connectionCache
   });
+
+  /**
+   * Selectively updates only connections relevant to the specified node
+   * @param nodeId The ID of the node that was moved
+   */
+  const updateOnlyAffectedConnections = useCallback((nodeId: string | number) => {
+    if (!milestonesGroup.current) return;
+
+    const nodeIdStr = nodeId.toString();
+
+    // Find only activities that involve this specific node
+    const affectedActivities = activities.filter(activity => {
+      const isSource = activity.sourceMilestoneId.toString() === nodeIdStr;
+      const isTarget = activity.targetMilestoneIds && 
+                       activity.targetMilestoneIds.some((id: number) => id.toString() === nodeIdStr);
+      return isSource || isTarget;
+    });
+
+    // Update only affected activities
+    affectedActivities.forEach(activity => {
+      updateVisualConnectionsForNode(activity.sourceMilestoneId);
+    });
+
+    // Only update dependencies involving this node
+    const affectedDependencies = dependencies.filter(dep => 
+      dep.source.toString() === nodeIdStr || 
+      dep.target.toString() === nodeIdStr
+    );
+
+    affectedDependencies.forEach(dep => {
+      updateVisualConnectionsForNode(dep.source);
+    });
+  }, [activities, dependencies, milestonesGroup, updateVisualConnectionsForNode]);
 
   useEffect(() => {
     // Update visual elements when milestone positions change
@@ -447,28 +692,31 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
               .attr("y2", workstreamY);
           });
       });
-
-      // Defer connection updates
-      setTimeout(() => {
-        if (!milestonesGroup.current) return;
-
-        // Update all connections
+      // REPLACE the setTimeout block with this:
+      if (Object.keys(milestonePositions).length <= 5) {
+        // If only a few positions changed, selectively update
+        Object.keys(milestonePositions).forEach(nodeId => {
+          updateOnlyAffectedConnections(nodeId);
+        });
+      } else {
+        // Fall back to full update for large-scale changes
         activities.forEach(activity => {
           updateVisualConnectionsForNode(activity.sourceMilestoneId);
         });
-
+      
         dependencies.forEach(dep => {
           updateVisualConnectionsForNode(dep.source);
         });
-      }, 50);
+      }
     }
   }, [
     milestonePositions, 
     milestonesGroup, 
-    workstreamPositions,
+    workstreamPositions, 
+    updateOnlyAffectedConnections, 
+    updateVisualConnectionsForNode,
     activities,
-    dependencies,
-    updateVisualConnectionsForNode
+    dependencies
   ]);
 
   // This single effect handles all workstream position-related updates
@@ -527,65 +775,65 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     dataId
   ]);
 
-  // 5. Main visualization rendering - execute when data, scales, or container changes
+  // OPTIMIZATION: Split large useEffect into smaller focused effects
+
+  // 5a. Timeline rendering - execute when timeline data changes
   useEffect(() => {
-    if (!container.current || !timelineGroup.current || !workstreamGroup.current || 
-        !milestonesGroup.current || !activitiesGroup.current || !dependencyGroup.current) {
-      return;
-    }
+    if (!timelineGroup.current) return;
     
-    // Clear existing visualization
+    // Clear existing timeline visualization
     timelineGroup.current.selectAll("*").remove();
-    workstreamGroup.current.selectAll("*").remove();
-    milestonesGroup.current.selectAll("*").remove();
-    activitiesGroup.current.selectAll("*").remove();
-    dependencyGroup.current.selectAll("*").remove();
     
-    // Draw timeline markers
-    timelineMarkers.forEach((date) => {
-      const x = xScale(date);
+    // Draw timeline markers using precomputed data
+    formattedTimelineData.forEach(({xPosition, formattedDate}) => {
       timelineGroup.current!
         .append("line")
-        .attr("x1", x)
+        .attr("x1", xPosition)
         .attr("y1", 0)
-        .attr("x2", x)
+        .attr("x2", xPosition)
         .attr("y2", 10000)
         .attr("stroke", "#e5e7eb")
         .attr("stroke-width", 1);
+        
       timelineGroup.current!
         .append("text")
-        .attr("x", x)
+        .attr("x", xPosition)
         .attr("y", -15)
         .attr("text-anchor", "middle")
         .attr("font-size", "12px")
         .attr("fill", "#6b7280")
-        .text(date.toLocaleDateString(undefined, { month: "short", year: "numeric" }));
+        .text(formattedDate);
     });
+  }, [formattedTimelineData, timelineGroup]);
+
+  // 5b. Workstream rendering - execute when workstreams change
+  useEffect(() => {
+    if (!workstreamGroup.current) return;
     
-    // Create drag behaviors using our custom hook functions
+    // Clear existing workstreams
+    workstreamGroup.current.selectAll("*").remove();
+    
+    // Create drag behavior for workstreams
     const workstreamDragBehavior = createWorkstreamDragBehavior();
-    const milestoneDragBehavior = createMilestoneDragBehavior();
     
     // Draw workstreams as areas instead of lines
     workstreams.forEach((workstream) => {
-      let y = yScale(workstream.id.toString()) || 0;
-      if (workstreamPositions[workstream.id]) {
-        y = workstreamPositions[workstream.id].y;
-      }
-    
+      // Use precalculated position
+      const workstreamPosition = workstreamInitialPositions[workstream.id];
+      const y = workstreamPosition ? workstreamPosition.y : 0;
+      
       const wsGroup = workstreamGroup.current!
         .append("g")
         .datum({ ...workstream, initialY: y })
         .attr("class", "workstream")
-        .attr("data-id", workstream.id) // Add data attribute for easier selection
+        .attr("data-id", workstream.id)
         .attr("cursor", "ns-resize")
         .call(workstreamDragBehavior as any);
-    
+      
       // IMPORTANT: Remove any default transform on the workstream group
-      // and only rely on explicit coordinates for the elements
       wsGroup.attr("transform", "translate(0, 0)");
-    
-      // Add workstream label (keep existing code)
+      
+      // Add workstream label
       wsGroup
         .append("text")
         .attr("x", -10)
@@ -595,25 +843,25 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         .attr("font-weight", "bold")
         .attr("fill", workstream.color)
         .text(workstream.name);
-    
-      // Create workstream area instead of just a line
+      
+      // Create workstream area
       wsGroup
         .append("rect")
         .attr("class", "workstream-area")
         .attr("x", 0)
-        .attr("y", y - WORKSTREAM_AREA_HEIGHT / 2) // Center around the y position
+        .attr("y", y - WORKSTREAM_AREA_HEIGHT / 2)
         .attr("width", contentWidth)
         .attr("height", WORKSTREAM_AREA_HEIGHT)
         .attr("fill", workstream.color)
-        .attr("fill-opacity", 0.05) // Very subtle fill
+        .attr("fill-opacity", 0.05)
         .attr("stroke", workstream.color)
         .attr("stroke-width", 1)
         .attr("stroke-opacity", 0.4)
         .attr("stroke-dasharray", "4 2")
-        .attr("rx", 5) // Rounded corners
+        .attr("rx", 5)
         .attr("ry", 5);
-    
-      // Add a center guideline to help with alignment
+      
+      // Add a center guideline
       wsGroup
         .append("line")
         .attr("class", "workstream-guideline")
@@ -626,29 +874,29 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         .attr("stroke-opacity", 0.3)
         .attr("stroke-dasharray", "4 2");
     });
-    
-    // Process milestone placements into groups
-    const placementGroups = groupPlacementsByDeadlineAndWorkstream(milestonePlacements);
-    
-    // Draw milestones
-    Object.values(placementGroups).forEach((group) => {
-      // Extract the workstream ID and deadline from the first placement in the group
-      const workstreamId = group[0].placementWorkstreamId;
-      const deadline = group[0].milestone.deadline ? 
-        new Date(group[0].milestone.deadline) : new Date();
-      const timelineX = xScale(deadline);
+  }, [
+    workstreams, 
+    workstreamInitialPositions, 
+    createWorkstreamDragBehavior, 
+    contentWidth, 
+    workstreamGroup
+  ]);
 
-      // Calculate spacing for nodes on this timeline in this workstream
-      const nodePositions = calculateNodeSpacing(
-        group, 
-        workstreamId, 
-        timelineX, 
-        xScale, 
-        workstreamPositions, 
-        milestonePositions
-      );
+  // 5c. Milestone rendering - execute when milestones change
+  useEffect(() => {
+    if (!milestonesGroup.current) return;
+    
+    // Clear existing milestones
+    milestonesGroup.current.selectAll("*").remove();
+    
+    // Create drag behavior for milestones
+    const milestoneDragBehavior = createMilestoneDragBehavior();
+    
+    // Draw milestones using placement groups
+    Object.entries(placementGroups).forEach(([groupKey, group]) => {
+      // Get node positions for this group
+      const nodePositions = allNodePositions[groupKey] || [];
       
-
       group.forEach((placement) => {
         const milestone = placement.milestone;
         const workstreamId = placement.placementWorkstreamId;
@@ -658,7 +906,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         // Set X position based on timeline
         const x = milestone.deadline ? xScale(new Date(milestone.deadline)) : 20;
 
-        // Set Y position based on workstream and spacing
+        // Set Y position based on precalculated values
         let y = workstreamPositions[workstream.id]?.y || 
           yScale(workstream.id.toString()) || 0;
 
@@ -673,14 +921,10 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           y = milestonePositions[placement.id].y;
         }
 
-          // Important: Set the initialY property to match the calculated position
-        // This ensures drag behavior has the correct reference point
-        const initialPosition = { 
-          x: x, 
-          y: y 
-        };
+        // Set initial position
+        const initialPosition = { x, y };
         
-        // Track the node position with consistent reference points
+        // Track the node position
         trackNodePosition(
           placement, 
           initialPosition.x, 
@@ -690,18 +934,20 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           placementCoordinates
         );
 
+        // Create milestone group
         const milestoneGroup = milestonesGroup.current!
           .append("g")
           .datum({ 
             ...placement, 
             initialX: initialPosition.x, 
             initialY: initialPosition.y,
-            workstreamRef: workstreamId // Add direct workstream reference
+            workstreamRef: workstreamId
           })
           .attr("class", "milestone")
           .attr("cursor", "move")
           .call(milestoneDragBehavior as any);
 
+        // Determine fill color
         const originalWorkstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
         const fillColor =
           milestone.status === "completed" ? "#ccc" : originalWorkstream?.color || "#6366f1";
@@ -728,6 +974,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           .on("mousemove", handleD3MouseMove)
           .on("mouseout", handleD3MouseOut);
 
+        // Add milestone text
         const textEl = milestoneGroup
           .append("text")
           .attr("x", x)
@@ -739,6 +986,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           .text(milestone.name);
         wrapText(textEl as d3.Selection<SVGTextElement, unknown, null, undefined>, 100);
 
+        // Add status indicators
         if (milestone.status) {
           const statusStroke = getStatusColor(milestone.status);
           milestoneGroup
@@ -749,6 +997,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             .attr("fill", "white")
             .attr("stroke", statusStroke)
             .attr("stroke-width", 1);
+            
           if (milestone.status === "completed") {
             milestoneGroup
               .append("path")
@@ -776,6 +1025,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           }
         }
 
+        // Handle duplicate nodes
         if (placement.isDuplicate) {
           ensureDuplicateNodeBackendRecord(
             placement, 
@@ -788,53 +1038,17 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             upsertPos
           );
         }
-
-        // Draw dotted line for duplicates
-        if (placement.isDuplicate && placement.originalMilestoneId) {
-          const originalCoord = placementCoordinates[placement.originalMilestoneId.toString()];
-          if (originalCoord) {
-            // Find the target milestone ID in the current workstream that depends on this duplicate
-            const relatedDependency = dependencies.find(
-              dep => dep.source === placement.originalMilestoneId && 
-              allMilestones.find(m => m.id === dep.target)?.workstreamId === placement.placementWorkstreamId
-            );
-
-            const targetMilestoneId = relatedDependency?.target;
-            const targetCoord = targetMilestoneId ? 
-              placementCoordinates[targetMilestoneId.toString()] : 
-              null;
-
-            // Draw connection to the dependent milestone in this workstream
-            if (targetCoord) {
-              dependencyGroup.current!
-                .append("path")
-                .attr("class", "duplicate-dependency-line")
-                .attr(
-                  "d",
-                  d3.linkHorizontal()({
-                    source: [x, y],
-                    target: [targetCoord.x, targetCoord.y],
-                  } as DefaultLinkObject) ?? ""
-                )
-                .attr("fill", "none")
-                .attr("stroke", originalWorkstream?.color || "#6b7280")
-                .attr("stroke-width", 2)
-                .attr("stroke-dasharray", "5 5")
-                .attr("opacity", 2)
-                .attr("marker-end", "url(#dependency-arrow)")
-                .on("mouseover", (event) => {
-                  handleD3MouseOver(
-                    event, 
-                    `Dependency: ${milestone.name} → ${allMilestones.find(m => m.id === targetMilestoneId)?.name}`
-                  );
-                })
-                .on("mousemove", handleD3MouseMove)
-                .on("mouseout", handleD3MouseOut);
-            }
-          }
-        }
       });
     });
+  }, [placementGroups, allNodePositions, workstreams, xScale, yScale, workstreamPositions, milestonePositions, createMilestoneDragBehavior, handleD3MouseOver, handleD3MouseMove, handleD3MouseOut, data.id, remoteMilestonePos, margin.top, contentHeight, upsertPos, milestonesGroup, placementCoordinates]);
+
+  // 5d. Activity and dependency connections rendering
+  useEffect(() => {
+    if (!activitiesGroup.current || !dependencyGroup.current) return;
+
+    // Clear existing connections - critical to prevent stale elements
+    activitiesGroup.current.selectAll("*").remove();
+    dependencyGroup.current.selectAll("*").remove();
     
     // Function to add label to activity path
     function addActivityLabel(
@@ -872,85 +1086,57 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       }
     }
     
-    // Draw activities
-    const connectionGroups: { [key: string]: any[] } = {};
-    activities.forEach((activity) => {
-      const sourceId = activity.sourceMilestoneId;
-      const activityWorkstreamId = activity.workstreamId;
+    // 1. Draw cross-workstream connections
+    crossWorkstreamActivityData.forEach(({activity, sourceId, targetId, duplicateId}) => {
+      const source = placementCoordinates[sourceId.toString()];
+      const duplicateTarget = placementCoordinates[duplicateId];
 
-      // Process connections within the same workstream (solid lines)
-      (activity.targetMilestoneIds || []).forEach((targetId: number) => {
-        const targetMilestone = allMilestones.find(m => m.id === targetId);
+      if (!source || !duplicateTarget) return;
 
-        // Skip if milestone not found or belongs to different workstream
-        if (!targetMilestone || targetMilestone.workstreamId !== activityWorkstreamId) {
-          return;
-        }
+      const workstream = workstreams.find(ws => ws.id === activity.workstreamId);
+      if (!workstream) return;
 
-        const key = `${sourceId}-${targetId}`;
-        if (!connectionGroups[key]) {
-          connectionGroups[key] = [];
-        }
-        connectionGroups[key].push(activity);
-      });
+      // Draw dotted connection from activity source to duplicate milestone
+      const pathData = d3.linkHorizontal()({
+        source: [source.x, source.y],
+        target: [duplicateTarget.x, duplicateTarget.y]
+      } as DefaultLinkObject) ?? "";
 
-      // Process cross-workstream connections (dotted lines to duplicate nodes)
-      const crossWorkstreamTargets = [
-        ...(activity.supported_milestones || []),
-        ...(activity.additional_milestones || [])
-      ].filter(targetId => {
-        const targetMilestone = allMilestones.find(m => m.id === targetId);
-        return targetMilestone && targetMilestone.workstreamId !== activityWorkstreamId;
-      });
-
-      crossWorkstreamTargets.forEach(targetId => {
-        const duplicateId = `activity-duplicate-${targetId}-${activity.id}`;
-        const source = placementCoordinates[sourceId.toString()];
-        const duplicateTarget = placementCoordinates[duplicateId];
-
-        if (!source || !duplicateTarget) return;
-
-        const workstream = workstreams.find(ws => ws.id === activity.workstreamId);
-        if (!workstream) return;
-
-        // Draw dotted connection from activity source to duplicate milestone
-        const pathData = d3.linkHorizontal()({
-          source: [source.x, source.y],
-          target: [duplicateTarget.x, duplicateTarget.y]
-        } as DefaultLinkObject) ?? "";
-
-        const path = activitiesGroup.current!
-          .append("path")
-          .attr("d", pathData)
-          .attr("fill", "none")
-          .attr("stroke", workstream.color)
-          .attr("stroke-width", 1.5)
-          .attr("stroke-dasharray", "4 3") // Make it dotted for cross-workstream
-          .attr("marker-end", "url(#arrow)")
-          .attr("class", "cross-workstream-activity")
-          .datum({
-            ...activity,
-            targetMilestoneIds: [targetId]
-          })
-          .on("mouseover", (event) => {
-            const targetMilestone = allMilestones.find(m => m.id === targetId);
-            handleD3MouseOver(
-              event, 
-              `${getTooltipContent({ data: activity })} → ${targetMilestone?.name || "Unknown"} (Cross-workstream)`
-            );
-          })
-          .on("mousemove", handleD3MouseMove)
-          .on("mouseout", handleD3MouseOut);
-        
-        addActivityLabel(path, {
+      const path = activitiesGroup.current!
+        .append("path")
+        .attr("d", pathData)
+        .attr("fill", "none")
+        .attr("stroke", workstream.color)
+        .attr("stroke-width", 1.5)
+        .attr("stroke-dasharray", "4 3") 
+        .attr("marker-end", "url(#arrow)")
+        .attr("class", "cross-workstream-activity")
+        // Add optimization attributes here
+        .attr("shape-rendering", "geometricPrecision")
+        .attr("vector-effect", "non-scaling-stroke")
+        .style("will-change", "d")
+        .datum({
           ...activity,
-          id: `${activity.id}-${targetId}`,
-          name: activity.name + " (cross-workstream)"
-        });
+          targetMilestoneIds: [targetId]
+        })
+        .on("mouseover", (event) => {
+          const targetMilestone = allMilestones.find(m => m.id === targetId);
+          handleD3MouseOver(
+            event, 
+            `${getTooltipContent({ data: activity })} → ${targetMilestone?.name || "Unknown"} (Cross-workstream)`
+          );
+        })
+        .on("mousemove", handleD3MouseMove)
+        .on("mouseout", handleD3MouseOut);
+      
+      addActivityLabel(path, {
+        ...activity,
+        id: `${activity.id}-${targetId}`,
+        name: activity.name + " (cross-workstream)"
       });
     });
-  
-    // Draw regular connections (solid lines)
+    
+    // 2. Draw regular activity connections
     Object.entries(connectionGroups).forEach(([key, groupActivities]) => {
       const [sourceId, targetId] = key.split("-").map(Number);
       const source = placementCoordinates[sourceId.toString()];
@@ -988,6 +1174,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         
         addActivityLabel(path, activity);
       } else {
+        // Handle multiple activities between same milestone pair
         const centerX = (source.x + target.x) / 2;
         const centerY = (source.y + target.y) / 2;
         const dx = target.x - source.x;
@@ -1035,69 +1222,103 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       }
     });
     
-    // Draw dependencies
-    dependencies.forEach((dep) => {
-      const sourceMilestone = allMilestones.find((m) => m.id === dep.source);
-      const targetMilestone = allMilestones.find((m) => m.id === dep.target);
+    // 3. Draw dependencies between milestones in the same workstream
+    sameWorkstreamDependencies.forEach((dep) => {
+      const sourceCoord = placementCoordinates[dep.source.toString()];
+      const targetCoord = placementCoordinates[dep.target.toString()];
+      
+      if (!sourceCoord || !targetCoord) return;
+      
+      dependencyGroup.current!
+        .append("path")
+        .attr("class", "dependency-line")
+        .attr(
+          "d",
+          d3.linkHorizontal()({
+            source: [sourceCoord.x, sourceCoord.y],
+            target: [targetCoord.x, targetCoord.y],
+          } as DefaultLinkObject) ?? ""
+        )
+        .attr("fill", "none")
+        .attr("stroke", "#6b7280")
+        .attr("stroke-width", 2)
+        .attr("stroke-dasharray", "4 3")
+        // Add optimization attributes here
+        .attr("shape-rendering", "geometricPrecision")
+        .attr("vector-effect", "non-scaling-stroke")
+        .style("will-change", "d")
+        .datum(dep)
+        .on("mouseover", (event) => {
+          handleD3MouseOver(event, "Dependency relationship");
+        })
+        .on("mousemove", handleD3MouseMove)
+        .on("mouseout", handleD3MouseOut);
+    });
     
-      if (!sourceMilestone || !targetMilestone) return;
-    
-      // Only draw direct dependencies for same-workstream milestones
-      // Cross-workstream dependencies are handled via duplicate nodes
-      if (sourceMilestone.workstreamId === targetMilestone.workstreamId) {
-        const sourceCoord = placementCoordinates[dep.source.toString()];
-        const targetCoord = placementCoordinates[dep.target.toString()];
-        if (sourceCoord && targetCoord) {
+    // 4. Draw dotted lines for duplicate milestone connections
+    Object.values(placementGroups)
+      .flat()
+      .filter(placement => placement.isDuplicate && placement.originalMilestoneId)
+      .forEach(placement => {
+        const { id, originalMilestoneId, placementWorkstreamId } = placement;
+        const x = placementCoordinates[id]?.x;
+        const y = placementCoordinates[id]?.y;
+        
+        if (!x || !y || !originalMilestoneId) return;
+        
+        const originalCoord = placementCoordinates[originalMilestoneId.toString()];
+        if (!originalCoord) return;
+        
+        // Find target milestone in this workstream
+        const relatedDependency = dependencies.find(
+          dep => dep.source === originalMilestoneId && 
+          allMilestones.find(m => m.id === dep.target)?.workstreamId === placementWorkstreamId
+        );
+
+        const targetMilestoneId = relatedDependency?.target;
+        const targetCoord = targetMilestoneId ? 
+          placementCoordinates[targetMilestoneId.toString()] : 
+          null;
+
+        if (targetCoord) {
+          const originalWorkstream = workstreams.find(
+            ws => ws.id === allMilestones.find(m => m.id === originalMilestoneId)?.workstreamId
+          );
+          
           dependencyGroup.current!
             .append("path")
-            .attr("class", "dependency-line")
+            .attr("class", "duplicate-dependency-line")
             .attr(
               "d",
               d3.linkHorizontal()({
-                source: [sourceCoord.x, sourceCoord.y],
+                source: [x, y],
                 target: [targetCoord.x, targetCoord.y],
               } as DefaultLinkObject) ?? ""
             )
             .attr("fill", "none")
-            .attr("stroke", "#6b7280")
+            .attr("stroke", originalWorkstream?.color || "#6b7280")
             .attr("stroke-width", 2)
-            .attr("stroke-dasharray", "4 3")
-            .datum(dep)
+            .attr("stroke-dasharray", "5 5")
+            .attr("opacity", 2)
+            // Add optimization attributes here
+            .attr("shape-rendering", "geometricPrecision")
+            .attr("vector-effect", "non-scaling-stroke")
+            .style("will-change", "d")
             .on("mouseover", (event) => {
-              handleD3MouseOver(event, "Dependency relationship");
+              handleD3MouseOver(
+                event, 
+                `Dependency: ${placement.milestone.name} → ${allMilestones.find(m => m.id === targetMilestoneId)?.name}`
+              );
             })
             .on("mousemove", handleD3MouseMove)
-            .on("mouseout", handleD3MouseOut);            
+            .on("mouseout", handleD3MouseOut);
         }
-      }
-    });
+      });
     
-    // Auto-connect activities
-    workstreams.forEach((workstream) => {
-      const wsMilestones = workstream.milestones
-        .slice()
-        .sort((a, b) => {
-          const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
-          const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
-          return dateA.getTime() - dateB.getTime();
-        });
-      activities
-        .filter((a) => a.workstreamId === workstream.id && a.autoConnect)
-        .forEach((activity) => {
-          const sourceMilestoneIndex = wsMilestones.findIndex(
-            (m) => m.id === activity.sourceMilestoneId
-          );
-          if (sourceMilestoneIndex >= 0 && sourceMilestoneIndex < wsMilestones.length - 1) {
-            activity.targetMilestoneIds = [wsMilestones[sourceMilestoneIndex + 1].id];
-          }
-        });
-    });
-    
-    // Layer ordering
+    // 5. Layer ordering
     activitiesGroup.current.lower();
     dependencyGroup.current.lower();
-    
-  }, [data, timelineMarkers, workstreams, activities, dependencies, xScale, yScale, milestonePositions, workstreamPositions, allMilestones, contentWidth, milestonePlacements, createMilestoneDragBehavior, createWorkstreamDragBehavior, remoteMilestonePos, margin.top, contentHeight, upsertPos, placementCoordinates, handleD3MouseMove, handleD3MouseOut, handleD3MouseOver]);
+  }, [ placementCoordinates, connectionGroups, crossWorkstreamActivityData, sameWorkstreamDependencies, placementGroups, workstreams, allMilestones, dependencies, activities, activitiesGroup, dependencyGroup, handleD3MouseOver, handleD3MouseMove, handleD3MouseOut]);
 
   return (
     <div className="w-full h-full relative">
