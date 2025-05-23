@@ -154,7 +154,7 @@ export const StrategyForm: React.FC = () => {
           </div>
           
           <div className="space-y-4">
-            {/* Roadmap Field */}
+            {/* Flightmap Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Flightmap</label>
               {loadingFlightmaps ? (

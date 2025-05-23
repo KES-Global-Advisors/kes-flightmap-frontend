@@ -339,9 +339,31 @@ const FormStepper: React.FC = () => {
       newCompletedSteps[currentStepIndex] = true;
       setCompletedSteps(newCompletedSteps);
 
+      const formattedData = (() => {
+        switch (currentStepId) {
+          case 'flightmaps':
+            // Single record form - store as-is
+            return results[0] || data;
+          case 'strategies':
+            return { strategies: results };
+          case 'strategic-goals':
+            return { goals: results };
+          case 'programs':
+            return { programs: results };
+          case 'workstreams':
+            return { workstreams: results };
+          case 'milestones':
+            return { milestones: results };
+          case 'activities':
+            return { activities: results };
+          default:
+            return data;
+        }
+      })();
+
       setFormData(prev => ({
         ...prev,
-        [currentStepId]: results,
+        [currentStepId]: formattedData,
       }));
 
       if (currentStepId === 'flightmaps') {
