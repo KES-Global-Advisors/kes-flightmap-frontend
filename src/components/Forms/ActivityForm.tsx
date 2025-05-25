@@ -40,7 +40,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
   const { fields, append, remove } = useFieldArray({
     control,
     name: "activities",
-    shouldUnregister: true // Helps with cleanup when fields are removed
   });
 
   const API = import.meta.env.VITE_API_BASE_URL;
@@ -58,7 +57,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
   const milestoneOptions = milestones ? milestones.map((m: Milestone) => ({ label: m.name, value: m.id })) : [];
 
   const addActivity = useCallback(() => {
-    console.log("Adding activity", { currentFields: fields.length });
+    console.log("Adding activity");
     
     try {
       append({
@@ -81,11 +80,11 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
         corporate_resources: []
       });
       
-      console.log("Activity added successfully", { newFields: fields.length + 1 });
+      console.log("Activity added successfully");
     } catch (error) {
       console.error("Error adding activity:", error);
     }
-  }, [append, fields.length]);
+  }, [append]);
   
   useEffect(() => {
     if (fields.length === 0) {

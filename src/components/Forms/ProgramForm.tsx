@@ -31,7 +31,6 @@ export const ProgramForm: React.FC = () => {
   const { fields, append, remove } = useFieldArray({
     control,
     name: "programs",
-    shouldUnregister: true
   });
   
   // State for existing programs for per-item editing.
@@ -64,7 +63,7 @@ export const ProgramForm: React.FC = () => {
     : [];
 
   const addProgram = useCallback(() => {
-    console.log("Adding program", { currentFields: fields.length });
+    console.log("Adding program");
     
     try {
       append({
@@ -79,11 +78,11 @@ export const ProgramForm: React.FC = () => {
         key_organizational_goals: []
       });
       
-      console.log("Program added successfully", { newFields: fields.length + 1 });
+      console.log("Program added successfully");
     } catch (error) {
       console.error("Error adding program:", error);
     }
-  }, [append, fields.length]);
+  }, [append]);
   
   useEffect(() => {
     if (fields.length === 0) {

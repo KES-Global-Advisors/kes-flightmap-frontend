@@ -29,7 +29,6 @@ export const StrategyForm: React.FC = () => {
   const { fields, append, remove } = useFieldArray({
     control,
     name: "strategies",
-    shouldUnregister: true
   });
 
   // State for existing strategies (for per-item selection)
@@ -59,7 +58,7 @@ export const StrategyForm: React.FC = () => {
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
   const addStrategy = useCallback(() => {
-    console.log("Adding strategy", { currentFields: fields.length });
+    console.log("Adding strategy");
     
     try {
       append({
@@ -73,11 +72,11 @@ export const StrategyForm: React.FC = () => {
         communication_leads: []
       });
       
-      console.log("Strategy added successfully", { newFields: fields.length + 1 });
+      console.log("Strategy added successfully");
     } catch (error) {
       console.error("Error adding strategy:", error);
     }
-  }, [append, fields.length]);
+  }, [append]);
   
   useEffect(() => {
     if (fields.length === 0) {

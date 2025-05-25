@@ -32,7 +32,6 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   const { fields, append, remove } = useFieldArray({
     control,
     name: "milestones",
-    shouldUnregister: true
   });
   const API = import.meta.env.VITE_API_BASE_URL;
   
@@ -52,7 +51,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   ];
 
   const addMilestone = useCallback(() => {
-    console.log("Adding milestone", { currentFields: fields.length });
+    console.log("Adding milestone");
     
     try {
       append({
@@ -65,11 +64,11 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
         parent_milestone: null
       });
       
-      console.log("Milestone added successfully", { newFields: fields.length + 1 });
+      console.log("Milestone added successfully");
     } catch (error) {
       console.error("Error adding milestone:", error);
     }
-  }, [append, fields.length]);
+  }, [append]);
   
   useEffect(() => {
     if (fields.length === 0) {
