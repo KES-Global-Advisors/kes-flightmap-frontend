@@ -1,10 +1,11 @@
-// cSpell:ignore workstream workstreams roadmaps
+// cSpell:ignore workstream workstreams
 import React, { useEffect, useCallback } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Milestone, Activity } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
 
 export type ActivityFormData = {
   activities: {
@@ -178,7 +179,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
           <div className="space-y-4">
             {/* Milestone Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Milestone (optional)</label>
+              <FormLabel label="Milestone" required />
               {loadingMilestones ? (
                 <p>Loading milestones...</p>
               ) : errorMilestones ? (
@@ -207,7 +208,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
 
             {/* Existing record is now handled; continue with other fields */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <FormLabel label="Name" required />
               <input
                 {...register(`activities.${index}.name` as const)}
                 type="text"
@@ -216,7 +217,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700">Priority</label>
+              <FormLabel label="Priority" required />
               <select
                 {...register(`activities.${index}.priority` as const)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -228,7 +229,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700">Status</label>
+              <FormLabel label="Status" required />
               <select
                 {...register(`activities.${index}.status` as const)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -240,7 +241,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700">Target Start Date</label>
+              <FormLabel label="Target Start Date" required />
               <input
                 {...register(`activities.${index}.target_start_date` as const)}
                 type="date"
@@ -248,7 +249,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ openModalForType, dependent
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Target End Date</label>
+              <FormLabel label="Target End Date" required />
               <input
                 {...register(`activities.${index}.target_end_date` as const)}
                 type="date"

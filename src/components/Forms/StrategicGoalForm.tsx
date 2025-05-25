@@ -4,6 +4,8 @@ import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Strategy } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
+
 
 export type StrategicGoalFormData = {
   goals: {
@@ -135,7 +137,7 @@ export const StrategicGoalForm: React.FC = () => {
           
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Strategy</label>
+              <FormLabel label="Strategy" required />
               {loadingStrategies ? (
                 <p>Loading strategies...</p>
               ) : errorStrategies ? (
@@ -156,7 +158,7 @@ export const StrategicGoalForm: React.FC = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700">Category</label>
+              <FormLabel label="Category" required />
               <select
                 {...register(`goals.${index}.category` as const)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -167,7 +169,7 @@ export const StrategicGoalForm: React.FC = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700">Goal Text</label>
+              <FormLabel label="Goal Text" required={false} />
               <textarea
                 {...register(`goals.${index}.goal_text` as const)}
                 rows={3}

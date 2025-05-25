@@ -6,6 +6,8 @@ import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Strategy, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
+
 
 export type ProgramFormData = {
   programs: {
@@ -157,7 +159,7 @@ export const ProgramForm: React.FC = () => {
           <div className="space-y-4">
             {/* Strategy (single select) */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Strategy</label>
+              <FormLabel label="Strategy" required />
               {loadingStrategies ? (
                 <p>Loading strategies...</p>
               ) : errorStrategies ? (
@@ -178,7 +180,7 @@ export const ProgramForm: React.FC = () => {
             </div>
             {/* Name Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <FormLabel label="Name" required />
               <input
                 {...register(`programs.${index}.name` as const)}
                 type="text"
@@ -187,7 +189,7 @@ export const ProgramForm: React.FC = () => {
             </div>
             {/* Vision Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Vision</label>
+              <FormLabel label="Vision" required={false} />
               <textarea
                 {...register(`programs.${index}.vision` as const)}
                 rows={3}
@@ -196,7 +198,7 @@ export const ProgramForm: React.FC = () => {
             </div>
             {/* Time Horizon Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Time Horizon</label>
+              <FormLabel label="Time Horizon" required />
               <input
                 {...register(`programs.${index}.time_horizon` as const)}
                 type="date"

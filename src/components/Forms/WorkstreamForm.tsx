@@ -7,6 +7,7 @@ import useFetch from '../../hooks/UseFetch';
 import { Program, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
 
 export type WorkstreamFormData = {
   workstreams: {
@@ -160,7 +161,7 @@ const WorkstreamForm: React.FC = () => {
           <div className="space-y-4">
             {/* Program Dropdown */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Program</label>
+              <FormLabel label="Program" required />
               {loadingPrograms ? (
                 <p>Loading programs...</p>
               ) : errorPrograms ? (
@@ -181,7 +182,7 @@ const WorkstreamForm: React.FC = () => {
             </div>
             {/* Name Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <FormLabel label="Name" required />
               <input
                 {...register(`workstreams.${index}.name` as const)}
                 type="text"
@@ -190,7 +191,7 @@ const WorkstreamForm: React.FC = () => {
             </div>
             {/* Vision Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Vision</label>
+              <FormLabel label="Vision" required={false} />
               <textarea
                 {...register(`workstreams.${index}.vision` as const)}
                 rows={3}
@@ -199,7 +200,7 @@ const WorkstreamForm: React.FC = () => {
             </div>
             {/* Time Horizon Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Time Horizon</label>
+              <FormLabel label="Time Horizon" required />
               <input
                 {...register(`workstreams.${index}.time_horizon` as const)}
                 type="date"
@@ -208,7 +209,7 @@ const WorkstreamForm: React.FC = () => {
             </div>
             {/* Color Picker */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Workstream Color</label>
+              <FormLabel label="Workstream Color" required />
               <Controller
                 name={`workstreams.${index}.color` as const}
                 control={control}
