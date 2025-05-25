@@ -75,7 +75,18 @@ const FormStepper: React.FC = () => {
   });
 
   useEffect(() => {
-    methods.reset(formData[currentStepId] || {});
+      // Only reset if we don't have existing form data
+  const currentData = formData[currentStepId];
+    if (currentData && Array.isArray(currentData)) {
+      // For array-based forms, preserve the structure
+      methods.reset({ [currentStepId.slice(0, -1) + 's']: currentData });
+    } else if (currentData) {
+      methods.reset(currentData);
+    } else {
+      // Only reset to empty if no data exists
+      methods.reset({});
+    }
+    // methods.reset(formData[currentStepId] || {});
   }, [currentStepIndex, formData, currentStepId, methods]);
 
   const accessToken = sessionStorage.getItem('accessToken');
