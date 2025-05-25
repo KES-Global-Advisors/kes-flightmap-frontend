@@ -5,6 +5,7 @@ import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Workstream, Milestone } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
 
 export type MilestoneFormData = {
   milestones: {
@@ -31,7 +32,6 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   const { fields, append, remove } = useFieldArray({
     control,
     name: "milestones",
-    shouldUnregister: true
   });
   const API = import.meta.env.VITE_API_BASE_URL;
   
@@ -51,7 +51,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
   ];
 
   const addMilestone = useCallback(() => {
-    console.log("Adding milestone", { currentFields: fields.length });
+    console.log("Adding milestone");
     
     try {
       append({
@@ -64,11 +64,11 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
         parent_milestone: null
       });
       
-      console.log("Milestone added successfully", { newFields: fields.length + 1 });
+      console.log("Milestone added successfully");
     } catch (error) {
       console.error("Error adding milestone:", error);
     }
-  }, [append, fields.length]);
+  }, [append]);
   
   useEffect(() => {
     if (fields.length === 0) {
@@ -153,7 +153,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
           <div className="space-y-4">
             {/* Workstream Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Workstream</label>
+             <FormLabel label="Workstream" required />
               {loadingWorkstreams ? (
                 <p>Loading workstreams...</p>
               ) : errorWorkstreams ? (
@@ -175,7 +175,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             
             {/* Name Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <FormLabel label="Name" required />
               <input
                 {...register(`milestones.${index}.name` as never)}
                 type="text"
@@ -185,7 +185,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             
             {/* Description Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Description</label>
+              <FormLabel label="Description" required={false} />
               <textarea
                 {...register(`milestones.${index}.description` as never)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -194,7 +194,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             
             {/* Deadline Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Deadline</label>
+              <FormLabel label="Deadline" required />
               <input
                 {...register(`milestones.${index}.deadline` as never)}
                 type="date"
@@ -204,7 +204,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             
             {/* Status Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Status</label>
+              <FormLabel label="Status" required />
               <select
                 {...register(`milestones.${index}.status` as never)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -253,7 +253,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({ openMilestoneModal, depen
             </div>
             
             {/* (Optional) Button to create a new milestone to be used as a parent */}
-            <div className="mt-2">
+            <div className="mt-2 hidden">
               <button
                 type="button"
                 onClick={openMilestoneModal}

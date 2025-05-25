@@ -4,6 +4,8 @@ import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { Strategy } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
+
 
 export type StrategicGoalFormData = {
   goals: {
@@ -21,7 +23,6 @@ export const StrategicGoalForm: React.FC = () => {
   const { fields, append, remove } = useFieldArray({
     control,
     name: "goals",
-    shouldUnregister: true
   });
   
   // Fetch existing strategic goals for per-item editing.
@@ -47,7 +48,7 @@ export const StrategicGoalForm: React.FC = () => {
   const { data: strategies, loading: loadingStrategies, error: errorStrategies } = useFetch<Strategy[]>(`${API}/strategies/`);
 
   const addGoal = useCallback(() => {
-    console.log("Adding strategic goal", { currentFields: fields.length });
+    console.log("Adding strategic goal");
     
     try {
       append({
@@ -56,11 +57,11 @@ export const StrategicGoalForm: React.FC = () => {
         goal_text: ""
       });
       
-      console.log("Strategic goal added successfully", { newFields: fields.length + 1 });
+      console.log("Strategic goal added successfully");
     } catch (error) {
       console.error("Error adding strategic goal:", error);
     }
-  }, [append, fields.length]);
+  }, [append]);
   
   useEffect(() => {
     if (fields.length === 0) {
@@ -135,7 +136,7 @@ export const StrategicGoalForm: React.FC = () => {
           
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Strategy</label>
+              <FormLabel label="Strategy" required />
               {loadingStrategies ? (
                 <p>Loading strategies...</p>
               ) : errorStrategies ? (
@@ -156,7 +157,7 @@ export const StrategicGoalForm: React.FC = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700">Category</label>
+              <FormLabel label="Category" required />
               <select
                 {...register(`goals.${index}.category` as const)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -167,7 +168,7 @@ export const StrategicGoalForm: React.FC = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700">Goal Text</label>
+              <FormLabel label="Goal Text" required={false} />
               <textarea
                 {...register(`goals.${index}.goal_text` as const)}
                 rows={3}

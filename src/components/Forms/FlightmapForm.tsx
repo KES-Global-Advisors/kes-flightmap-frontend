@@ -2,6 +2,7 @@ import React from 'react';
 import { useFormContext } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { User } from '../../types/model';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
@@ -20,7 +21,7 @@ export const FlightmapForm: React.FC = () => {
     <div className="space-y-4">
       <h2 className="text-xl font-bold mb-10">Flightmap Form</h2>
       <div>
-        <label className="block text-sm font-medium text-gray-700">Name</label>
+        <FormLabel label="Name" required />
         <input
           {...register('name')}
           type="text"
@@ -28,14 +29,14 @@ export const FlightmapForm: React.FC = () => {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700">Description</label>
+        <FormLabel label="Description" required />
         <textarea
           {...register('description')}
           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700">Owner</label>
+        <FormLabel label="Owner" required />
         {loading ? (
           <p>Loading owners...</p>
         ) : error ? (

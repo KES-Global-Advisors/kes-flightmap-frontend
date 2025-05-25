@@ -6,6 +6,7 @@ import useFetch from '../../hooks/UseFetch';
 import { Flightmap, User } from '../../types/model';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
+import { FormLabel } from './Utils/RequiredFieldIndicator';
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
@@ -28,7 +29,6 @@ export const StrategyForm: React.FC = () => {
   const { fields, append, remove } = useFieldArray({
     control,
     name: "strategies",
-    shouldUnregister: true
   });
 
   // State for existing strategies (for per-item selection)
@@ -58,7 +58,7 @@ export const StrategyForm: React.FC = () => {
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
 
   const addStrategy = useCallback(() => {
-    console.log("Adding strategy", { currentFields: fields.length });
+    console.log("Adding strategy");
     
     try {
       append({
@@ -72,11 +72,11 @@ export const StrategyForm: React.FC = () => {
         communication_leads: []
       });
       
-      console.log("Strategy added successfully", { newFields: fields.length + 1 });
+      console.log("Strategy added successfully");
     } catch (error) {
       console.error("Error adding strategy:", error);
     }
-  }, [append, fields.length]);
+  }, [append]);
   
   useEffect(() => {
     if (fields.length === 0) {
@@ -156,7 +156,7 @@ export const StrategyForm: React.FC = () => {
           <div className="space-y-4">
             {/* Flightmap Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Flightmap</label>
+              <FormLabel label="Flightmap" required />
               {loadingFlightmaps ? (
                 <p>Loading flightmaps...</p>
               ) : errorFlightmaps ? (
@@ -178,7 +178,7 @@ export const StrategyForm: React.FC = () => {
             
             {/* Name Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <FormLabel label="Name" required />
               <input
                 {...register(`strategies.${index}.name` as const)}
                 type="text"
@@ -188,7 +188,7 @@ export const StrategyForm: React.FC = () => {
             
             {/* Tagline Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Tagline</label>
+              <FormLabel label="Tagline" required={false} />
               <input
                 {...register(`strategies.${index}.tagline` as const)}
                 type="text"
@@ -198,7 +198,7 @@ export const StrategyForm: React.FC = () => {
             
             {/* Vision Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Vision</label>
+              <FormLabel label="Vision" required />
               <textarea
                 {...register(`strategies.${index}.vision` as const)}
                 rows={3}
@@ -208,7 +208,7 @@ export const StrategyForm: React.FC = () => {
             
             {/* Time Horizon Field */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Time Horizon</label>
+              <FormLabel label="Time Horizon" required />
               <input
                 {...register(`strategies.${index}.time_horizon` as const)}
                 type="date"

@@ -3,7 +3,8 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Check } from 'lucide-react';
+import { Check, Save } from 'lucide-react';
+import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 import { FlightmapForm, FlightmapFormData } from '../components/Forms/FlightmapForm';
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
@@ -58,9 +59,9 @@ const FormStepper: React.FC = () => {
   const { themeColor } = useContext(ThemeContext);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [formData, setFormData] = useState<FormDataMap>({});
-  const [showSuccess, setShowSuccess] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(Array(FORM_STEPS.length).fill(false));
-  const [isSubmitting, setIsSubmitting] = useState(false); // Add loading state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // New state for save operation
   const API = import.meta.env.VITE_API_BASE_URL;
 
   // Global state for editing single-record forms.
@@ -74,7 +75,18 @@ const FormStepper: React.FC = () => {
   });
 
   useEffect(() => {
-    methods.reset(formData[currentStepId] || {});
+      // Only reset if we don't have existing form data
+  const currentData = formData[currentStepId];
+    if (currentData && Array.isArray(currentData)) {
+      // For array-based forms, preserve the structure
+      methods.reset({ [currentStepId.slice(0, -1) + 's']: currentData });
+    } else if (currentData) {
+      methods.reset(currentData);
+    } else {
+      // Only reset to empty if no data exists
+      methods.reset({});
+    }
+    // methods.reset(formData[currentStepId] || {});
   }, [currentStepIndex, formData, currentStepId, methods]);
 
   const accessToken = sessionStorage.getItem('accessToken');
@@ -293,8 +305,76 @@ const FormStepper: React.FC = () => {
     }
   };
 
+  // Save function (saves without navigation)
+  const onSaveStep = async (data: AllFormData) => {
+    setIsSaving(true);
+    const payloadArray = transformData(currentStepId, data);
+    const results: unknown[] = [];
+
+    try {
+      for (const item of payloadArray) {
+        let url: string;
+        let method: string;
+        if (currentStepId === 'flightmaps') {
+          if (selectedItemId) {
+            url = `${API}/${currentStepId}/${selectedItemId}/`;
+            method = 'PATCH';
+          } else {
+            url = `${API}/${currentStepId}/`;
+            method = 'POST';
+          }
+        } else {
+          // For array-based forms like strategies, if item has id, use PATCH.
+          if ((item as any).id) {
+            url = `${API}/${currentStepId}/${(item as any).id}/`;
+            method = 'PATCH';
+          } else {
+            url = `${API}/${currentStepId}/`;
+            method = 'POST';
+          }
+        }
+        const response = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken || ''}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify(item),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to save');
+        }
+        
+        const result = await response.json();
+        results.push(result);
+      }
+
+      // Update form data with saved results
+      setFormData(prev => ({
+        ...prev,
+        [currentStepId]: results,
+      }));
+      
+      methods.reset({});
+      showToast.success(`${FORM_STEPS[currentStepIndex].label} saved successfully!`);
+    } catch (error) {
+      console.error('Error saving form data:', error);
+      showToast.error(`Failed to save ${FORM_STEPS[currentStepIndex].label}: ${
+          error instanceof Error ? error.message : String(error)
+        }`);
+    } finally {
+      setIsSaving(false);
+      if (currentStepId === 'flightmaps') {
+        setSelectedItemId(null); // Reset selected item for flightmaps to allow creating a new record
+      }
+    }
+  };
+
   const onSubmitStep = async (data: AllFormData) => {
-    setIsSubmitting(true); // Set loading state to true when form is submitted
+    setIsSubmitting(true);
     
     const isLastStep = currentStepIndex === FORM_STEPS.length - 1;
     const payloadArray = transformData(currentStepId, data);
@@ -331,6 +411,12 @@ const FormStepper: React.FC = () => {
           credentials: 'include',
           body: JSON.stringify(item),
         });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to submit');  
+        }
+        
         const result = await response.json();
         results.push(result);
       }
@@ -371,18 +457,23 @@ const FormStepper: React.FC = () => {
       }
 
       if (isLastStep) {
-        setShowSuccess(true);
+        showToast.success('Process completed successfully!');
         setFormData({});
         setCurrentStepIndex(0);
         setCompletedSteps(Array(FORM_STEPS.length).fill(false));
-        setTimeout(() => setShowSuccess(false), 3000);
       } else {
-        setCurrentStepIndex(prev => prev + 1);
+        showToast.success(`${FORM_STEPS[currentStepIndex].label} submitted successfully!`);
       }
     } catch (error) {
       console.error('Error saving form data:', error);
+      showToast.error(`Failed to submit ${FORM_STEPS[currentStepIndex].label}: ${
+          error instanceof Error ? error.message : String(error)
+        }`);
     } finally {
-      setIsSubmitting(false); // Set loading state back to false after submission completes
+        if (!isLastStep) {
+          setCurrentStepIndex(prev => prev + 1); // Single increment point
+        }
+        setIsSubmitting(false);
     }
   };
 
@@ -438,12 +529,6 @@ const FormStepper: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      {showSuccess && (
-        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-md shadow-lg">
-          Process completed successfully!
-        </div>
-      )}
-
       {/* Stepper Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
@@ -537,14 +622,26 @@ const FormStepper: React.FC = () => {
               >
                 Back
               </button>
-              <button 
-                type="submit" 
-                style={{ backgroundColor: themeColor, cursor: 'pointer' }} 
-                className="text-white px-4 py-2 rounded-md"
-                disabled={isSubmitting}
-              >
-                {currentStepIndex === FORM_STEPS.length - 1 ? 'Finish' : 'Next'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={methods.handleSubmit(onSaveStep)}
+                  disabled={isSaving}
+                  className="inline-flex items-center px-4 py-2 rounded-md bg-gray-600 text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSubmitStep(methods.getValues())}
+                  style={{ backgroundColor: themeColor, cursor: 'pointer' }}
+                  className="text-white px-4 py-2 rounded-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  disabled={isSubmitting}
+                >
+                  {currentStepIndex === FORM_STEPS.length - 1 ? 'Finish' : 'Next'}
+                </button>
+              </div>
             </div>
           </form>
         </FormProvider>
