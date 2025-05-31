@@ -9,6 +9,7 @@ import PasswordUpdate from './components/PasswordUpdate'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import FormStepper from './pages/FormStepper'
+import EditStepper from './pages/EditStepper'
 import FlightmapListing from './pages/FlightmapListing'
 import { AuthProvider, useAuth } from '@/contexts/UserContext';
 import { ThemeProvider } from '@/contexts/ThemeProvider'
@@ -138,6 +139,11 @@ function App() {
               <Route path="/create-flightmap" element={
                 <ProtectedRoute>
                   <FormStepper />
+                </ProtectedRoute>
+              } />
+              <Route path="/edit-flightmap/" element={
+                <ProtectedRoute>
+                  <EditStepper />
                 </ProtectedRoute>
               } />
               <Route path="/settings" element={
