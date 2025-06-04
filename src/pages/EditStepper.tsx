@@ -86,6 +86,13 @@ const EditStepper: React.FC<EditStepperProps> = ({
   useEffect(() => {
     const loadEntitiesForStep = async () => {
       setIsLoadingEntities(true);
+
+      // Clear previous selection when step changes
+      if (!initialEntityId || currentStepId !== initialStepId) {
+        setSelectedEntity(null);
+        methods.reset({});
+      }
+
       try {
         const response = await fetch(`${API}/${currentStepId}/`, {
           headers: {
@@ -94,14 +101,14 @@ const EditStepper: React.FC<EditStepperProps> = ({
           },
           credentials: 'include',
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const entities = Array.isArray(data) ? data : (data.results || []);
           setAvailableEntities(entities);
-          
+
           // Auto-select if initialEntityId provided and matches current step
-          if (initialEntityId && !selectedEntity) {
+          if (initialEntityId && currentStepId === initialStepId && !selectedEntity) {
             const entity = entities.find((e: any) => e.id.toString() === initialEntityId);
             if (entity) {
               setSelectedEntity(entity);
@@ -118,30 +125,220 @@ const EditStepper: React.FC<EditStepperProps> = ({
     };
 
     loadEntitiesForStep();
-  }, [currentStepId, API, accessToken, initialEntityId, selectedEntity]);
+  }, [currentStepId, API, accessToken]); // Remove selectedEntity and initialEntityId from dependencies
 
   // Load entity data into form
   const loadEntityData = (entity: any) => {
+    if (!entity) return;
+
     if (currentStepId === 'flightmaps') {
       // Single entity form
       methods.reset(entity);
       setFormData(prev => ({ ...prev, [currentStepId]: entity }));
     } else {
-      // Array-based form - wrap in array
-      const arrayData = { [currentStepId]: [entity] };
-      methods.reset(arrayData);
-      setFormData(prev => ({ ...prev, [currentStepId]: [entity] }));
+      // Array-based form - need to properly structure the data
+      let formData: any = {};
+
+      switch (currentStepId) {
+        case 'strategies':
+          formData = {
+            strategies: [{
+              ...entity,
+              // Ensure arrays are properly formatted for multiselect
+              executive_sponsors: entity.executive_sponsors?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || [],
+              strategy_leads: entity.strategy_leads?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || [],
+              communication_leads: entity.communication_leads?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || []
+            }]
+          };
+          break;
+
+        case 'strategic-goals':
+          formData = {
+            goals: [{
+              ...entity,
+              // Ensure strategy is the ID, not an object
+              strategy: typeof entity.strategy === 'object' ? entity.strategy.id : entity.strategy
+            }]
+          };
+          break;
+
+        case 'programs':
+          formData = {
+            programs: [{
+              ...entity,
+              // Ensure all multi-select fields are arrays of IDs
+              executive_sponsors: entity.executive_sponsors?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || [],
+              program_leads: entity.program_leads?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || [],
+              workforce_sponsors: entity.workforce_sponsors?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || [],
+              key_improvement_targets: entity.key_improvement_targets?.map((goal: any) => 
+                typeof goal === 'object' ? goal.id : goal
+              ) || [],
+              key_organizational_goals: entity.key_organizational_goals?.map((goal: any) => 
+                typeof goal === 'object' ? goal.id : goal
+              ) || []
+            }]
+          };
+          break;
+
+        case 'workstreams':
+          formData = {
+            workstreams: [{
+              ...entity,
+              workstream_leads: entity.workstream_leads?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || [],
+              team_members: entity.team_members?.map((user: any) => 
+                typeof user === 'object' ? user.id : user
+              ) || [],
+              // Handle JSON fields that might be strings or arrays
+              improvement_targets: Array.isArray(entity.improvement_targets) 
+                ? entity.improvement_targets 
+                : [],
+              organizational_goals: Array.isArray(entity.organizational_goals) 
+                ? entity.organizational_goals 
+                : []
+            }]
+          };
+          break;
+             
+        case 'milestones':
+          formData = {
+            milestones: [{
+              // Preserve all original fields
+              id: entity.id,
+              name: entity.name || '',
+              description: entity.description || '',
+              deadline: entity.deadline || '',
+              status: entity.status || 'not_started',
+
+              // Handle workstream - should be a number based on your API data
+              workstream: entity.workstream || null,
+
+              // Handle parent_milestone - should be a number or null
+              parent_milestone: entity.parent_milestone || null,
+
+              // Transform strategic_goals array (if it contains objects, extract IDs)
+              strategic_goals: entity.strategic_goals?.map((goal: any) => 
+                typeof goal === 'object' ? goal.id : goal
+              ) || [],
+
+              // Transform dependencies array (if it contains objects, extract IDs)  
+              dependencies: entity.dependencies?.map((dep: any) => 
+                typeof dep === 'object' ? dep.id : dep
+              ) || [],
+
+              // Preserve other fields that might be needed
+              completed_date: entity.completed_date || null,
+              updated_at: entity.updated_at || null,
+              updated_by: entity.updated_by || null
+            }]
+          };
+          break;
+
+        case 'activities':
+          formData = {
+            activities: [{
+              ...entity,
+              // Handle all the multiselect fields
+              prerequisite_activities: entity.prerequisite_activities?.map((act: any) => 
+                typeof act === 'object' ? act.id : act
+              ) || [],
+              parallel_activities: entity.parallel_activities?.map((act: any) => 
+                typeof act === 'object' ? act.id : act
+              ) || [],
+              successive_activities: entity.successive_activities?.map((act: any) => 
+                typeof act === 'object' ? act.id : act
+              ) || [],
+              supported_milestones: entity.supported_milestones?.map((ms: any) => 
+                typeof ms === 'object' ? ms.id : ms
+              ) || [],
+              additional_milestones: entity.additional_milestones?.map((ms: any) => 
+                typeof ms === 'object' ? ms.id : ms
+              ) || [],
+              // Handle JSON fields
+              impacted_employee_groups: Array.isArray(entity.impacted_employee_groups) 
+                ? entity.impacted_employee_groups 
+                : [],
+              change_leaders: Array.isArray(entity.change_leaders) 
+                ? entity.change_leaders 
+                : [],
+              development_support: Array.isArray(entity.development_support) 
+                ? entity.development_support 
+                : [],
+              external_resources: Array.isArray(entity.external_resources) 
+                ? entity.external_resources 
+                : [],
+              corporate_resources: Array.isArray(entity.corporate_resources) 
+                ? entity.corporate_resources 
+                : []
+            }]
+          };
+          break;
+
+        default:
+          formData = { [currentStepId]: [entity] };
+      }
+
+          // ADD THIS LOG BEFORE RESET
+      console.log('About to reset form with:', formData);
+
+      methods.reset(formData);
+      setFormData(prev => ({ ...prev, [currentStepId]: formData }));
+
+          // ADD THIS LOG AFTER RESET
+      console.log('Form reset complete. Current form values:', methods.getValues());
     }
   };
 
   // Handle entity selection
-  const handleEntitySelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleEntitySelect = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const entityId = e.target.value;
     if (entityId) {
       const entity = availableEntities.find((e: any) => e.id.toString() === entityId);
       if (entity) {
-        setSelectedEntity(entity);
-        loadEntityData(entity);
+        // For list-based entities, we need to fetch the complete details
+        // because the list endpoint only returns summary data
+        try {
+          console.log('Fetching complete entity details for:', entityId);
+
+          const response = await fetch(`${API}/${currentStepId}/${entityId}/`, {
+            headers: {
+              'Authorization': `Bearer ${accessToken || ''}`,
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+          });
+
+          if (response.ok) {
+            const completeEntity = await response.json();
+            console.log('Complete entity data fetched:', completeEntity);
+
+            setSelectedEntity(completeEntity);
+            loadEntityData(completeEntity);
+          } else {
+            console.error('Failed to fetch complete entity details');
+            // Fallback to the summary data if detail fetch fails
+            setSelectedEntity(entity);
+            loadEntityData(entity);
+          }
+        } catch (error) {
+          console.error('Error fetching complete entity details:', error);
+          // Fallback to the summary data if detail fetch fails
+          setSelectedEntity(entity);
+          loadEntityData(entity);
+        }
       }
     } else {
       setSelectedEntity(null);
@@ -347,6 +544,9 @@ const EditStepper: React.FC<EditStepperProps> = ({
 
   // Free navigation - can jump to any step
   const handleStepClick = (index: number) => {
+    // Clear current selection when changing steps
+    setSelectedEntity(null);
+    methods.reset({});
     setCurrentStepIndex(index);
   };
 
@@ -362,9 +562,9 @@ const EditStepper: React.FC<EditStepperProps> = ({
   };
 
   const [milestoneModalOpen, setMilestoneModalOpen] = useState<boolean>(false);
-  const openMilestoneModal = () => {
-    setMilestoneModalOpen(true);
-  };
+  // const openMilestoneModal = () => {
+  //   setMilestoneModalOpen(true);
+  // };
 
   const [dependentActivities, setDependentActivities] = useState<Activity[]>([]);
   const handleDependentActivityCreate = (activity: Activity) => {
@@ -377,7 +577,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
   };
 
   const CurrentStepComponent = FORM_STEPS[currentStepIndex].component;
-  const RenderableComponent = CurrentStepComponent as React.FC;
+  const RenderableComponent = CurrentStepComponent as React.FC<{ editMode?: boolean }>;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -438,11 +638,24 @@ const EditStepper: React.FC<EditStepperProps> = ({
             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
           >
             <option value="">Select {FORM_STEPS[currentStepIndex].label} to Edit</option>
-            {availableEntities.map((entity) => (
-              <option key={entity.id} value={entity.id}>
-                {entity.name || entity.goal_text || entity.tagline || `${FORM_STEPS[currentStepIndex].label} ${entity.id}`}
-              </option>
-            ))}
+            {availableEntities.map((entity) => {
+              // Handle different entity types for display
+              let displayName = entity.name || entity.goal_text || entity.tagline;
+
+              // For entities with parent relationships, show parent context
+              if (currentStepId === 'strategic-goals' && entity.strategy) {
+                const strategyName = typeof entity.strategy === 'object' 
+                  ? entity.strategy.name 
+                  : `Strategy ${entity.strategy}`;
+                displayName = `${displayName} (${strategyName})`;
+              }
+
+              return (
+                <option key={entity.id} value={entity.id}>
+                  {displayName || `${FORM_STEPS[currentStepIndex].label} ${entity.id}`}
+                </option>
+              );
+            })}
           </select>
         )}
       </div>
@@ -453,12 +666,12 @@ const EditStepper: React.FC<EditStepperProps> = ({
           <FormProvider {...methods}>
             <form onSubmit={methods.handleSubmit(onSaveChanges)}>
               {currentStepId === 'activities' && (
-                <ActivityForm openModalForType={openActivityModalForType} dependentActivities={dependentActivities} />
+                <ActivityForm openModalForType={openActivityModalForType} dependentActivities={dependentActivities} editMode={true}/>
               )}
               {currentStepId === 'milestones' && (
-                <MilestoneForm openMilestoneModal={openMilestoneModal} dependentMilestones={dependentMilestones} />
+                <MilestoneForm dependentMilestones={dependentMilestones} editMode={true}/>
               )}
-              {currentStepId !== 'activities' && currentStepId !== 'milestones' && <RenderableComponent />}
+              {currentStepId !== 'activities' && currentStepId !== 'milestones' && <RenderableComponent editMode={true}/>}
               
               {/* Save Button */}
               <div className="mt-6 flex justify-end">
