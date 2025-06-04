@@ -30,7 +30,10 @@
   
   export type StrategicGoal = {
     id: number;
-    strategy: number; // Reference to Strategy
+    strategy: {
+      id: number;
+      name: string;
+    } | number;  // Union type to handle both cases // Reference to Strategy
     category: 'business' | 'organizational';
     goal_text: string;
   };
@@ -68,6 +71,7 @@
     deadline: string; // Date string
     status: 'not_started' | 'in_progress' | 'completed';
     strategic_goals: number[]; // Array of StrategicGoal IDs
+    parent_milestone?: number | null; // Optional reference to another Milestone
   };
   
   export type Activity = {
