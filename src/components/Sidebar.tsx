@@ -6,7 +6,8 @@ import {
   FolderOpen, 
   FileText, 
   ChevronLeft,
-  ChevronRight 
+  ChevronRight,
+  FilePenLine, 
 } from 'lucide-react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 
@@ -20,6 +21,7 @@ const mainNavItems: NavItem[] = [
   { name: 'Dashboard', icon: <Home size={20} />, url: '/dashboard' },
   { name: 'Flightmaps', icon: <FolderOpen size={20} />, url: '/flightmaps' },
   { name: 'Create Flightmaps', icon: <FileText size={20} />, url: '/create-flightmap' },
+  { name: 'Edit Flightmaps', icon: <FilePenLine size={20} />, url: '/edit-flightmap' },
 ];
 
 
