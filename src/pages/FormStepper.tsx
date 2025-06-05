@@ -3,7 +3,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Check, Save, AlertCircle } from 'lucide-react';
+import { Check, AlertCircle, FolderOpen, Clock } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 import { FlightmapForm, FlightmapFormData } from '../components/Forms/FlightmapForm';
@@ -94,9 +94,18 @@ const FormStepper: React.FC = () => {
   const [formData, setFormData] = useState<FormDataMap>({});
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(Array(FORM_STEPS.length).fill(false));
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  
+
+  // Flightmap Draft States
+  const [draftId, setDraftId] = useState<number | null>(null);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [availableDrafts, setAvailableDrafts] = useState<any[]>([]);
+  const [draftName, setDraftName] = useState('');
+  // Add state for auto-save
+  const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+
   const API = import.meta.env.VITE_API_BASE_URL;
   const accessToken = sessionStorage.getItem('accessToken');
   const currentStepId = FORM_STEPS[currentStepIndex].id;
@@ -105,6 +114,25 @@ const FormStepper: React.FC = () => {
     mode: 'onChange', // Enable real-time validation
     defaultValues: formData[currentStepId] || {},
   });
+
+  // Auto-save implementation with debouncing
+  useEffect(() => {
+    if (!autoSaveEnabled) return;
+
+    const autoSaveTimer = setTimeout(() => {
+      // Only auto-save if there's actual data and it's been modified
+      const currentData = methods.getValues();
+      const hasData = Object.keys(currentData).length > 0;
+
+      if (hasData && draftId) {
+        saveSession().then(() => {
+          setLastAutoSave(new Date());
+        });
+      }
+    }, 30000); // Auto-save every 30 seconds
+
+    return () => clearTimeout(autoSaveTimer);
+  }, [methods.watch(), autoSaveEnabled, draftId]);
 
   // Reset form when step changes, preserving saved data
   useEffect(() => {
@@ -298,49 +326,130 @@ const FormStepper: React.FC = () => {
     }
   };
 
-  // Save function (saves without navigation)
-  const onSaveStep = async (data: AllFormData) => {
-    setIsSaving(true);
-    const payloadArray = transformData(currentStepId, data);
-    const results: unknown[] = [];
+  // Add this function to save the entire session
+  const saveSession = async () => {
+    setIsSavingDraft(true);
 
     try {
-      for (const item of payloadArray) {
-        const response = await fetch(`${API}/${currentStepId}/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken || ''}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify(item),
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Failed to save');
-        }
-        
-        const result = await response.json();
-        results.push(result);
-      }
+      // Collect all form data from all steps
+      const fullFormData = {
+        ...formData,
+        [currentStepId]: methods.getValues() // Include current unsaved data
+      };
 
-      // Update form data with saved results
-      setFormData(prev => ({
-        ...prev,
-        [currentStepId]: results,
-      }));
-      
-      showToast.success(`${FORM_STEPS[currentStepIndex].label} saved successfully!`);
+      const sessionData = {
+        name: draftName || `Draft - ${new Date().toLocaleDateString()}`,
+        current_step: currentStepId,
+        form_data: fullFormData,
+        completed_steps: completedSteps
+      };
+
+      const url = draftId 
+        ? `${API}/flightmap-drafts/${draftId}/`
+        : `${API}/flightmap-drafts/`;
+
+      const response = await fetch(url, {
+        method: draftId ? 'PATCH' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken || ''}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(sessionData),
+      });
+
+      if (response.ok) {
+        const draft = await response.json();
+        setDraftId(draft.id);
+
+        // Also save to localStorage as backup
+        localStorage.setItem('flightmap_draft_backup', JSON.stringify({
+          ...sessionData,
+          draftId: draft.id,
+          timestamp: new Date().toISOString()
+        }));
+
+        showToast.success('Progress saved successfully!');
+      } else {
+        throw new Error('Failed to save draft');
+      }
     } catch (error) {
-      console.error('Error saving form data:', error);
-      showToast.error(`Failed to save ${FORM_STEPS[currentStepIndex].label}: ${
-          error instanceof Error ? error.message : String(error)
-        }`);
+      console.error('Error saving draft:', error);
+      showToast.error('Failed to save progress. Please try again.');
     } finally {
-      setIsSaving(false);
+      setIsSavingDraft(false);
     }
   };
+
+  // Add function to load available drafts
+  const loadAvailableDrafts = async () => {
+    try {
+      const response = await fetch(`${API}/flightmap-drafts/`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken || ''}`,
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const drafts = await response.json();
+        setAvailableDrafts(drafts);
+      }
+    } catch (error) {
+      console.error('Error loading drafts:', error);
+    }
+  };
+
+  // Add function to load a specific draft
+  const loadDraft = async (draft: any) => {
+    try {
+      setFormData(draft.form_data);
+      setCompletedSteps(draft.completed_steps);
+      setCurrentStepIndex(FORM_STEPS.findIndex(step => step.id === draft.current_step));
+      setDraftId(draft.id);
+      setDraftName(draft.name);
+      setShowDraftModal(false);
+
+      showToast.success(`Loaded draft: ${draft.name}`);
+    } catch (error) {
+      console.error('Error loading draft:', error);
+      showToast.error('Failed to load draft');
+    }
+  };
+
+  // Add this to check for local backup on component mount
+  useEffect(() => {
+    const checkLocalBackup = () => {
+      const backup = localStorage.getItem('flightmap_draft_backup');
+      if (backup) {
+        try {
+          const data = JSON.parse(backup);
+          const hoursSinceBackup = (Date.now() - new Date(data.timestamp).getTime()) / (1000 * 60 * 60);
+
+          if (hoursSinceBackup < 24) { // Only show if less than 24 hours old
+            const shouldRestore = window.confirm(
+              'Found unsaved progress from your last session. Would you like to restore it?'
+            );
+
+            if (shouldRestore) {
+              setFormData(data.form_data);
+              setCompletedSteps(data.completed_steps);
+              setCurrentStepIndex(FORM_STEPS.findIndex(step => step.id === data.current_step));
+              setDraftId(data.draftId);
+            }
+          }
+
+          // Clear old backup
+          localStorage.removeItem('flightmap_draft_backup');
+        } catch (error) {
+          console.error('Error restoring backup:', error);
+        }
+      }
+    };
+
+    checkLocalBackup();
+    loadAvailableDrafts();
+  }, []);
 
   // Submit function with validation
   const onSubmitStep = async (data: AllFormData) => {
@@ -472,13 +581,110 @@ const FormStepper: React.FC = () => {
     );
   }
 
+  // Add the draft selection modal component
+const DraftSelectionModal = () => (
+  <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+      <div className="mt-3">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-900">Load Saved Progress</h3>
+          <button
+            onClick={() => setShowDraftModal(false)}
+            className="text-gray-400 hover:text-gray-500"
+          >
+            <span className="sr-only">Close</span>
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        {availableDrafts.length === 0 ? (
+          <p className="text-gray-500 text-center py-4">No saved drafts found</p>
+        ) : (
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {availableDrafts.map((draft) => (
+              <div
+                key={draft.id}
+                className="p-3 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                onClick={() => loadDraft(draft)}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-medium">{draft.name}</p>
+                    <p className="text-sm text-gray-500">
+                      Step: {FORM_STEPS.find(s => s.id === draft.current_step)?.label}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {new Date(draft.updated_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Flightmap Data</h1>
-        <p className="text-gray-600">Step-by-step process to create complete flightmap structure.</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Flightmap Data</h1>
+            <p className="text-gray-600">Step-by-step process to create complete flightmap structure.</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDraftModal(true)}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Load Draft
+            </button>
+            <button
+              type="button"
+              onClick={saveSession}
+              disabled={isSavingDraft}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              {isSavingDraft ? 'Saving...' : 'Save Progress'}
+            </button>
+
+            {/* Add auto-save toggle here */}
+            <label className="flex items-center gap-2 text-sm text-gray-600 ml-2 px-3 py-2 border border-gray-300 rounded-md bg-white">
+              <input
+                type="checkbox"
+                checked={autoSaveEnabled}
+                onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                className="rounded"
+              />
+              Auto-save
+            </label>
+          </div>
+        </div>
+
+        {/* Draft name input - show when draft is being saved */}
+        {draftId && (
+          <div className="mt-4 flex items-center gap-2">
+            <label className="text-sm text-gray-600">Draft name:</label>
+            <input
+              type="text"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              className="flex-1 text-sm rounded-md border-gray-300"
+              placeholder="Enter a name for this draft..."
+            />
+          </div>
+        )}
       </div>
+
 
       {/* Stepper Header */}
       <div className="mb-8">
@@ -585,15 +791,6 @@ const FormStepper: React.FC = () => {
               </button>
               <div className="flex gap-2">
                 <button
-                  type="button"
-                  onClick={methods.handleSubmit(onSaveStep)}
-                  disabled={isSaving}
-                  className="inline-flex items-center px-4 py-2 rounded-md bg-gray-600 text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
-                <button
                   type="submit"
                   style={{ backgroundColor: themeColor, cursor: 'pointer' }}
                   className="text-white px-4 py-2 rounded-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
@@ -620,6 +817,13 @@ const FormStepper: React.FC = () => {
           onClose={() => setMilestoneModalOpen(false)} 
           onCreate={handleDependentMilestoneCreate} 
         />
+      )}
+      {showDraftModal && <DraftSelectionModal />}
+      {lastAutoSave && (
+        <div className="text-xs text-gray-500 flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          Last saved: {lastAutoSave.toLocaleTimeString()}
+        </div>
       )}
     </div>
   );
