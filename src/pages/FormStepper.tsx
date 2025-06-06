@@ -198,7 +198,13 @@ const FormStepper: React.FC = () => {
     switch (stepId) {
       case 'flightmaps': {
         const { name, description, owner } = data as FlightmapFormData;
-        return [{ name, description, owner }];
+        return [{
+          name,
+          description,
+          owner,
+          is_draft: true,  // Mark as draft when creating
+          draft_id: draftId  // Link to the draft session
+        }];
       }
       case 'strategies': {
         return (data as StrategyFormData).strategies.map(strategy => ({
@@ -333,8 +339,7 @@ const FormStepper: React.FC = () => {
     }
   };
 
-  // Add this function to save the entire session
-// Enhanced save session function with automatic draft naming
+// Enhanced save session function to save the entire session with automatic draft naming
   const saveSession = async (isAutoSave = false) => {
     if (!isAutoSave) {
       setIsSavingDraft(true);
@@ -563,6 +568,21 @@ const FormStepper: React.FC = () => {
       }));
 
       if (isLastStep) {
+          // Mark the flightmap as complete (no longer a draft)
+        if (formData.flightmaps && Array.isArray(formData.flightmaps) && formData.flightmaps[0]?.id) {
+          try {
+            await fetch(`${API}/flightmaps/${formData.flightmaps[0].id}/mark_complete/`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken || ''}`,
+              },
+              credentials: 'include',
+            });
+          } catch (error) {
+            console.error('Error marking flightmap as complete:', error);
+          }
+        }
+
         // Delete the draft from backend when completed
         if (draftId) {
           try {
