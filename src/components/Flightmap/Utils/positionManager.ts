@@ -50,6 +50,17 @@ export function updateNodePosition(
     updateConnections = true,
     updateConnectionsFunction
   } = options;
+
+    // ✅ NEW: Early exit if no meaningful change
+  const current = placementCoordinates[nodeId];
+  if (current) {
+    const xChanged = newPosition.x !== undefined && Math.abs(current.x - newPosition.x) > 0.5;
+    const yChanged = newPosition.y !== undefined && Math.abs(current.y - newPosition.y) > 0.5;
+    
+    if (!xChanged && !yChanged) {
+      return current; // No significant change, skip expensive updates
+    }
+  }
   
   // 1. Update reference collection
   if (placementCoordinates[nodeId]) {

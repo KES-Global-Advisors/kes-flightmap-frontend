@@ -96,6 +96,13 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     } 
   } = useRef({}).current;
   
+  // Add after the existing debouncedUpsertPosition ref (around line 190)
+  const debouncedBatchMilestoneUpdate = useRef(
+    debounce((updates: Record<string, { y: number }>) => {
+      setMilestonePositions(prev => ({ ...prev, ...updates }));
+    }, 50) // Faster debounce for better UX
+  ).current;
+
   // Debounced API call reference with support for duplicate node parameters
   const debouncedUpsertPosition = useRef(
     debounce((
@@ -382,6 +389,15 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       .nice();
   }, [timelineMarkers, contentWidth]);
 
+  // ✅ NEW: Cache timeline positions to avoid recalculation
+  const timelinePositionCache = useMemo(() => {
+    const cache = new Map<string, number>();
+    timelineMarkers.forEach(marker => {
+      cache.set(marker.toISOString(), xScale(marker));
+    });
+    return cache;
+  }, [timelineMarkers, xScale]);
+
   const yScale = useMemo(() => {
     return d3
       .scalePoint()
@@ -427,12 +443,15 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
 
   // OPTIMIZATION 3: Format timeline data once
   const formattedTimelineData = useMemo(() => {
-    return timelineMarkers.map(date => ({
-      date,
-      xPosition: xScale(date),
-      formattedDate: date.toLocaleDateString(undefined, { month: "short", year: "numeric" })
-    }));
-  }, [timelineMarkers, xScale]);
+    return timelineMarkers.map(date => {
+      const dateKey = date.toISOString();
+      return {
+        date,
+        xPosition: timelinePositionCache.get(dateKey) || xScale(date), // Use cache first
+        formattedDate: date.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+      };
+    });
+  }, [timelineMarkers, timelinePositionCache, xScale]); // Add timelinePositionCache dependency
 
   // OPTIMIZATION 4: Calculate workstream positions once
   const workstreamInitialPositions = useMemo(() => {
@@ -626,7 +645,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     xScale,
     debouncedUpsertPosition,
     onMilestoneDeadlineChange,
-    connectionCache
+    connectionCache,
+    debouncedBatchMilestoneUpdate,
   });
 
   /**
