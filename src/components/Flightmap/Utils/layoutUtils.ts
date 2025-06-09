@@ -88,8 +88,11 @@ export function enforceWorkstreamContainment(
   setMilestonePositions: React.Dispatch<React.SetStateAction<MilestonePositions>>,
   placementCoordinates?: Record<string, any>
 ) {
+  // ✅ ADDED: Lines 80-83 - Early exit if workstream position hasn't changed
+  const wsPosition = workstreamPositions[workstreamId];
+  if (!wsPosition) return {}; // No position data, nothing to enforce
+  
   // Only get THIS workstream's position
-  const wsPosition = workstreamPositions[workstreamId] || { y: 0 };
   const wsTopBoundary = wsPosition.y - WORKSTREAM_AREA_HEIGHT / 2 + WORKSTREAM_AREA_PADDING;
   const wsBottomBoundary = wsPosition.y + WORKSTREAM_AREA_HEIGHT / 2 - WORKSTREAM_AREA_PADDING;
 
@@ -105,6 +108,16 @@ export function enforceWorkstreamContainment(
         return placement.milestone.workstreamId === workstreamId;
       }
     });
+
+    // ✅ ADDED: Lines 98-100 - Early exit if no nodes are out of bounds
+  const nodesOutOfBounds = relatedNodes.filter(([, position]) => 
+    position.y < wsTopBoundary || position.y > wsBottomBoundary
+  );
+  
+  if (nodesOutOfBounds.length === 0) {
+    return {}; // No nodes need adjustment
+  }
+  
   
   // Check if any nodes are outside boundaries and correct them
   const updatedPositions: Record<string, { y: number }> = {};

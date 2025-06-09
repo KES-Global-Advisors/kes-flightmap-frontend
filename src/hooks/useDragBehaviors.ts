@@ -16,10 +16,8 @@ export function useDragBehaviors({
   allMilestones,
   activities,
   dependencies,
-  // milestonePlacements,
   workstreamPositions,
   setWorkstreamPositions,
-  // milestonePositions,
   setMilestonePositions,
   placementCoordinates,
   milestonesGroup,
@@ -29,7 +27,9 @@ export function useDragBehaviors({
   xScale,
   debouncedUpsertPosition,
   onMilestoneDeadlineChange,
-  connectionCache
+  connectionCache,
+    // ✅ ADDED: Lines 30-31 - Batched update functions
+  debouncedBatchMilestoneUpdate,
 }: {
   // Data
   data: { id: number };
@@ -79,6 +79,9 @@ export function useDragBehaviors({
     activityMap: Map<string, any[]>;
     dependencyMap: Map<string, any[]>;
   };
+
+    // ✅ ADDED: Lines 62-63 - Batched update function types
+  debouncedBatchMilestoneUpdate: (updates: Record<string, { y: number }>) => void;
 }) {
   // Create connection cache if not provided
   const internalConnectionCache = useMemo(() => {
@@ -457,11 +460,8 @@ export function useDragBehaviors({
         
         // Only update state if position actually changed (prevents unnecessary re-renders)
         if (positionChanged) {
-          // Update just this node's position directly (minimize state updates)
-          setMilestonePositions(prev => ({
-            ...prev,
-            [d.id]: { y: constrainedY }
-          }));
+          const batchUpdate = { [d.id]: { y: constrainedY } };
+          debouncedBatchMilestoneUpdate(batchUpdate);
         }
         
         // Handle deadline changes only for original nodes
@@ -638,14 +638,13 @@ export function useDragBehaviors({
         );
         
         // Update milestone positions only if there are changes
+        // ✅ MODIFIED: Lines 618-622 - Use batched update for milestone positions
         if (Object.keys(workstreamMilestoneUpdates).length > 0) {
-          setMilestonePositions(prev => ({
-            ...prev,
-            ...workstreamMilestoneUpdates
-          }));
+          // Use batched updater for better performance
+          debouncedBatchMilestoneUpdate(workstreamMilestoneUpdates);
         }
       });
-  }, [milestonesGroup, placementCoordinates, updateVisualConnectionsForNode, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup, setMilestonePositions, workstreamPositions]);
+  }, [milestonesGroup, placementCoordinates, updateVisualConnectionsForNode, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup, debouncedBatchMilestoneUpdate, workstreamPositions]);
   
 
   return {
