@@ -6,13 +6,11 @@ import {
   TrendData,
   RiskMetric,
   WorkloadDistribution,
-  PerformanceMetrics,
 } from '@/types/dashboard';
 import SummaryCard from '@/components/Dashboard/SummaryCard';
 import TrendChart from '@/components/Dashboard/TrendChart';
 import RiskAssessment from '@/components/Dashboard/RiskAssessment';
 import ResourceAllocation from '@/components/Dashboard/ResourceAllocation';
-import PerformanceDashboard from '@/components/Dashboard/PerformanceDashboard';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import useFetch from '@/hooks/UseFetch';
 
@@ -57,19 +55,13 @@ const Dashboard = () => {
     error: workloadsError,
   } = useFetch<WorkloadDistribution[]>(`${API}/dashboard/workloads/`);
 
-  const { 
-    data: performanceMetrics, 
-    loading: performanceLoading, 
-    error: performanceError,
-  } = useFetch<PerformanceMetrics>(`${API}/dashboard/performance/`);
-
   // Aggregate loading states
   const isLoading = summaryLoading || contributionsLoading || alignmentLoading
-                   || trendLoading || risksLoading || workloadsLoading || performanceLoading;
+                   || trendLoading || risksLoading || workloadsLoading;
 
   // Aggregate error states (treat timeline 404 as non-critical)
   const errorOccurred = summaryError || contributionsError || alignmentError ||
-                        trendError || risksError || workloadsError || performanceError;
+                        trendError || risksError || workloadsError;
 
   if (isLoading) {
     return (
@@ -128,6 +120,12 @@ const Dashboard = () => {
         />
       </div>
 
+            {/* Risk Assessment */}
+      <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h2 className="text-xl font-bold mb-4">Risk Assessment</h2>
+        <RiskAssessment risks={risks} />
+      </div>
+
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         {/* Left Column */}
@@ -137,23 +135,10 @@ const Dashboard = () => {
             <h2 className="text-xl font-bold mb-4">Progress Trends</h2>
             <TrendChart data={trendData} />
           </div>
-          
-          {/* Performance Dashboard */}
-          <PerformanceDashboard 
-            data={performanceMetrics} 
-            loading={performanceLoading} 
-            error={performanceError} 
-          />
         </div>
 
         {/* Right Column */}
         <div className="space-y-8">
-          {/* Risk Assessment */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-bold mb-4">Risk Assessment</h2>
-            <RiskAssessment risks={risks} />
-          </div>
-
           {/* Resource Allocation */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold mb-4">Resource Allocation</h2>

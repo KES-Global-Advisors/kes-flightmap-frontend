@@ -11,7 +11,7 @@ interface Props {
   roadmap: FlightmapData;
 }
 
-const FlightmapSwitcher: React.FC<Props> = ({ roadmap }) => {
+const FlightmapSwitcher: React.FC<Props> = React.memo(({ roadmap }) => {
   const [viewMode, setViewMode] = useState<'flightmap' | 'gantt' | 'framework'>('flightmap');
   const updateMilestoneMutation = useUpdateMilestoneDeadline();
 
@@ -65,6 +65,10 @@ const FlightmapSwitcher: React.FC<Props> = ({ roadmap }) => {
       {viewMode === 'framework' && <FrameworkView data={roadmap} />}
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Only re-render if roadmap ID or critical fields change
+  return prevProps.roadmap.id === nextProps.roadmap.id && 
+         prevProps.roadmap.name === nextProps.roadmap.name;
+});
 
 export default FlightmapSwitcher;

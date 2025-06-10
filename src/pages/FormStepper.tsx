@@ -3,7 +3,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Check, Save, AlertCircle } from 'lucide-react';
+import { Check, AlertCircle, FolderOpen, Clock } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 import { FlightmapForm, FlightmapFormData } from '../components/Forms/FlightmapForm';
@@ -15,6 +15,9 @@ import MilestoneForm, { MilestoneFormData } from '../components/Forms/MilestoneF
 import ActivityForm, { ActivityFormData } from '../components/Forms/ActivityForm';
 import DependentActivityModal from '../components/Forms/Utils/DependentActivityModal';
 import DependentMilestoneModal from '../components/Forms/Utils/DependentMilestoneModal';
+import { DraftRecoveryModal } from '../components/Forms/Utils/DraftRecoveryModal';
+import { DraftListModal } from '../components/Forms/Utils/DraftListModal';
+
 import { Activity, Milestone } from '../types/model';
 
 type StepId =
@@ -94,9 +97,22 @@ const FormStepper: React.FC = () => {
   const [formData, setFormData] = useState<FormDataMap>({});
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(Array(FORM_STEPS.length).fill(false));
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  
+
+  // Flightmap Draft States
+  const [draftId, setDraftId] = useState<number | null>(null);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [availableDrafts, setAvailableDrafts] = useState<any[]>([]);
+  const [draftName, setDraftName] = useState('');
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoveryDraftData, setRecoveryDraftData] = useState<any>(null);
+  const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
+
+  // Add state for auto-save
+  const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+
   const API = import.meta.env.VITE_API_BASE_URL;
   const accessToken = sessionStorage.getItem('accessToken');
   const currentStepId = FORM_STEPS[currentStepIndex].id;
@@ -105,6 +121,25 @@ const FormStepper: React.FC = () => {
     mode: 'onChange', // Enable real-time validation
     defaultValues: formData[currentStepId] || {},
   });
+
+  // Auto-save implementation with debouncing
+  useEffect(() => {
+    if (!autoSaveEnabled) return;
+
+    const autoSaveTimer = setTimeout(() => {
+      // Only auto-save if there's actual data and it's been modified
+      const currentData = methods.getValues();
+      const hasData = Object.keys(currentData).length > 0;
+
+      if (hasData && draftId) {
+        saveSession().then(() => {
+          setLastAutoSave(new Date());
+        });
+      }
+    }, 30000); // Auto-save every 30 seconds
+
+    return () => clearTimeout(autoSaveTimer);
+  }, [methods.watch(), autoSaveEnabled, draftId]);
 
   // Reset form when step changes, preserving saved data
   useEffect(() => {
@@ -163,7 +198,13 @@ const FormStepper: React.FC = () => {
     switch (stepId) {
       case 'flightmaps': {
         const { name, description, owner } = data as FlightmapFormData;
-        return [{ name, description, owner }];
+        return [{
+          name,
+          description,
+          owner,
+          is_draft: true,  // Mark as draft when creating
+          draft_id: draftId  // Link to the draft session
+        }];
       }
       case 'strategies': {
         return (data as StrategyFormData).strategies.map(strategy => ({
@@ -298,51 +339,188 @@ const FormStepper: React.FC = () => {
     }
   };
 
-  // Save function (saves without navigation)
-  const onSaveStep = async (data: AllFormData) => {
-    setIsSaving(true);
-    const payloadArray = transformData(currentStepId, data);
-    const results: unknown[] = [];
+// Enhanced save session function to save the entire session with automatic draft naming
+  const saveSession = async (isAutoSave = false) => {
+    if (!isAutoSave) {
+      setIsSavingDraft(true);
+    }
 
     try {
-      for (const item of payloadArray) {
-        const response = await fetch(`${API}/${currentStepId}/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken || ''}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify(item),
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || 'Failed to save');
+      // Collect all form data from all steps
+      const fullFormData = {
+        ...formData,
+        [currentStepId]: methods.getValues() // Include current unsaved data
+      };
+
+      // Generate draft name based on flightmap name if available
+      let generatedDraftName = draftName;
+      if (!generatedDraftName && fullFormData.flightmaps) {
+        const flightmapData = fullFormData.flightmaps as FlightmapFormData;
+        if (flightmapData.name) {
+          generatedDraftName = `${flightmapData.name} - Draft`;
         }
-        
-        const result = await response.json();
-        results.push(result);
       }
 
-      // Update form data with saved results
-      setFormData(prev => ({
-        ...prev,
-        [currentStepId]: results,
-      }));
-      
-      showToast.success(`${FORM_STEPS[currentStepIndex].label} saved successfully!`);
+      const sessionData = {
+        name: generatedDraftName || `Untitled Draft - ${new Date().toLocaleDateString()}`,
+        current_step: currentStepId,
+        form_data: fullFormData,
+        completed_steps: completedSteps,
+        progress_percentage: Math.round((completedSteps.filter(Boolean).length / FORM_STEPS.length) * 100)
+      };
+
+      const url = draftId 
+        ? `${API}/flightmap-drafts/${draftId}/`
+        : `${API}/flightmap-drafts/`;
+
+      const response = await fetch(url, {
+        method: draftId ? 'PATCH' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken || ''}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(sessionData),
+      });
+
+      if (response.ok) {
+        const draft = await response.json();
+        setDraftId(draft.id);
+        setDraftName(draft.name);
+
+        // Also save to localStorage as backup
+        localStorage.setItem('flightmap_draft_backup', JSON.stringify({
+          ...sessionData,
+          draftId: draft.id,
+          timestamp: new Date().toISOString()
+        }));
+
+        if (!isAutoSave) {
+          showToast.success('Progress saved successfully!');
+        }
+      } else {
+        throw new Error('Failed to save draft');
+      }
     } catch (error) {
-      console.error('Error saving form data:', error);
-      showToast.error(`Failed to save ${FORM_STEPS[currentStepIndex].label}: ${
-          error instanceof Error ? error.message : String(error)
-        }`);
+      console.error('Error saving draft:', error);
+      if (!isAutoSave) {
+        showToast.error('Failed to save progress. Please try again.');
+      }
     } finally {
-      setIsSaving(false);
+      if (!isAutoSave) {
+        setIsSavingDraft(false);
+      }
     }
   };
 
-  // Submit function with validation
+  // Enhanced function to load available drafts with loading state
+  const loadAvailableDrafts = async () => {
+    setIsLoadingDrafts(true);
+    try {
+      const response = await fetch(`${API}/flightmap-drafts/`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken || ''}`,
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const drafts = await response.json();
+        setAvailableDrafts(drafts.map((draft: any) => ({
+          ...draft,
+          progress_percentage: draft.completed_steps 
+            ? Math.round((draft.completed_steps.filter(Boolean).length / FORM_STEPS.length) * 100)
+            : 0
+        })));
+      }
+    } catch (error) {
+      console.error('Error loading drafts:', error);
+      showToast.error('Failed to load drafts');
+    } finally {
+      setIsLoadingDrafts(false);
+    }
+  };
+
+  // Enhanced function to load draft function with completion handling
+  const loadDraft = async (draft: any) => {
+    try {
+      setFormData(draft.form_data);
+      setCompletedSteps(draft.completed_steps);
+      setCurrentStepIndex(FORM_STEPS.findIndex(step => step.id === draft.current_step));
+      setDraftId(draft.id);
+      setDraftName(draft.name);
+      setShowDraftModal(false);
+      
+      showToast.success(`Loaded draft: ${draft.name}`);
+    } catch (error) {
+      console.error('Error loading draft:', error);
+      showToast.error('Failed to load draft');
+    }
+  };
+
+  // Delete draft function
+  const deleteDraft = async (draftIdToDelete: number) => {
+    try {
+      const response = await fetch(`${API}/flightmap-drafts/${draftIdToDelete}/`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken || ''}`,
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        setAvailableDrafts(prev => prev.filter(d => d.id !== draftIdToDelete));
+        showToast.success('Draft deleted successfully');
+
+        // If we just deleted the current draft, reset the draft ID
+        if (draftIdToDelete === draftId) {
+          setDraftId(null);
+          setDraftName('');
+        }
+      } else {
+        throw new Error('Failed to delete draft');
+      }
+    } catch (error) {
+      console.error('Error deleting draft:', error);
+      showToast.error('Failed to delete draft');
+    }
+  };
+
+  // Enhanced check for local backup on component mount with in-app modal
+  useEffect(() => {
+    const checkLocalBackup = () => {
+      const backup = localStorage.getItem('flightmap_draft_backup');
+      if (backup) {
+        try {
+          const data = JSON.parse(backup);
+          const hoursSinceBackup = (Date.now() - new Date(data.timestamp).getTime()) / (1000 * 60 * 60);
+
+          if (hoursSinceBackup < 24) { // Only show if less than 24 hours old
+            const currentStep = FORM_STEPS.find(step => step.id === data.current_step);
+            setRecoveryDraftData({
+              name: data.name,
+              lastSaved: new Date(data.timestamp).toLocaleString(),
+              currentStep: currentStep?.label || data.current_step,
+              data: data
+            });
+            setShowRecoveryModal(true);
+          } else {
+            // Clear old backup
+            localStorage.removeItem('flightmap_draft_backup');
+          }
+        } catch (error) {
+          console.error('Error checking backup:', error);
+          localStorage.removeItem('flightmap_draft_backup');
+        }
+      }
+    };
+
+    checkLocalBackup();
+    loadAvailableDrafts();
+  }, []);
+
+  // Enhanced submit function that removes draft on completion
   const onSubmitStep = async (data: AllFormData) => {
     // Validate current step before proceeding
     const errors = validateCurrentStep(data);
@@ -354,7 +532,7 @@ const FormStepper: React.FC = () => {
 
     setIsSubmitting(true);
     setValidationErrors([]);
-    
+
     const isLastStep = currentStepIndex === FORM_STEPS.length - 1;
     const payloadArray = transformData(currentStepId, data);
     const results: unknown[] = [];
@@ -370,12 +548,12 @@ const FormStepper: React.FC = () => {
           credentials: 'include',
           body: JSON.stringify(item),
         });
-        
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.detail || 'Failed to submit');  
         }
-        
+
         const result = await response.json();
         results.push(result);
       }
@@ -412,13 +590,52 @@ const FormStepper: React.FC = () => {
       }));
 
       if (isLastStep) {
-        showToast.success('Process completed successfully!');
+          // Mark the flightmap as complete (no longer a draft)
+        if (formData.flightmaps && Array.isArray(formData.flightmaps) && formData.flightmaps[0]?.id) {
+          try {
+            await fetch(`${API}/flightmaps/${formData.flightmaps[0].id}/mark_complete/`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken || ''}`,
+              },
+              credentials: 'include',
+            });
+          } catch (error) {
+            console.error('Error marking flightmap as complete:', error);
+          }
+        }
+
+        // Delete the draft from backend when completed
+        if (draftId) {
+          try {
+            await fetch(`${API}/flightmap-drafts/${draftId}/`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${accessToken || ''}`,
+              },
+              credentials: 'include',
+            });
+            // Clear local storage backup
+            localStorage.removeItem('flightmap_draft_backup');
+          } catch (error) {
+            console.error('Error deleting draft:', error);
+          }
+        }
+
+        showToast.success('Flightmap created successfully!');
+
+        // Reset everything
         setFormData({});
         setCurrentStepIndex(0);
         setCompletedSteps(Array(FORM_STEPS.length).fill(false));
+        setDraftId(null);
+        setDraftName('');
       } else {
         showToast.success(`${FORM_STEPS[currentStepIndex].label} submitted successfully!`);
         setCurrentStepIndex(prev => prev + 1);
+
+        // Auto-save after each step completion
+        await saveSession(true);
       }
     } catch (error) {
       console.error('Error saving form data:', error);
@@ -495,12 +712,61 @@ const FormStepper: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Flightmap Data</h1>
-        <p className="text-gray-600">Step-by-step process to create complete flightmap structure.</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Flightmap Data</h1>
+            <p className="text-gray-600">Step-by-step process to create complete flightmap structure.</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDraftModal(true)}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Load Draft
+            </button>
+            <button
+              type="button"
+              onClick={() => saveSession()}
+              disabled={isSavingDraft}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              {isSavingDraft ? 'Saving...' : 'Save Progress'}
+            </button>
+
+            {/* Add auto-save toggle here */}
+            <label className="flex items-center gap-2 text-sm text-gray-600 ml-2 px-3 py-2 border border-gray-300 rounded-md bg-white">
+              <input
+                type="checkbox"
+                checked={autoSaveEnabled}
+                onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                className="rounded"
+              />
+              Auto-save
+            </label>
+          </div>
+        </div>
+
+        {/* Draft name input - show when draft is being saved */}
+        {draftId && (
+          <div className="mt-4 flex items-center gap-2">
+            <label className="text-sm text-gray-600">Draft name:</label>
+            <input
+              type="text"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              className="flex-1 text-sm rounded-md border-gray-300"
+              placeholder="Enter a name for this draft..."
+            />
+          </div>
+        )}
       </div>
+
 
       {/* Stepper Header */}
       <div className="mb-8">
@@ -607,15 +873,6 @@ const FormStepper: React.FC = () => {
               </button>
               <div className="flex gap-2">
                 <button
-                  type="button"
-                  onClick={methods.handleSubmit(onSaveStep)}
-                  disabled={isSaving}
-                  className="inline-flex items-center px-4 py-2 rounded-md bg-gray-600 text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
-                <button
                   type="submit"
                   style={{ backgroundColor: themeColor, cursor: 'pointer' }}
                   className="text-white px-4 py-2 rounded-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
@@ -642,6 +899,48 @@ const FormStepper: React.FC = () => {
           onClose={() => setMilestoneModalOpen(false)} 
           onCreate={handleDependentMilestoneCreate} 
         />
+      )}
+      {showRecoveryModal && (
+        <DraftRecoveryModal
+          isOpen={showRecoveryModal}
+          onClose={() => {
+            setShowRecoveryModal(false);
+            localStorage.removeItem('flightmap_draft_backup');
+          }}
+          onRestore={() => {
+            if (recoveryDraftData?.data) {
+              setFormData(recoveryDraftData.data.form_data);
+              setCompletedSteps(recoveryDraftData.data.completed_steps);
+              setCurrentStepIndex(FORM_STEPS.findIndex(step => step.id === recoveryDraftData.data.current_step));
+              setDraftId(recoveryDraftData.data.draftId);
+              setShowRecoveryModal(false);
+              localStorage.removeItem('flightmap_draft_backup');
+              showToast.success('Draft restored successfully');
+            }
+          }}
+          onDiscard={() => {
+            setShowRecoveryModal(false);
+            localStorage.removeItem('flightmap_draft_backup');
+          }}
+          draftData={recoveryDraftData}
+        />
+      )}
+
+      {showDraftModal && (
+        <DraftListModal
+          isOpen={showDraftModal}
+          onClose={() => setShowDraftModal(false)}
+          drafts={availableDrafts}
+          onLoadDraft={loadDraft}
+          onDeleteDraft={deleteDraft}
+          isLoading={isLoadingDrafts}
+        />
+      )}
+      {lastAutoSave && (
+        <div className="text-xs text-gray-500 flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          Last saved: {lastAutoSave.toLocaleTimeString()}
+        </div>
       )}
     </div>
   );
