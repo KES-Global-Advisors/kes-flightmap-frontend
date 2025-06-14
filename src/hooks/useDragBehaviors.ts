@@ -136,6 +136,7 @@ export function useDragBehaviors({
   contentHeight,
   xScale,
   debouncedUpsertPosition,
+  debouncedUpdateConnections,
   onMilestoneDeadlineChange,
   connectionCache,
     // ✅ ADDED: Lines 30-31 - Batched update functions
@@ -197,6 +198,7 @@ export function useDragBehaviors({
     // ✅ ADD: Group references for scoped selections
   activitiesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
   dependencyGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
+  debouncedUpdateConnections?: (nodeId: string | number) => void; // ADD THIS
 }) {
 
     // ✅ CREATE: Batched state manager instance
@@ -298,12 +300,7 @@ export function useDragBehaviors({
 
       // ✅ CRITICAL OPTIMIZATION: Scoped selection instead of document-wide search
       const activityPath = activitiesGroup.current!
-        .selectAll(".same-workstream-activity, .cross-workstream-activity")
-        .filter((d: any) => 
-          d && d.id === activity.id && 
-          d.source_milestone === sourceId && 
-          d.target_milestone === targetId
-        );
+        .selectAll(`[data-activity-id="${activity.id}"][data-source-id="${sourceId}"][data-target-id="${targetId}"]`);
       
       // ✅ OPTIMIZED: Update path only if found (avoid empty selections)
       if (!activityPath.empty()) {
@@ -314,8 +311,7 @@ export function useDragBehaviors({
             target: [targetCoord.x, targetCoord.y],
           } as DefaultLinkObject) ?? ""
         );
-
-        // ✅ OPTIMIZED: Update activity labels with scoped selection
+        
         updateActivityLabel(activity.id, activityPath.node() as SVGPathElement | null);
       }
 
@@ -404,30 +400,33 @@ export function useDragBehaviors({
    */
   const updateActivityLabel = useCallback((activityId: number, pathNode: SVGPathElement | null) => {
     if (!pathNode || !activitiesGroup.current) return;
-
-    const pathLength = pathNode.getTotalLength();
-    const midpoint = pathNode.getPointAtLength(pathLength / 2);
-
-    // ✅ OPTIMIZED: Scoped label selection instead of document-wide
-    const labelRect = activitiesGroup.current
-      .selectAll("rect")
-      .filter((d: any) => d && d.id === activityId);
-
-    const labelText = activitiesGroup.current
-      .selectAll("text")
-      .filter((d: any) => d && d.id === activityId);
-
-    // ✅ BATCH: Update both rect and text in single operation
-    if (!labelRect.empty()) {
-      labelRect
-        .attr("x", midpoint.x - 100)
-        .attr("y", midpoint.y - 10);
-    }
-
-    if (!labelText.empty()) {
-      labelText
-        .attr("x", midpoint.x)
-        .attr("y", midpoint.y);
+  
+    try {
+      const pathLength = pathNode.getTotalLength();
+      if (pathLength === 0) return; // Skip if path has no length
+      
+      const midpoint = pathNode.getPointAtLength(pathLength / 2);
+    
+      // Use attribute selectors for better performance
+      const labelRect = activitiesGroup.current
+        .select(`rect[data-activity-id="${activityId}"]`);
+    
+      const labelText = activitiesGroup.current
+        .select(`text[data-activity-id="${activityId}"]`);
+    
+      if (!labelRect.empty()) {
+        labelRect
+          .attr("x", midpoint.x - 100)
+          .attr("y", midpoint.y - 10);
+      }
+    
+      if (!labelText.empty()) {
+        labelText
+          .attr("x", midpoint.x)
+          .attr("y", midpoint.y);
+      }
+    } catch (error) {
+      console.warn(`Failed to update label for activity ${activityId}:`, error);
     }
   }, [activitiesGroup]);
 
@@ -618,7 +617,11 @@ export function useDragBehaviors({
         
         // 4. Update the visual connections after node is already moved
         // This ensures we don't see the node "lagging behind" the connections
-        updateVisualConnectionsForNode(d.id);
+        if (debouncedUpdateConnections) {
+          debouncedUpdateConnections(d.id);
+        } else {
+          updateVisualConnectionsForNode(d.id);
+        }
       })
       .on("end", function(event, d) {
         d3.select(this).classed("dragging", false);
@@ -785,9 +788,17 @@ export function useDragBehaviors({
             });
           
           // Only update connections for affected milestones
-          Array.from(affectedMilestoneIds).forEach(nodeId => {
-            updateVisualConnectionsForNode(nodeId);
-          });
+          if (debouncedUpdateConnections) {
+            // Use debounced updates for smoother performance
+            Array.from(affectedMilestoneIds).forEach(nodeId => {
+              debouncedUpdateConnections(nodeId);
+            });
+          } else {
+            // Fallback to direct updates
+            Array.from(affectedMilestoneIds).forEach(nodeId => {
+              updateVisualConnectionsForNode(nodeId);
+            });
+          }
         }
       })
       .on("end", function (event, d) {

@@ -155,6 +155,15 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     }, DEBOUNCE_TIMEOUT)
   ).current;
 
+  // Add after existing debounced functions
+  const debouncedUpdateConnections = useRef(
+    debounce((nodeId: string | number) => {
+      if (updateVisualConnectionsForNode) {
+        updateVisualConnectionsForNode(nodeId);
+      }
+    }, 16) // ~60fps
+  ).current;
+
   useEffect(() => {
     if (remoteMilestonePos.length) {
       const newM: typeof milestonePositions = {};
@@ -751,9 +760,8 @@ useEffect(() => {
     onMilestoneDeadlineChange,
     connectionCache,
     debouncedBatchMilestoneUpdate,
+    debouncedUpdateConnections,
   });
-
-
 
   /**
    * Selectively updates only connections relevant to the specified node
@@ -1262,6 +1270,7 @@ useEffect(() => {
           .attr("dominant-baseline", "middle")
           .attr("font-size", "6px")
           .attr("fill", "#3a3c40")
+          .attr("data-activity-id", activity.id)
           .datum(activity)
           .text(activity.name);
         wrapText(textEl, 220);
@@ -1293,14 +1302,20 @@ useEffect(() => {
         .attr("stroke-dasharray", "4 3") 
         .attr("marker-end", "url(#arrow)")
         .attr("class", "cross-workstream-activity")
-        // Add optimization attributes here
+        // Add data attributes for efficient selection
+        .attr("data-activity-id", activity.id)
+        .attr("data-source-id", sourceId)
+        .attr("data-target-id", targetId)
+        .attr("data-duplicate-id", duplicateId)
         .attr("shape-rendering", "geometricPrecision")
         .attr("vector-effect", "non-scaling-stroke")
         .style("will-change", "d")
         .datum({
           ...activity,
+          id: activity.id, // Keep original ID, not composite
           source_milestone: sourceId,
-          target_milestone: targetId 
+          target_milestone: targetId,
+          duplicateId: duplicateId // Store duplicate info separately
         })
         .on("mouseover", (event) => {
           const targetMilestone = allMilestones.find(m => m.id === targetId);
@@ -1344,11 +1359,15 @@ useEffect(() => {
           .attr("stroke", workstream.color)
           .attr("stroke-width", 1.5)
           .attr("marker-end", "url(#arrow)")
-          .attr("class", "same-workstream-activity")
+          // Add unique identifier attributes for efficient updates
+          .attr("data-activity-id", activity.id)
+          .attr("data-source-id", sourceId)
+          .attr("data-target-id", targetId)
           .datum({
             ...activity,
+            id: activity.id, // Keep original ID
             source_milestone: sourceId,
-            target_milestone: targetId 
+            target_milestone: targetId
           })
           .on("mouseover", (event) => {
             handleD3MouseOver(event, getTooltipContent({ data: activity }));
@@ -1504,6 +1523,14 @@ useEffect(() => {
     activitiesGroup.current.lower();
     dependencyGroup.current.lower();
   }, [ placementCoordinates, connectionGroups, crossWorkstreamActivityData, sameWorkstreamDependencies, placementGroups, workstreams, allMilestones, dependencies, activities, activitiesGroup, dependencyGroup, handleD3MouseOver, handleD3MouseMove, handleD3MouseOut]);
+
+  // Add after other useEffects
+  useEffect(() => {
+    return () => {
+      // Cancel any pending debounced updates on unmount
+      debouncedUpdateConnections.cancel?.();
+    };
+  }, [debouncedUpdateConnections]);
 
   return (
     <div className="w-full h-full relative">
