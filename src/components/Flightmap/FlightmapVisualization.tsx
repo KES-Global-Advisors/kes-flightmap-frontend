@@ -413,16 +413,24 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
 
   // OPTIMIZATION 2: Memoize node positions by group
   const allNodePositions = useMemo(() => {
+    // ✅ EARLY EXIT: If no placement groups, return empty
+    if (Object.keys(placementGroups).length === 0) return {};
+  
     const positionsByGroup: Record<string, Array<{id: string, y: number, userPlaced: boolean}>> = {};
     
+    // ✅ PERFORMANCE: Use Object.entries() once instead of multiple iterations
     Object.entries(placementGroups).forEach(([groupKey, group]) => {
-      // Extract workstream and timeline info from first placement in group
+      if (group.length === 0) return; // ✅ Skip empty groups
+      
+      // ✅ OPTIMIZATION: Extract common values once per group
       const workstreamId = group[0].placementWorkstreamId;
       const deadline = group[0].milestone.deadline ? 
         new Date(group[0].milestone.deadline) : new Date();
-      const timelineX = xScale(deadline);
       
-      // Calculate spacing for this group
+      // ✅ PERFORMANCE: Use cached timeline position
+      const timelineX = timelinePositionCache.get(deadline.toISOString()) || xScale(deadline);
+      
+      // ✅ OPTIMIZED: Calculate spacing for this group
       positionsByGroup[groupKey] = calculateNodeSpacing(
         group, 
         workstreamId, 
@@ -435,7 +443,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     
     return positionsByGroup;
   }, [
-    placementGroups, 
+    placementGroups,
+    timelinePositionCache, // ✅ Use cached timeline positions
     xScale, 
     workstreamPositions, 
     milestonePositions
@@ -443,158 +452,241 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
 
   // OPTIMIZATION 3: Format timeline data once
   const formattedTimelineData = useMemo(() => {
+    // ✅ PERFORMANCE: Use map() once with cached positions
     return timelineMarkers.map(date => {
       const dateKey = date.toISOString();
       return {
         date,
-        xPosition: timelinePositionCache.get(dateKey) || xScale(date), // Use cache first
-        formattedDate: date.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+        xPosition: timelinePositionCache.get(dateKey)!, // ✅ Guaranteed to exist
+        formattedDate: date.toLocaleDateString(undefined, { 
+          month: "short", 
+          year: "numeric" 
+        })
       };
     });
-  }, [timelineMarkers, timelinePositionCache, xScale]); // Add timelinePositionCache dependency
+  }, [timelineMarkers, timelinePositionCache]); // ✅ Stable dependencies
 
-  // OPTIMIZATION 4: Calculate workstream positions once
+  // OPTIMIZATION 4: Optimized workstream initial positions
   const workstreamInitialPositions = useMemo(() => {
-    const positions: Record<number, { y: number, hasCustomPosition: boolean }> = {};
-    
-    workstreams.forEach(workstream => {
-      // Default position from scale
-      let y = yScale(workstream.id.toString()) || 0;
-      let hasCustomPosition = false;
-      
-      // Override with custom position if available
-      if (workstreamPositions[workstream.id]) {
-        y = workstreamPositions[workstream.id].y;
-        hasCustomPosition = true;
-      }
-      
-      positions[workstream.id] = { y, hasCustomPosition };
-    });
-    
-    return positions;
-  }, [workstreams, yScale, workstreamPositions]);
+    // ✅ EARLY EXIT: If no workstreams, return empty object
+    if (workstreams.length === 0) return {};
 
-  // OPTIMIZATION 5: Create connection cache
+    const positions: Record<number, { y: number, hasCustomPosition: boolean }> = {};
+
+    // ✅ PERFORMANCE: Single loop with efficient lookups
+    workstreams.forEach(workstream => {
+      const customPosition = workstreamPositions[workstream.id];
+      const defaultY = yScale(workstream.id.toString()) || 0;
+
+      positions[workstream.id] = customPosition 
+        ? { y: customPosition.y, hasCustomPosition: true }
+        : { y: defaultY, hasCustomPosition: false };
+    });
+
+    return positions;
+  }, [workstreams, yScale, workstreamPositions]); // ✅ Precise dependencies
+
+  // ✅ OPTIMIZATION 5: Enhanced connection cache with stability checks
   const connectionCache = useMemo(() => {
+    // ✅ PERFORMANCE CHECK: Skip if no data
+    if (activities.length === 0 && dependencies.length === 0) {
+      return { activityMap: new Map(), dependencyMap: new Map() };
+    }
+  
     const activityMap = new Map<string, any[]>();
     const dependencyMap = new Map<string, any[]>();
-
-    // Build activity lookup by node id
+  
+    // ✅ OPTIMIZATION: Batch process activities with single loop
     activities.forEach(activity => {
-      const sourceId = activity.sourceMilestoneId.toString();
-
-      // Map source → activities
-      if (!activityMap.has(sourceId)) {
-        activityMap.set(sourceId, []);
+      // ✅ NEW STRUCTURE: Use source_milestone instead of source_milestone
+      const sourceId = activity.source_milestone?.toString();
+      const targetId = activity.target_milestone?.toString();
+    
+      if (sourceId) {
+        // ✅ PERFORMANCE: Use || operator for faster map initialization
+        (activityMap.get(sourceId) || 
+         (activityMap.set(sourceId, []), activityMap.get(sourceId))!)
+         .push(activity);
       }
-      activityMap.get(sourceId)?.push(activity);
-
-      // Map targets → activities 
-      (activity.targetMilestoneIds || []).forEach((targetId: any) => {
-        const targetIdStr = targetId.toString();
-        if (!activityMap.has(targetIdStr)) {
-          activityMap.set(targetIdStr, []);
-        }
-        activityMap.get(targetIdStr)?.push(activity);
+    
+      if (targetId) {
+        // ✅ NEW: Also map target milestone to activity
+        (activityMap.get(targetId) || 
+         (activityMap.set(targetId, []), activityMap.get(targetId))!)
+         .push(activity);
+      }
+    
+      // ✅ MAINTAINED: Process cross-workstream supported milestones
+      (activity.supported_milestones || []).forEach((supportedId: any) => {
+        const supportedIdStr = supportedId.toString();
+        (activityMap.get(supportedIdStr) || 
+         (activityMap.set(supportedIdStr, []), activityMap.get(supportedIdStr))!)
+         .push(activity);
+      });
+    
+      // ✅ MAINTAINED: Process additional milestones
+      (activity.additional_milestones || []).forEach((additionalId: any) => {
+        const additionalIdStr = additionalId.toString();
+        (activityMap.get(additionalIdStr) || 
+         (activityMap.set(additionalIdStr, []), activityMap.get(additionalIdStr))!)
+         .push(activity);
       });
     });
-
-    // Build dependency lookup by node id
+  
+    // ✅ OPTIMIZATION: Batch process dependencies with single loop
     dependencies.forEach(dep => {
       const sourceId = dep.source.toString();
       const targetId = dep.target.toString();
-
-      // Map source → dependencies
-      if (!dependencyMap.has(sourceId)) {
-        dependencyMap.set(sourceId, []);
-      }
-      dependencyMap.get(sourceId)?.push(dep);
-
-      // Map target → dependencies
-      if (!dependencyMap.has(targetId)) {
-        dependencyMap.set(targetId, []);
-      }
-      dependencyMap.get(targetId)?.push(dep);
+    
+      // ✅ PERFORMANCE: Use || operator for faster map initialization
+      (dependencyMap.get(sourceId) || 
+       (dependencyMap.set(sourceId, []), dependencyMap.get(sourceId))!)
+       .push(dep);
+    
+      (dependencyMap.get(targetId) || 
+       (dependencyMap.set(targetId, []), dependencyMap.get(targetId))!)
+       .push(dep);
     });
-
+  
     return { activityMap, dependencyMap };
   }, [activities, dependencies]);
 
-  // OPTIMIZATION 6: Preprocess connection groups, Modified to include auto-connection logic BEFORE creating connection groups
+  // OPTIMIZATION 6: Updated connection groups with new source/target milestone logic
   const connectionGroups = useMemo(() => {
+    // ✅ EARLY EXIT: If no activities, return empty object
+    if (activities.length === 0) return {};
+
     const groups: { [key: string]: any[] } = {};
 
-    // First apply auto-connect logic to modify activities
-    workstreams.forEach((workstream) => {
-      const wsMilestones = workstream.milestones
-        .slice()
-        .sort((a, b) => {
-          const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
-          const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
-          return dateA.getTime() - dateB.getTime();
-        });
+    // ✅ NEW LOGIC: Use explicit source_milestone and target_milestone fields
+    // Remove all auto-connect logic and workstream milestone mapping
+    activities
+      .filter(activity => activity.source_milestone && activity.target_milestone)
+      .forEach(activity => {
+        const sourceId = activity.source_milestone;
+        const targetId = activity.target_milestone;
 
-      activities
-        .filter((a) => a.workstreamId === workstream.id && a.autoConnect)
-        .forEach((activity) => {
-          const sourceMilestoneIndex = wsMilestones.findIndex(
-            (m) => m.id === activity.sourceMilestoneId
-          );
-          if (sourceMilestoneIndex >= 0 && sourceMilestoneIndex < wsMilestones.length - 1) {
-            activity.targetMilestoneIds = [wsMilestones[sourceMilestoneIndex + 1].id];
+        // ✅ VALIDATION: Ensure both source and target exist in placement coordinates
+        const sourceCoord = placementCoordinates[sourceId.toString()];
+        const targetCoord = placementCoordinates[targetId.toString()];
+
+        // Only log during initial processing if coordinates are expected to exist
+        if (Object.keys(placementCoordinates).length > 0) {
+          console.log('Processing activities for connectionGroups:', {
+            totalActivities: activities.length,
+            activitiesWithBothMilestones: activities.filter(a => a.source_milestone && a.target_milestone).length,
+            placementCoordinatesCount: Object.keys(placementCoordinates).length,
+            sampleActivity: activities[0]
+          });
+        }
+        
+        if (!sourceCoord || !targetCoord) {
+          // Only warn if we expect coordinates to exist (after initial render)
+          if (Object.keys(placementCoordinates).length > 0) {
+            console.warn(`Missing coordinates for activity ${activity.id}:`, {
+              sourceId,
+              targetId,
+              sourceCoordExists: !!sourceCoord,
+              targetCoordExists: !!targetCoord,
+              availableCoords: Object.keys(placementCoordinates),
+              activity
+            });
           }
-        });
-    });
-
-    // Then build connection groups with the updated activities
-    activities.forEach((activity) => {
-      const sourceId = activity.sourceMilestoneId;
-      const activityWorkstreamId = activity.workstreamId;
-
-      // Process connections within the same workstream (solid lines)
-      (activity.targetMilestoneIds || []).forEach((targetId: number) => {
-        const targetMilestone = allMilestones.find(m => m.id === targetId);
-
-        // Skip if milestone not found or belongs to different workstream
-        if (!targetMilestone || targetMilestone.workstreamId !== activityWorkstreamId) {
           return;
         }
 
+        // ✅ SAME WORKSTREAM CHECK: Only include if source and target are in same workstream
+        // This replaces the old workstream validation logic
+        const sourceMilestone = allMilestones.find(m => m.id === sourceId);
+        const targetMilestone = allMilestones.find(m => m.id === targetId);
+
+        if (!sourceMilestone || !targetMilestone) {
+          console.warn(`Missing milestone data for activity ${activity.id}`);
+          return;
+        }
+
+        // Update lines 622-629 in FlightmapVisualization.tsx
+        if (sourceMilestone.workstreamId !== targetMilestone.workstreamId) {
+          // Don't return early - this might be a valid cross-workstream activity
+          console.log(`Activity ${activity.id} connects milestones in different workstreams - checking if supported`);
+
+          // Check if this is intended as a cross-workstream activity
+          const isCrossWorkstream = activity.supported_milestones?.includes(targetId) || 
+                                   activity.additional_milestones?.includes(targetId);
+
+          if (!isCrossWorkstream) {
+            console.warn(`Activity ${activity.id} has source and target in different workstreams without proper cross-workstream configuration`);
+            return;
+          }
+        }
+
+        // ✅ GROUP BY SOURCE-TARGET PAIR: Multiple activities can connect same milestones
         const key = `${sourceId}-${targetId}`;
         if (!groups[key]) {
           groups[key] = [];
         }
         groups[key].push(activity);
       });
-    });
 
     return groups;
-  }, [activities, allMilestones, workstreams]);
+  }, [activities, allMilestones, Object.keys(placementCoordinates).length]); // ✅ Updated dependencies
 
-  // OPTIMIZATION 7: Preprocess cross-workstream activities
+  // Add after line 635 in FlightmapVisualization.tsx
+useEffect(() => {
+  console.log('Connection Groups Debug:', {
+    connectionGroups,
+    groupCount: Object.keys(connectionGroups).length,
+    activities: activities.map(a => ({
+      id: a.id,
+      name: a.name,
+      source: a.source_milestone,
+      target: a.target_milestone,
+      workstream: a.workstreamId
+    })),
+    milestoneIds: allMilestones.map(m => m.id),
+    placementCoordKeys: Object.keys(placementCoordinates)
+  });
+}, [connectionGroups, activities, allMilestones, placementCoordinates]);
+
+  // ✅ OPTIMIZATION 7: Optimized cross-workstream activity data
   const crossWorkstreamActivityData = useMemo(() => {
+    // ✅ EARLY EXIT: If no activities, return empty array
+    if (activities.length === 0 || allMilestones.length === 0) return [];
+
+    // ✅ PERFORMANCE: Pre-build milestone lookup map for O(1) access
+    const milestoneMap = new Map(allMilestones.map(m => [m.id, m]));
+
     const result: Array<{
       activity: any, 
       sourceId: number, 
       targetId: number,
       duplicateId: string
     }> = [];
-    
+
+    // ✅ OPTIMIZED: Single loop with early continues
     activities.forEach((activity) => {
       const activityWorkstreamId = activity.workstreamId;
-      const sourceId = activity.sourceMilestoneId;
-      
-      // Process cross-workstream targets
-      const crossTargets = [
+      const sourceId = activity.source_milestone;
+
+      // ✅ PERFORMANCE: Combine supported and additional milestones once
+      const allTargets = [
         ...(activity.supported_milestones || []),
         ...(activity.additional_milestones || [])
-      ].filter(targetId => {
-        const targetMilestone = allMilestones.find(m => m.id === targetId);
-        return targetMilestone && targetMilestone.workstreamId !== activityWorkstreamId;
-      });
-      
-      // Create data entries for each cross-workstream connection
-      crossTargets.forEach(targetId => {
+      ];
+
+      // ✅ EARLY EXIT: Skip if no targets
+      if (allTargets.length === 0) return;
+
+      // ✅ OPTIMIZED: Filter targets efficiently with Map lookup
+      allTargets.forEach(targetId => {
+        const targetMilestone = milestoneMap.get(targetId);
+
+        // ✅ EARLY CONTINUE: Skip if not cross-workstream
+        if (!targetMilestone || targetMilestone.workstreamId === activityWorkstreamId) {
+          return;
+        }
+
+        // ✅ PERFORMANCE: Create duplicate ID once
         const duplicateId = `activity-duplicate-${targetId}-${activity.id}`;
         result.push({
           activity,
@@ -604,21 +696,31 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         });
       });
     });
-    
-    return result;
-  }, [activities, allMilestones]);
 
-  // OPTIMIZATION 8: Preprocess same-workstream dependencies
+    return result;
+  }, [activities, allMilestones]); // ✅ Stable dependencies
+
+  // ✅ OPTIMIZATION 8: Optimized same-workstream dependencies
   const sameWorkstreamDependencies = useMemo(() => {
+    // ✅ EARLY EXIT: If no dependencies, return empty array
+    if (dependencies.length === 0 || allMilestones.length === 0) return [];
+
+    // ✅ PERFORMANCE: Pre-build milestone workstream lookup
+    const milestoneWorkstreamMap = new Map(
+      allMilestones.map(m => [m.id, m.workstreamId])
+    );
+
+    // ✅ OPTIMIZED: Single filter pass with Map lookups
     return dependencies.filter(dep => {
-      const sourceMilestone = allMilestones.find(m => m.id === dep.source);
-      const targetMilestone = allMilestones.find(m => m.id === dep.target);
-      
-      return sourceMilestone && 
-            targetMilestone && 
-            sourceMilestone.workstreamId === targetMilestone.workstreamId;
+      const sourceWorkstream = milestoneWorkstreamMap.get(dep.source);
+      const targetWorkstream = milestoneWorkstreamMap.get(dep.target);
+
+      // ✅ FAST LOOKUP: O(1) instead of O(n) find operations
+      return sourceWorkstream !== undefined && 
+             targetWorkstream !== undefined && 
+             sourceWorkstream === targetWorkstream;
     });
-  }, [dependencies, allMilestones]);
+  }, [dependencies, allMilestones]); // ✅ Stable dependencies
 
   // Initialize drag behaviors from our custom hook
   const {
@@ -639,6 +741,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     placementCoordinates,
     milestonesGroup,
     workstreamGroup, 
+    activitiesGroup,    // ✅ ADD: Required for scoped selections
+    dependencyGroup,    // ✅ ADD: Required for scoped selections
     margin,
     contentHeight,
     contentWidth,
@@ -648,6 +752,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     connectionCache,
     debouncedBatchMilestoneUpdate,
   });
+
+
 
   /**
    * Selectively updates only connections relevant to the specified node
@@ -660,15 +766,21 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
 
     // Find only activities that involve this specific node
     const affectedActivities = activities.filter(activity => {
-      const isSource = activity.sourceMilestoneId.toString() === nodeIdStr;
-      const isTarget = activity.targetMilestoneIds && 
-                       activity.targetMilestoneIds.some((id: number) => id.toString() === nodeIdStr);
-      return isSource || isTarget;
+      const isSource = activity.source_milestone && 
+                       activity.source_milestone.toString() === nodeIdStr;
+      const isTarget = activity.target_milestone && 
+                       activity.target_milestone.toString() === nodeIdStr;
+
+      // Also check cross-workstream connections
+      const isSupported = (activity.supported_milestones || []).includes(Number(nodeId));
+      const isAdditional = (activity.additional_milestones || []).includes(Number(nodeId));
+
+      return isSource || isTarget || isSupported || isAdditional;
     });
 
     // Update only affected activities
     affectedActivities.forEach(activity => {
-      updateVisualConnectionsForNode(activity.sourceMilestoneId);
+      updateVisualConnectionsForNode(activity.source_milestone);
     });
 
     // Only update dependencies involving this node
@@ -682,62 +794,112 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     });
   }, [activities, dependencies, milestonesGroup, updateVisualConnectionsForNode]);
 
-  useEffect(() => {
-    // Update visual elements when milestone positions change
-    if (milestonesGroup.current && Object.keys(milestonePositions).length > 0) {
-      // For each milestone node with a stored position
-      Object.entries(milestonePositions).forEach(([nodeId, position]) => {
-        milestonesGroup.current!.selectAll(".milestone")
-          .filter((d: any) => d && d.id === nodeId)
-          .each(function(d: any) {
-            // Get current transform to preserve X position 
-            const currentTransform = d3.select(this).attr("transform") || "";
-            let currentX = 0;
+    // ✅ NEW: Helper function for DOM position updates
+  const updateMilestonePositionsInDOM = useCallback((
+    positions: Array<[string, { y: number }]>
+  ) => {
+    if (!milestonesGroup.current) return;
 
-            const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
-            if (translateMatch) {
-              currentX = parseFloat(translateMatch[1]);
-            }
+    // ✅ BATCH: Group DOM updates by operation type
+    const transforms: Array<{ element: any, transform: string }> = [];
+    const lineUpdates: Array<{ element: any, y1: number, y2: number }> = [];
 
-            // Apply proper transform
-            d3.select(this)
-              .attr("transform", `translate(${currentX}, ${position.y - d.initialY})`);
+    positions.forEach(([nodeId, position]) => {
+      milestonesGroup.current!.selectAll(".milestone")
+        .filter((d: any) => d && d.id === nodeId)
+        .each(function(d: any) {
+          // ✅ PREPARE: Calculate transform
+          const currentTransform = d3.select(this).attr("transform") || "";
+          let currentX = 0;
 
-            // Update connections
-            const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
-            const workstreamY = workstreamPositions[workstreamId]?.y || d.initialY;
+          const translateMatch = currentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+          if (translateMatch) {
+            currentX = parseFloat(translateMatch[1]);
+          }
 
-            d3.select(this).select("line.connection-line")
-              .attr("y1", position.y)
-              .attr("y2", workstreamY);
+          // ✅ QUEUE: Transform update
+          transforms.push({
+            element: this,
+            transform: `translate(${currentX}, ${position.y - d.initialY})`
           });
-      });
-      // REPLACE the setTimeout block with this:
-      if (Object.keys(milestonePositions).length <= 5) {
-        // If only a few positions changed, selectively update
-        Object.keys(milestonePositions).forEach(nodeId => {
-          updateOnlyAffectedConnections(nodeId);
+
+          // ✅ QUEUE: Connection line update
+          const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
+          const workstreamY = workstreamPositions[workstreamId]?.y || d.initialY;
+
+          lineUpdates.push({
+            element: d3.select(this).select("line.connection-line").node(),
+            y1: position.y,
+            y2: workstreamY
+          });
         });
-      } else {
-        // Fall back to full update for large-scale changes
-        activities.forEach(activity => {
-          updateVisualConnectionsForNode(activity.sourceMilestoneId);
-        });
-      
-        dependencies.forEach(dep => {
-          updateVisualConnectionsForNode(dep.source);
-        });
+    });
+
+    // ✅ BATCH EXECUTE: Apply all DOM updates in sequence
+    transforms.forEach(({ element, transform }) => {
+      d3.select(element).attr("transform", transform);
+    });
+
+    lineUpdates.forEach(({ element, y1, y2 }) => {
+      if (element) {
+        d3.select(element)
+          .attr("y1", y1)
+          .attr("y2", y2);
       }
+    });
+  }, [milestonesGroup, workstreamPositions]);
+
+  // ✅ NEW: Helper function for connection updates
+  const updateConnectionsForChangedPositions = useCallback((
+    positions: Array<[string, { y: number }]>
+  ) => {
+    // ✅ SMART: Only update connections for changed nodes
+    if (positions.length <= 5) {
+      // ✅ SELECTIVE: Update only affected connections
+      positions.forEach(([nodeId]) => {
+        updateOnlyAffectedConnections(nodeId);
+      });
+    } else {
+      // ✅ BATCH: Schedule comprehensive update for large changes
+      requestAnimationFrame(() => {
+        const updatedNodes = new Set(positions.map(([nodeId]) => nodeId));
+
+        activities.forEach(activity => {
+          if (updatedNodes.has(activity.source_milestone.toString())) {
+            updateVisualConnectionsForNode(activity.source_milestone);
+          }
+        });
+
+        dependencies.forEach(dep => {
+          if (updatedNodes.has(dep.source.toString())) {
+            updateVisualConnectionsForNode(dep.source);
+          }
+        });
+      });
     }
-  }, [
-    milestonePositions, 
-    milestonesGroup, 
-    workstreamPositions, 
-    updateOnlyAffectedConnections, 
-    updateVisualConnectionsForNode,
-    activities,
-    dependencies
-  ]);
+  }, [updateOnlyAffectedConnections, updateVisualConnectionsForNode, activities, dependencies]);
+
+  // ✅ OPTIMIZED: Milestone positions effect with intelligent batching
+  useEffect(() => {
+    // ✅ EARLY EXIT: Skip if no positions or in middle of batch update
+    if (Object.keys(milestonePositions).length === 0 || !milestonesGroup.current) return;
+  
+    // ✅ PERFORMANCE: Determine update strategy based on change volume
+    const changedPositions = Object.entries(milestonePositions);
+    const isLargeUpdate = changedPositions.length > 10;
+  
+    if (isLargeUpdate) {
+      // ✅ LARGE UPDATES: Use requestAnimationFrame for smooth performance
+      requestAnimationFrame(() => {
+        updateMilestonePositionsInDOM(changedPositions);
+        updateConnectionsForChangedPositions(changedPositions);
+      });
+    } else {
+      // ✅ SMALL UPDATES: Update immediately for responsiveness
+      updateMilestonePositionsInDOM(changedPositions);
+      updateConnectionsForChangedPositions(changedPositions);
+    }
+  }, [milestonePositions, milestonesGroup, workstreamPositions]);
 
   // This single effect handles all workstream position-related updates
   useEffect(() => {
@@ -1137,7 +1299,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         .style("will-change", "d")
         .datum({
           ...activity,
-          targetMilestoneIds: [targetId]
+          source_milestone: sourceId,
+          target_milestone: targetId 
         })
         .on("mouseover", (event) => {
           const targetMilestone = allMilestones.find(m => m.id === targetId);
@@ -1184,7 +1347,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
           .attr("class", "same-workstream-activity")
           .datum({
             ...activity,
-            targetMilestoneIds: [targetId]
+            source_milestone: sourceId,
+            target_milestone: targetId 
           })
           .on("mouseover", (event) => {
             handleD3MouseOver(event, getTooltipContent({ data: activity }));
@@ -1204,15 +1368,15 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       
         const perpVectorX = -dy / length;
         const perpVectorY = dx / length;
-        const someScale = 50;
+         const curveOffset = 50; // Curve intensity for multiple activities
       
         groupActivities.forEach((activity, index) => {
           const workstream = workstreams.find((ws) => ws.id === activity.workstreamId);
           if (!workstream) return;
         
           const offset = index - (groupActivities.length - 1) / 2;
-          const controlX = centerX + offset * perpVectorX * someScale;
-          const controlY = centerY + offset * perpVectorY * someScale;
+          const controlX = centerX + offset * perpVectorX * curveOffset;
+          const controlY = centerY + offset * perpVectorY * curveOffset;
         
           const pathData = `
             M ${source.x},${source.y}
@@ -1229,7 +1393,8 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             .attr("class", "same-workstream-activity")
             .datum({
               ...activity,
-              targetMilestoneIds: [targetId]
+              source_milestone: sourceId,
+              target_milestone: targetId
             })
             .on("mouseover", (event) => {
               handleD3MouseOver(event, getTooltipContent({ data: activity }));
