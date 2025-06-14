@@ -71,13 +71,12 @@
     deadline: string; // Date string
     status: 'not_started' | 'in_progress' | 'completed';
     strategic_goals: number[]; // Array of StrategicGoal IDs
-    parent_milestone?: number | null; // Optional reference to another Milestone
   };
   
   export type Activity = {
     id: number;
-    workstream: number; // Reference to Workstream
-    milestone?: number; // Optional reference to Milestone
+    source_milestone: number; // NEW: Required source milestone
+    target_milestone: number; // NEW: Required target milestones
     name: string;
     status: 'not_started' | 'in_progress' | 'completed';
     priority: 1 | 2 | 3; // 1: High, 2: Medium, 3: Low

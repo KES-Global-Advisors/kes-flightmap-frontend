@@ -2,7 +2,7 @@
 import React, { useEffect, useCallback, useMemo } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
-import { Milestone, Activity } from '../../types/model';
+import { Milestone, Activity, Workstream } from '../../types/model';
 import { PlusCircle, Trash2, Activity as ActivityIcon, AlertTriangle, CheckCircle2, Clock, Users, Info, Zap } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 import { FormLabel } from './Utils/RequiredFieldIndicator';
@@ -10,8 +10,8 @@ import { FormLabel } from './Utils/RequiredFieldIndicator';
 export type ActivityFormData = {
   activities: {
     id?: number;
-    workstream?: number;
-    milestone?: number;
+    source_milestone: number; // NEW: Required source milestone
+    target_milestone: number; // NEW: Required target milestones
     name: string;
     status: 'not_started' | 'in_progress' | 'completed';
     priority: 1 | 2 | 3;
@@ -73,6 +73,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   // Data fetching with comprehensive error boundary handling and performance optimization
   const { data: fetchedActivities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>(`${API}/activities/`);
   const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
+  const { data: workstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
 
   /**
    * Performance-Optimized Data Transformations
@@ -136,8 +137,8 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
       defaultEndDate.setDate(defaultEndDate.getDate() + 14); // 2-week default duration
 
       append({
-        workstream: undefined,
-        milestone: undefined,
+        source_milestone: 0,
+        target_milestone: 0,
         name: "",
         status: "not_started",
         priority: 2, // Medium priority as sensible default
@@ -539,39 +540,51 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
   };
 
   /**
-   * Milestone Alignment Validation
-   * 
-   * Strategic Coherence Analysis:
-   * - Milestone contribution verification
-   * - Timeline consistency checking
-   * - Strategic goal alignment assessment
+   * Enhanced validation for source and target milestones
    */
-  // const validateMilestoneAlignment = (activityIndex: number): { isValid: boolean, insights: string[] } => {
-  //   const activity = watch(`activities.${activityIndex}`);
-  //   const result = { isValid: true, insights: [] as string[] };
+  const validateMilestoneConnections = (activityIndex: number): { errors: string[], warnings: string[] } => {
+    const result = { errors: [] as string[], warnings: [] as string[] };
+    const currentActivity = watch(`activities.${activityIndex}`);
 
-  //   if (!activity) return result;
+    if (!currentActivity) return result;
 
-  //   // Validate primary milestone assignment
-  //   if (activity.milestone && activity.workstream) {
-  //     result.insights.push('Activity assigned to both milestone and workstream - verify organizational structure');
-  //   }
+    // Validate source milestone is selected
+    if (!currentActivity.source_milestone || currentActivity.source_milestone === 0) {
+      result.errors.push('Source milestone is required for activity connections');
+    }
 
-  //   // Analyze supported milestones
-  //   const supportedCount = activity.supported_milestones?.length || 0;
-  //   const additionalCount = activity.additional_milestones?.length || 0;
+    // Validate target milestone is selected (single milestone, not array)
+    if (!currentActivity.target_milestone || currentActivity.target_milestone === 0) {
+      result.errors.push('Target milestone is required');
+    }
 
-  //   if (supportedCount === 0 && additionalCount === 0 && !activity.milestone) {
-  //     result.insights.push('Activity not linked to any milestones - consider strategic alignment');
-  //     result.isValid = false;
-  //   }
+    // Validate source is not the same as target milestone
+    if (currentActivity.source_milestone && 
+        currentActivity.target_milestone &&
+        currentActivity.source_milestone === currentActivity.target_milestone) {
+      result.errors.push('Source milestone cannot be the same as target milestone');
+    }
 
-  //   if (supportedCount > 3) {
-  //     result.insights.push('Activity supports many milestones - verify scope appropriateness');
-  //   }
+    // Validate same workstream constraint
+    if (currentActivity.source_milestone && currentActivity.target_milestone) {
+      const sourceMilestone = milestones?.find(m => m.id === currentActivity.source_milestone);
+      const targetMilestone = milestones?.find(m => m.id === currentActivity.target_milestone);
 
-  //   return result;
-  // };
+      if (sourceMilestone && targetMilestone) {
+        if (sourceMilestone.workstream !== targetMilestone.workstream) {
+          const sourceWorkstreamName = workstreams?.find(w => w.id === sourceMilestone.workstream)?.name || 'Unknown';
+          const targetWorkstreamName = workstreams?.find(w => w.id === targetMilestone.workstream)?.name || 'Unknown';
+
+          result.errors.push(
+            `Source and target milestones must be in the same workstream. ` +
+            `Source is in "${sourceWorkstreamName}" and target is in "${targetWorkstreamName}".`
+          );
+        }
+      }
+    }
+
+    return result;
+  };
 
   return (
     <div className="space-y-8">
@@ -616,7 +629,6 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
         const dependencyAnalysis = validateDependencyChain(index);
         const resourceAnalysis = analyzeResourceAllocation(index);
         const priorityAssessment = assessPriorityAlignment(index);
-        // const milestoneValidation = validateMilestoneAlignment(index);
         const currentPriority = watch(`activities.${index}.priority`) as 1 | 2 | 3;
 
         return (
@@ -647,55 +659,169 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
             </div>
             
             <div className="space-y-4">
-              {/* Milestone Assignment with Conflict Detection */}
-              <div>
-                <FormLabel label="Milestone" required />
-                {loadingMilestones ? (
-                  <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
-                    <Clock className="w-4 h-4 inline mr-2" />
-                    Loading milestones...
-                  </div>
-                ) : errorMilestones ? (
-                  <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
-                    <AlertTriangle className="w-4 h-4 inline mr-2" />
-                    Critical error loading milestones: {errorMilestones}
-                  </div>
-                ) : (
-                  <>
-                    <select
-                      {...register(`activities.${index}.milestone` as const)}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    >
-                      <option value="">No milestone assignment</option>
-                      {milestones?.map((m: Milestone) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                    {!editMode && (
-                      <p className="mt-1 text-xs text-gray-500">
-                        Select the primary milestone this activity contributes to
-                      </p>
-                    )}
-                  </>
-                )}
+              {/* Source and Target Milestone Configuration */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <FormLabel label="Source Milestone" required />
+                  {loadingMilestones ? (
+                    <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
+                      <Clock className="w-4 h-4 inline mr-2" />
+                      Loading milestones...
+                    </div>
+                  ) : errorMilestones ? (
+                    <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
+                      <AlertTriangle className="w-4 h-4 inline mr-2" />
+                      Critical error loading milestones: {errorMilestones}
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        {...register(`activities.${index}.source_milestone` as const, {
+                          required: 'Source milestone is required - this is where the activity originates',
+                          validate: value => value !== 0 || 'Please select a valid source milestone'
+                        })}
+                        className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
+                          errors.activities?.[index]?.source_milestone ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                        }`}
+                      >
+                        <option value={0}>Select source milestone</option>
+                        {milestones?.map((m: Milestone) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      {!editMode && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          The milestone where this activity begins or originates from
+                        </p>
+                      )}
+                      {errors.activities?.[index]?.source_milestone && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {errors.activities[index]?.source_milestone?.message}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                
+                <div>
+                  <FormLabel label="Target Milestone" required />
+                  {loadingMilestones ? (
+                    <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
+                      <Clock className="w-4 h-4 inline mr-2" />
+                      Loading milestones...
+                    </div>
+                  ) : errorMilestones ? (
+                    <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
+                      <AlertTriangle className="w-4 h-4 inline mr-2" />
+                      Critical error loading milestones: {errorMilestones}
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        {...register(`activities.${index}.target_milestone` as const, {
+                          required: 'Target milestone is required - this is where the activity connects to',
+                          validate: value => value !== 0 || 'Please select a valid target milestone'
+                        })}
+                        className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
+                          errors.activities?.[index]?.target_milestone ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                        }`}
+                      >
+                        <option value={0}>Select target milestone</option>
+                        {milestones?.filter((m: Milestone) => {
+                          const sourceMilestoneId = watch(`activities.${index}.source_milestone`);
+                          return m.id !== sourceMilestoneId; // Prevent selecting same milestone as source
+                        }).map((m: Milestone) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      {!editMode && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          The milestone this activity connects to or contributes toward
+                        </p>
+                      )}
+                      {errors.activities?.[index]?.target_milestone && (
+                        <p className="mt-1 text-sm text-red-600">
+                          {errors.activities[index]?.target_milestone?.message}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
 
-              {/* Organizational Structure Conflict Warning */}
-              {watch(`activities.${index}.milestone`) && watch(`activities.${index}.workstream`) && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                  <div className="flex items-start">
-                    <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 mr-2 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-yellow-800">Organizational Structure Conflict</p>
-                      <p className="text-sm text-yellow-700 mt-1">
-                        Activity assigned to both milestone and workstream directly. Consider organizational hierarchy clarity.
-                      </p>
+              {/* Milestone Connection Validation */}
+              {(() => {
+                const milestoneValidation = validateMilestoneConnections(index);
+                if (milestoneValidation.errors.length > 0 || milestoneValidation.warnings.length > 0) {
+                  return (
+                    <div className="space-y-2">
+                      {milestoneValidation.errors.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                          <div className="flex items-start">
+                            <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-red-800 mb-1">Milestone Connection Errors:</p>
+                              <ul className="text-sm text-red-700 space-y-1">
+                                {milestoneValidation.errors.map((error, i) => (
+                                  <li key={i}>• {error}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {milestoneValidation.warnings.length > 0 && (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                          <div className="flex items-start">
+                            <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 mr-2 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium text-yellow-800 mb-1">Milestone Connection Warnings:</p>
+                              <ul className="text-sm text-yellow-700 space-y-1">
+                                {milestoneValidation.warnings.map((warning, i) => (
+                                  <li key={i}>• {warning}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
-              )}
+                  );
+                }
+                return null;
+              })()}
+
+                {/* Workstream Validation */}
+                {watch(`activities.${index}.source_milestone`) && watch(`activities.${index}.target_milestone`) && (() => {
+                  const sourceMilestone = milestones?.find(m => m.id === watch(`activities.${index}.source_milestone`));
+                  const targetMilestone = milestones?.find(m => m.id === watch(`activities.${index}.target_milestone`));
+
+                  if (sourceMilestone && targetMilestone && sourceMilestone.workstream !== targetMilestone.workstream) {
+                    const sourceWorkstreamName = workstreams?.find(w => w.id === sourceMilestone.workstream)?.name || 'Unknown';
+                    const targetWorkstreamName = workstreams?.find(w => w.id === targetMilestone.workstream)?.name || 'Unknown';
+
+                    return (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <div className="flex items-start">
+                          <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium text-red-800">Workstream Mismatch</p>
+                            <p className="text-sm text-red-700 mt-1">
+                              Source and target milestones must be in the same workstream. Source is in "{sourceWorkstreamName}" 
+                              and target is in "{targetWorkstreamName}".
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
               {/* Activity Name with Advanced Validation */}
               <div>

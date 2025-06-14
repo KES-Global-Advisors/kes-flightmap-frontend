@@ -14,7 +14,7 @@ export interface MilestonePlacement {
   duplicateKey?: number | string;
 }
 
-/**
+/** 
  * Extracts workstreams, milestones, and activities (including dependencies)
  * from the hierarchical flightmap data.
  */
@@ -45,24 +45,6 @@ export function extractMilestonesAndActivities(data: FlightmapData) {
         );
       }
     }
-    if (node.type === 'activity' && currentWorkstreamId != null) {
-      // find the nearest parent milestone
-      let pm = node.parent;
-      while (pm && pm.type !== 'milestone') pm = pm.parent;
-      if (pm?.id) {
-        activities.push({
-          ...node,
-          workstreamId: currentWorkstreamId,
-          sourceMilestoneId: pm.id,
-          targetMilestoneIds: [
-            ...(node.supported_milestones || []),
-            ...(node.additional_milestones || []),
-          ],
-          autoConnect:
-            !(node.supported_milestones?.length || node.additional_milestones?.length),
-        });
-      }
-    }
     node.children?.forEach((child: any) => {
       child.parent = node;
       visit(child, currentWorkstreamId);
@@ -70,26 +52,20 @@ export function extractMilestonesAndActivities(data: FlightmapData) {
   }
   visit(rootNode);
 
-  // also link parent→child via activities
-  function linkParentActivities(node: any) {
-    if (node.type === 'milestone' && node.children) {
-      const childMs = node.children.filter((c: any) => c.type === 'milestone');
-      const acts = node.children.filter((c: any) => c.type === 'activity');
-      childMs.forEach((cm: any) =>
-        acts.forEach((a: any) =>
+  // NEW: Extract activities from milestone source_activities
+  Object.values(workstreams).forEach(workstream => {
+    workstream.milestones.forEach(milestone => {
+      if (milestone.source_activities && Array.isArray(milestone.source_activities)) {
+        milestone.source_activities.forEach((activity: any) => {
           activities.push({
-            ...a,
-            sourceMilestoneId: node.id,
-            targetMilestoneIds: [cm.id],
-            autoConnect: false,
-          })
-        )
-      );
-    }
-    node.children?.forEach(linkParentActivities);
-  }
-  linkParentActivities(rootNode);
-
+            ...activity,
+            workstreamId: workstream.id, // Activity's workstream comes from its source milestone
+          });
+        });
+      }
+    });
+  });
+  
   return {
     workstreams: Object.values(workstreams),
     activities,

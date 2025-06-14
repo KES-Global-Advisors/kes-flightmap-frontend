@@ -16,7 +16,6 @@ export type MilestoneFormData = {
     deadline: string;
     status: 'not_started' | 'in_progress' | 'completed';
     strategic_goals: number[];
-    parent_milestone?: number | null;
     dependencies?: number[];
     [key: string]: unknown;
   }[];
@@ -73,7 +72,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
   );
 
   // Merge fetched milestones and dependent milestones with conflict resolution
-  const parentMilestoneOptions = useMemo(() => {
+  const DependentMilestoneOptions = useMemo(() => {
     const fetchedOptions = fetchedMilestones ? fetchedMilestones.map((ms: Milestone) => ({ 
       label: ms.name, 
       value: ms.id 
@@ -108,7 +107,6 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
         deadline: defaultDeadline.toISOString().split('T')[0],
         status: "not_started",
         strategic_goals: [],
-        parent_milestone: null,
         dependencies: []
       });
       
@@ -252,44 +250,6 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
     const currentMilestone = watch(`milestones.${milestoneIndex}`);
     
     if (!currentMilestone) return warnings;
-  
-    // Parent milestone cycle detection
-    if (currentMilestone.parent_milestone) {
-      const visitedParents = new Set<number>();
-      let currentParentId: number | null = currentMilestone.parent_milestone;
-      
-      // Check if current milestone would create a cycle by being its own parent
-      if (currentParentId === currentMilestone.id) {
-        warnings.push('Circular parent relationship detected - milestone cannot be its own parent');
-        return warnings; // Early return to avoid further checks
-      }
-      
-      while (currentParentId !== null && currentParentId !== undefined) {
-        // Check if we've already visited this parent (cycle detected)
-        if (visitedParents.has(currentParentId)) {
-          warnings.push('Circular parent chain detected - this creates an infinite hierarchy');
-          break;
-        }
-        
-        visitedParents.add(currentParentId);
-        
-        // Find the parent milestone
-        const parentMilestone = [...(fetchedMilestones || []), ...dependentMilestones]
-          .find(m => m.id === currentParentId);
-        
-        if (parentMilestone?.parent_milestone != null && parentMilestone.parent_milestone !== undefined) {
-          // Check if the next parent would create a cycle back to current milestone
-          if (parentMilestone.parent_milestone === currentMilestone.id) {
-            warnings.push('Circular parent chain detected - this creates an infinite hierarchy');
-            break;
-          }
-          currentParentId = parentMilestone.parent_milestone;
-        } else {
-          // No more parents in the chain - we're done
-          break;
-        }
-      }
-    }
   
     // Dependency timeline validation
     if (currentMilestone.dependencies && currentMilestone.dependencies.length > 0) {
@@ -579,7 +539,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
               </div>
               
               {/* Hierarchical Structure Configuration & Strategic Goals with Alignment Analysis */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1  gap-4">
                 <div>
                   <MultiSelect
                     label="Strategic Goals"
@@ -616,41 +576,17 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
                 <div>
                   <MultiSelect
                     label="Dependencies"
-                    options={parentMilestoneOptions.filter(ms => ms.value !== watch(`milestones.${index}.id`))}
+                    options={DependentMilestoneOptions.filter(ms => ms.value !== watch(`milestones.${index}.id`))}
                     value={watch(`milestones.${index}.dependencies`) || []}
                     onChange={(newValue) => setValue(`milestones.${index}.dependencies`, newValue.map(val => Number(val)))}
                     isLoading={loadingMilestones}
                     error={errorMilestones}
                     placeholder="Select dependency milestones..."
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Select milestones that must be completed before this milestone can be achieved
+                  </p>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Parent Milestone</label>
-                {loadingMilestones ? (
-                  <div className="mt-1 p-2 text-gray-500 bg-gray-50 rounded-md text-sm">
-                    Loading milestones...
-                  </div>
-                ) : errorMilestones ? (
-                  <div className="mt-1 p-2 text-red-600 bg-red-50 rounded-md text-sm">
-                    Error: {errorMilestones}
-                  </div>
-                ) : (
-                  <select
-                    {...register(`milestones.${index}.parent_milestone` as const)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  >
-                    <option value="">No Parent Milestone</option>
-                    {parentMilestoneOptions
-                      .filter(ms => ms.value !== watch(`milestones.${index}.id`)) // Prevent self-reference
-                      .map((ms) => (
-                        <option key={ms.value} value={ms.value}>
-                          {ms.label}
-                        </option>
-                      ))}
-                  </select>
-                )}
               </div>
 
               {/* Dependency Structure Analysis */}
@@ -659,7 +595,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
                   <div className="flex items-start">
                     <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-medium text-red-800 mb-1">Dependency Structure Issues:</p>
+                      <p className="text-sm font-medium text-red-800 mb-1">Dependency Issues:</p>
                       <ul className="text-sm text-red-700 space-y-1">
                         {dependencyWarnings.map((warning, i) => (
                           <li key={i}>• {warning}</li>

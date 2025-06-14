@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// cSpell:ignore workstream workstreams roadmaps Flightmap
+// cSpell:ignore workstream workstreams flightmaps Flightmap
 import { FlightmapData } from "@/types/flightmap";
 
 export function buildHierarchy(data: FlightmapData): any {
@@ -24,15 +24,19 @@ export function buildHierarchy(data: FlightmapData): any {
     additional_milestones: node.additional_milestones || [],
     dependencies: node.dependencies || [],
     color: node.color || "",
+    source_milestone: node.source_milestone || null,
+    target_milestone: node.target_milestone || null,
+    source_activities: node.source_activities || [],  // ✅ ADD THIS LINE
+    target_activities: node.target_activities || [],
     children: []
   });
 
-  // Create the roadmap node.
-  const roadmapNode = mapNode(data, "roadmap");
-  roadmapNode.description = data.description || "";
-  roadmapNode.created_at = data.created_at || "";
+  // Create the flightmap node.
+  const flightmapNode = mapNode(data, "flightmap");
+  flightmapNode.description = data.description || "";
+  flightmapNode.created_at = data.created_at || "";
 
-  roadmapNode.children = data.strategies
+  flightmapNode.children = data.strategies
     ? data.strategies.map((strategy: any) => {
         const strategyNode = mapNode(strategy, "strategy");
         strategyNode.tagline = strategy.tagline || "";
@@ -106,5 +110,5 @@ export function buildHierarchy(data: FlightmapData): any {
       })
     : [];
 
-  return roadmapNode;
+  return flightmapNode;
 }
