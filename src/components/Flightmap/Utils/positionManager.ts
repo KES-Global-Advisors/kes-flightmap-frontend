@@ -5,6 +5,7 @@ import {
   WORKSTREAM_AREA_HEIGHT, 
   WORKSTREAM_AREA_PADDING,
 } from './types';
+import { TrackedPosition } from './nodeTracking';
 
 // Standard timeout for all debounced operations
 export const DEBOUNCE_TIMEOUT = 250; // ms
@@ -17,7 +18,7 @@ export function updateNodePosition(
   newPosition: { x?: number, y?: number },
   options: {
     milestonesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
-    placementCoordinates: Record<string, any>,
+    placementCoordinates: Record<string, TrackedPosition>,
     margin: { top: number },
     contentHeight: number,
     dataId: number,
@@ -66,6 +67,12 @@ export function updateNodePosition(
   if (placementCoordinates[nodeId]) {
     if (newPosition.x !== undefined) placementCoordinates[nodeId].x = newPosition.x;
     if (newPosition.y !== undefined) placementCoordinates[nodeId].y = newPosition.y;
+    // Add timestamp for tracking
+    placementCoordinates[nodeId].lastUpdated = Date.now();
+  } else {
+    // Log warning if node not found
+    console.warn(`Node ${nodeId} not found in placement coordinates`);
+    return;
   }
   
   // 2. Update DOM if needed - CONSISTENTLY USING TRANSFORMS
@@ -104,6 +111,7 @@ export function updateNodePosition(
   // 4. Queue backend update (debounced)
   if (newPosition.y !== undefined) {
     const relY = (newPosition.y - margin.top) / contentHeight;
+
     debouncedUpsertPosition(
       dataId,
       'milestone',
@@ -140,7 +148,7 @@ export function updateWorkstreamPosition(
   workstreamId: number,
   newY: number,
   options: {
-    placementCoordinates: Record<string, any>,
+    placementCoordinates: Record<string, TrackedPosition>,
     margin: { top: number },
     contentHeight: number,
     dataId: number,
@@ -171,8 +179,17 @@ export function updateWorkstreamPosition(
   const wsKey = `ws-${workstreamId}`;
   if (placementCoordinates[wsKey]) {
     placementCoordinates[wsKey].y = newY;
+    placementCoordinates[wsKey].lastUpdated = Date.now(); // Add timestamp
   } else {
-    placementCoordinates[wsKey] = { x: 0, y: newY, workstreamId };
+    // Create new entry if doesn't exist
+    placementCoordinates[wsKey] = { 
+      x: 0, 
+      y: newY, 
+      workstreamId,
+      isDuplicate: false,
+      nodeType: 'original',
+      lastUpdated: Date.now()
+    } as TrackedPosition;
   }
   
   // Update React state for THIS workstream only

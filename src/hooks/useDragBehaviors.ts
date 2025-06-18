@@ -6,8 +6,8 @@ import * as d3 from 'd3';
 import { DefaultLinkObject } from 'd3-shape';
 import { MilestonePlacement } from '@/components/Flightmap/Utils/dataProcessing';
 import { updateNodePosition, calculateConstrainedY, updateWorkstreamPosition } from '@/components/Flightmap/Utils/positionManager';
+import { TrackedPosition } from '@/components/Flightmap/Utils/nodeTracking';
 
-// ✅ NEW: Batched state update manager
 class BatchedStateManager {
   private pendingMilestoneUpdates = new Map<string, { y: number }>();
   private pendingWorkstreamUpdates = new Map<number, { y: number }>();
@@ -139,10 +139,8 @@ export function useDragBehaviors({
   debouncedUpdateConnections,
   onMilestoneDeadlineChange,
   connectionCache,
-    // ✅ ADDED: Lines 30-31 - Batched update functions
-  debouncedBatchMilestoneUpdate,
-  activitiesGroup, // ✅ ADD: Reference to activities group
-  dependencyGroup, // ✅ ADD: Reference to dependency group
+  activitiesGroup,
+  dependencyGroup,
 }: {
   // Data
   data: { id: number };
@@ -158,15 +156,7 @@ export function useDragBehaviors({
   milestonePositions: { [id: string]: { y: number } };
   setMilestonePositions: React.Dispatch<React.SetStateAction<{ [id: string]: { y: number } }>>;
   
-  // Refs
-  placementCoordinates: Record<string, { 
-    x: number; 
-    y: number; 
-    isDuplicate?: boolean; 
-    originalId?: number; 
-    duplicateKey?: string | number;
-    workstreamId: number;
-  }>;
+  placementCoordinates: Record<string, TrackedPosition>;
   milestonesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
   workstreamGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
   
@@ -181,7 +171,7 @@ export function useDragBehaviors({
     flightmapId: number, 
     nodeType: 'milestone'|'workstream', 
     nodeId: number | string, 
-    relY: number, 
+    relY: number,
     isDuplicate?: boolean, 
     duplicateKey?: string, 
     originalNodeId?: number
@@ -193,21 +183,18 @@ export function useDragBehaviors({
     dependencyMap: Map<string, any[]>;
   };
 
-    // ✅ ADDED: Lines 62-63 - Batched update function types
-  debouncedBatchMilestoneUpdate: (updates: Record<string, { y: number }>) => void;
-    // ✅ ADD: Group references for scoped selections
   activitiesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
   dependencyGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
   debouncedUpdateConnections?: (nodeId: string | number) => void; // ADD THIS
 }) {
 
-    // ✅ CREATE: Batched state manager instance
+    // CREATE: Batched state manager instance
   const batchedStateManager = useMemo(
     () => new BatchedStateManager(setMilestonePositions, setWorkstreamPositions),
     [setMilestonePositions, setWorkstreamPositions]
   );
 
-  // ✅ CLEANUP: Clear batched updates on unmount
+  // CLEANUP: Clear batched updates on unmount
   useEffect(() => {
     return () => {
       batchedStateManager.clear();
@@ -265,7 +252,7 @@ export function useDragBehaviors({
   }, [connectionCache, activities, dependencies]);
 
   /**
-   * ✅ OPTIMIZED: Updates visual connections for a specific node
+   * OPTIMIZED: Updates visual connections for a specific node
    * BEFORE: Used document.documentElement queries (expensive)
    * AFTER: Uses scoped group selections (70-80% faster)
    */
@@ -623,105 +610,114 @@ export function useDragBehaviors({
           updateVisualConnectionsForNode(d.id);
         }
       })
-      .on("end", function(event, d) {
-        d3.select(this).classed("dragging", false);
-        
-        // Determine workstream
-        const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
-        
-        // Calculate final position
-        const deltaX = event.x - d.dragStartX;
-        const deltaY = event.y - d.dragStartY;
-        const newX = d.initialX + deltaX;
-        const newY = d.initialY + deltaY;
-        
-        // Apply constraints
-        const constrainedY = calculateConstrainedY(
-          newY,
-          workstreamId,
-          workstreamPositions
-        );
-        
-        // Find closest timeline marker for X position
-        const droppedX = newX;
-        const closestMarker = timelineMarkers.reduce((prev, curr) => {
-          const prevDist = Math.abs(xScale(prev) - droppedX);
-          const currDist = Math.abs(xScale(curr) - droppedX);
-          return currDist < prevDist ? curr : prev;
-        });
-        
-        const newDeadline = closestMarker;
-        const snappedX = xScale(newDeadline);
-        
-        // Check if position has actually changed significantly
-        const currentPosition = placementCoordinates[d.id];
-        // ✅ OPTIMIZED: Use batched state update instead of immediate setState
-        const positionChanged = !currentPosition || 
-          Math.abs(currentPosition.y - constrainedY) > 1 ||
-          Math.abs(currentPosition.x - snappedX) > 1;
-        
-        if (positionChanged) {
-          // ✅ BATCH: Queue update instead of immediate setState
-          batchedStateManager.queueMilestoneUpdate(d.id, { y: constrainedY });
-        }
-        
-        // Update node position with consistent transform approach
-        updateNodePosition(
-          d.id,
-          { x: snappedX, y: constrainedY },
-          {
-            milestonesGroup,
-            placementCoordinates,
-            margin,
-            contentHeight,
-            dataId: data.id,
-            isDuplicate: d.isDuplicate,
-            originalMilestoneId: d.originalMilestoneId,
-            debouncedUpsertPosition,
-            updateDOM: true,
-            updateConnections: true,
-            updateConnectionsFunction: updateVisualConnectionsForNode
-          }
-        );
-        
-        // Only update state if position actually changed (prevents unnecessary re-renders)
-        if (positionChanged) {
-          const batchUpdate = { [d.id]: { y: constrainedY } };
-          debouncedBatchMilestoneUpdate(batchUpdate);
-        }
-        
-        // Handle deadline changes only for original nodes
-        if (!d.isDuplicate) {
-          const originalDateMs = new Date(d.milestone.deadline).getTime();
-          const newDateMs = newDeadline.getTime();
-          if (newDateMs !== originalDateMs) {
-            onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
-              .then((ok) => {
-                if (!ok) {
-                  // Rollback X-axis position
-                  const origX = xScale(new Date(d.milestone.deadline));
-                  updateNodePosition(
-                    d.id,
-                    { x: origX },
-                    {
-                      milestonesGroup,
-                      placementCoordinates,
-                      margin,
-                      contentHeight,
-                      dataId: data.id,
-                      isDuplicate: d.isDuplicate,
-                      originalMilestoneId: d.originalMilestoneId,
-                      debouncedUpsertPosition,
-                      updateDOM: true,
-                      updateConnections: true,
-                      updateConnectionsFunction: updateVisualConnectionsForNode
-                    }
-                  );
+  .on("end", function(event, d) {
+    d3.select(this).classed("dragging", false);
+
+    // Determine workstream
+    const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
+
+    // Calculate final position
+    const deltaX = event.x - d.dragStartX;
+    const deltaY = event.y - d.dragStartY;
+    const newX = d.initialX + deltaX;
+    const newY = d.initialY + deltaY;
+
+    // Apply constraints
+    const constrainedY = calculateConstrainedY(
+      newY,
+      workstreamId,
+      workstreamPositions
+    );
+
+    // Find closest timeline marker for X position
+    const droppedX = newX;
+    const closestMarker = timelineMarkers.reduce((prev, curr) => {
+      const prevDist = Math.abs(xScale(prev) - droppedX);
+      const currDist = Math.abs(xScale(curr) - droppedX);
+      return currDist < prevDist ? curr : prev;
+    });
+
+    const newDeadline = closestMarker;
+    const snappedX = xScale(newDeadline);
+
+    // Check if position has actually changed significantly
+    const currentPosition = placementCoordinates[d.id];
+    const positionChanged = !currentPosition || 
+      Math.abs(currentPosition.y - constrainedY) > 1 ||
+      Math.abs(currentPosition.x - snappedX) > 1;
+
+    // ✅ FIX: Remove duplicate state update - only use batchedStateManager
+    if (positionChanged) {
+      // Queue update through batch manager
+      batchedStateManager.queueMilestoneUpdate(d.id, { y: constrainedY });
+
+      // ✅ FIX: Force flush for drag end to ensure immediate update
+      batchedStateManager.forceFlush();
+    }
+
+    // ✅ FIX: Update visual position AFTER state update
+    // This ensures the visual matches the state
+    d3.select(this).attr("transform", `translate(${snappedX - d.initialX}, ${constrainedY - d.initialY})`);
+
+    // Update node position in coordinate system
+    updateNodePosition(
+      d.id,
+      { x: snappedX, y: constrainedY },
+      {
+        milestonesGroup,
+        placementCoordinates,
+        margin,
+        contentHeight,
+        dataId: data.id,
+        isDuplicate: d.isDuplicate,
+        originalMilestoneId: d.originalMilestoneId,
+        debouncedUpsertPosition,
+        updateDOM: false, // ✅ FIX: Don't update DOM here since we just did it above
+        updateConnections: true,
+        updateConnectionsFunction: updateVisualConnectionsForNode
+      }
+    );
+
+    // Handle deadline changes only for original nodes
+    if (!d.isDuplicate) {
+      const originalDateMs = new Date(d.milestone.deadline).getTime();
+      const newDateMs = newDeadline.getTime();
+      if (newDateMs !== originalDateMs) {
+        onMilestoneDeadlineChange(d.milestone.id.toString(), newDeadline)
+          .then((ok) => {
+            if (!ok) {
+              // Rollback position
+              const origX = xScale(new Date(d.milestone.deadline));
+
+              // ✅ FIX: Update state before visual
+              batchedStateManager.queueMilestoneUpdate(d.id, { y: currentPosition.y });
+              batchedStateManager.forceFlush();
+
+              // Then update visual
+              d3.select(this).attr("transform", `translate(${origX - d.initialX}, ${currentPosition.y - d.initialY})`);
+
+              updateNodePosition(
+                d.id,
+                { x: origX, y: currentPosition.y },
+                {
+                  milestonesGroup,
+                  placementCoordinates,
+                  margin,
+                  contentHeight,
+                  dataId: data.id,
+                  isDuplicate: d.isDuplicate,
+                  originalMilestoneId: d.originalMilestoneId,
+                  debouncedUpsertPosition,
+                  updateDOM: false,
+                  updateConnections: true,
+                  updateConnectionsFunction: updateVisualConnectionsForNode
                 }
-              });
-          }
-        }
-      });
+              );
+            }
+          });
+      }
+    }
+  })
   }, [workstreamPositions, timelineMarkers, xScale, updateVisualConnectionsForNode, milestonesGroup, placementCoordinates, margin, contentHeight, data.id, debouncedUpsertPosition, setMilestonePositions, onMilestoneDeadlineChange, batchedStateManager]);
 
   /**
@@ -807,7 +803,6 @@ export function useDragBehaviors({
         const newY = Math.max(minAllowedY, event.y);
         const deltaY = newY - d.dragStartMouseY;
         
-        // ✅ OPTIMIZED: Batch milestone and workstream updates together
         const finalY = d.dragStartY + deltaY;
         const previousWorkstreamY = workstreamPositions[d.id]?.y;
         
@@ -818,9 +813,12 @@ export function useDragBehaviors({
           return;
         }
         
-       // ✅ BATCH: Collect all related updates for single batch
+        // ✅ FIX: Update state FIRST
+        batchedStateManager.queueWorkstreamUpdate(d.id, { y: finalY });
+        
+        // Collect milestone updates
         const relatedMilestoneUpdates = new Map<string, { y: number }>();
-
+        
         if (milestonesGroup.current) {
           milestonesGroup.current
             .selectAll(".milestone")
@@ -829,27 +827,43 @@ export function useDragBehaviors({
               (!p.isDuplicate && p.milestone?.workstreamId === d.id)))
             .each(function(p: any) {
               if (placementCoordinates[p.id]) {
-                const newY = p.initialY + deltaY;
-                relatedMilestoneUpdates.set(p.id, { y: newY });
+                const newMilestoneY = p.initialY + deltaY;
+                relatedMilestoneUpdates.set(p.id, { y: newMilestoneY });
+                
+                // Update placement coordinates
+                placementCoordinates[p.id].y = newMilestoneY;
               }
-              
-              // Reset transform immediately for visual consistency
-              d3.select(this).attr("transform", `translate(0, 0)`);
             });
         }
-
-        // ✅ BATCH: Queue workstream update
-        batchedStateManager.queueWorkstreamUpdate(d.id, { y: finalY });
-
-        // ✅ BATCH: Queue all milestone updates together
+        
+        // Queue all milestone updates
         relatedMilestoneUpdates.forEach((position, id) => {
           batchedStateManager.queueMilestoneUpdate(id, position);
         });
         
-        // Reset workstream group transform
+        // ✅ FIX: Force flush before visual updates
+        batchedStateManager.forceFlush();
+        
+        // ✅ FIX: NOW reset transforms after state is updated
         d3.select(this).attr("transform", "translate(0, 0)");
         
-        // Update ONLY this workstream's position
+        // Reset milestone transforms
+        if (milestonesGroup.current) {
+          milestonesGroup.current
+            .selectAll(".milestone")
+            .filter((p: any) => p && 
+              ((p.isDuplicate && p.placementWorkstreamId === d.id) || 
+              (!p.isDuplicate && p.milestone?.workstreamId === d.id)))
+            .each(function(p: any) {
+              // Reset transform
+              d3.select(this).attr("transform", `translate(0, 0)`);
+              
+              // Update initial position for next drag
+              p.initialY = p.initialY + deltaY;
+            });
+        }
+        
+        // Update workstream visual elements
         updateWorkstreamPosition(
           d.id, 
           finalY, 
@@ -864,13 +878,9 @@ export function useDragBehaviors({
           }
         );
         
-        // // Update milestone positions only if there are changes
-        // // ✅ MODIFIED: Lines 618-622 - Use batched update for milestone positions
-        // if (Object.keys(workstreamMilestoneUpdates).length > 0) {
-        //   // Use batched updater for better performance
-        //   debouncedBatchMilestoneUpdate(workstreamMilestoneUpdates);
-        // }
-      });
+        // Update the workstream's initial position for next drag
+        d.initialY = finalY;
+      })
   }, [milestonesGroup, placementCoordinates, updateVisualConnectionsForNode, margin, contentHeight, data.id, setWorkstreamPositions, debouncedUpsertPosition, workstreamGroup, workstreamPositions, batchedStateManager]);
   
 

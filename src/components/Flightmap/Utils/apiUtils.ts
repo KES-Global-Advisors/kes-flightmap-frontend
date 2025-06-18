@@ -23,7 +23,7 @@ export function ensureDuplicateNodeBackendRecord(
   workstreamPositions: WorkstreamPositions,
   marginTop: number,
   contentHeight: number,
-  processedDuplicates: React.MutableRefObject<Set<string>>,
+  processedDuplicatesSet: React.MutableRefObject<Set<string>>,
   upsertPosition: UseMutationResult<void, Error, UpsertPositionParams>
 ) {
   // Only process duplicate nodes with a duplicateKey
@@ -33,9 +33,9 @@ export function ensureDuplicateNodeBackendRecord(
 
   // Skip if we've already processed this duplicate
   const duplicateKey = String(placement.duplicateKey);
-  if (processedDuplicates.current.has(duplicateKey)) {
+  if (processedDuplicatesSet.current.has(duplicateKey)) {
     return;
-  }
+  }  
 
   // Check if this duplicate already exists in remoteMilestonePos
   const existingPos = remoteMilestonePos.find(p => 
@@ -68,5 +68,5 @@ export function ensureDuplicateNodeBackendRecord(
   }
 
   // Mark as processed
-  processedDuplicates.current.add(duplicateKey);
+  processedDuplicatesSet.current.add(duplicateKey);
 }
