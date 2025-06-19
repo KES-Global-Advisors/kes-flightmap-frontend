@@ -454,16 +454,16 @@ const EditStepper: React.FC<EditStepperProps> = ({
         };
       }
       case 'activities': {
-        const activity = (data as ActivityFormData).activities[0];
-        return {
-          id: selectedEntity.id,
-          workstream: activity.workstream,
-          milestone: activity.milestone,
+        return (data as ActivityFormData).activities.map(activity => ({
+          source_milestone: activity.source_milestone,
+          target_milestone: activity.target_milestone,
           name: activity.name,
           status: activity.status,
           priority: activity.priority,
           target_start_date: activity.target_start_date,
           target_end_date: activity.target_end_date,
+
+          // Activity dependency relationships
           prerequisite_activities: Array.isArray(activity.prerequisite_activities)
             ? activity.prerequisite_activities.flat()
             : activity.prerequisite_activities,
@@ -473,12 +473,16 @@ const EditStepper: React.FC<EditStepperProps> = ({
           successive_activities: Array.isArray(activity.successive_activities)
             ? activity.successive_activities.flat()
             : activity.successive_activities,
+
+          // Cross-workstream milestone support (maintained)
           supported_milestones: Array.isArray(activity.supported_milestones)
             ? activity.supported_milestones.flat()
             : activity.supported_milestones,
           additional_milestones: Array.isArray(activity.additional_milestones)
             ? activity.additional_milestones.flat()
             : activity.additional_milestones,
+
+          // Resource allocation fields
           impacted_employee_groups: Array.isArray(activity.impacted_employee_groups)
             ? activity.impacted_employee_groups.flat()
             : activity.impacted_employee_groups,
@@ -494,7 +498,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
           corporate_resources: Array.isArray(activity.corporate_resources)
             ? activity.corporate_resources.flat()
             : activity.corporate_resources,
-        };
+        }));
       }
       default:
         return null;

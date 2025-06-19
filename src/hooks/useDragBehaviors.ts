@@ -456,13 +456,13 @@ export function useDragBehaviors({
     });
 
     // ✅ OPTIMIZED: Handle cross-workstream activity connections
-    updateCrossWorkstreamActivities(nodeIdStr, nodeData, workstreamId);
+    updateCrossWorkstreamActivities(nodeData, workstreamId);
   }, [dependencies, allMilestones, placementCoordinates, activitiesGroup]);
 
   /**
    * ✅ NEW: Optimized cross-workstream activity updates
    */
-  const updateCrossWorkstreamActivities = useCallback((nodeIdStr: string, nodeData: any, workstreamId: number) => {
+  const updateCrossWorkstreamActivities = useCallback((nodeData: any, workstreamId: number) => {
     if (!activitiesGroup.current) return;
 
     const relevantActivities = activities.filter(activity => {
