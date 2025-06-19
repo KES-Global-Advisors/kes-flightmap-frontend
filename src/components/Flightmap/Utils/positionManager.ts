@@ -11,6 +11,37 @@ import { TrackedPosition } from './nodeTracking';
 export const DEBOUNCE_TIMEOUT = 250; // ms
 
 /**
+ * Coordinate precision management
+ * Rounds coordinates to avoid floating-point drift
+ */
+const COORDINATE_PRECISION = 2; // 2 decimal places = 0.01 pixel precision
+const RELATIVE_PRECISION = 6;   // 6 decimal places for 0-1 relative values
+
+export function roundCoordinate(value: number): number {
+  return Math.round(value * Math.pow(10, COORDINATE_PRECISION)) / Math.pow(10, COORDINATE_PRECISION);
+}
+
+export function roundRelative(value: number): number {
+  return Math.round(value * Math.pow(10, RELATIVE_PRECISION)) / Math.pow(10, RELATIVE_PRECISION);
+}
+
+/**
+ * Convert absolute Y to relative with precision control
+ */
+export function absoluteToRelative(absoluteY: number, marginTop: number, contentHeight: number): number {
+  const relY = (absoluteY - marginTop) / contentHeight;
+  return roundRelative(Math.max(0, Math.min(1, relY))); // Clamp to [0,1] and round
+}
+
+/**
+ * Convert relative Y to absolute with precision control
+ */
+export function relativeToAbsolute(relativeY: number, marginTop: number, contentHeight: number): number {
+  const absoluteY = marginTop + relativeY * contentHeight;
+  return roundCoordinate(absoluteY);
+}
+
+/**
  * Updates node position across all state representations
  */
 export function updateNodePosition(
@@ -110,13 +141,13 @@ export function updateNodePosition(
   
   // 4. Queue backend update (debounced)
   if (newPosition.y !== undefined) {
-    const relY = (newPosition.y - margin.top) / contentHeight;
+    const relY = absoluteToRelative(newPosition.y, margin.top, contentHeight);
 
     debouncedUpsertPosition(
       dataId,
       'milestone',
       isDuplicate ? nodeId : Number(nodeId),
-      relY,
+      relY, // Now using precision-controlled value
       isDuplicate,
       isDuplicate ? nodeId : "",
       originalMilestoneId
@@ -229,13 +260,13 @@ export function updateWorkstreamPosition(
       });
   }
   
-  // Queue backend update (debounced)
-  const relY = (newY - margin.top) / contentHeight;
+  // Queue backend update (debounced) - UPDATED with precision control
+  const relY = absoluteToRelative(newY, margin.top, contentHeight);
   debouncedUpsertPosition(
     dataId,
     'workstream',
     workstreamId,
-    relY,
+    relY, // Now using precision-controlled value
     false,
     "",
     undefined

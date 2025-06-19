@@ -76,8 +76,20 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   const workstreamGroup = useRef<d3.Selection<SVGGElement, unknown, null, undefined>>(null);
   const milestonesGroup = useRef<d3.Selection<SVGGElement, unknown, null, undefined>>(null);
   const dependencyGroup = useRef<d3.Selection<SVGGElement, unknown, null, undefined>>(null);
+  // Track pending save operations to prevent race conditions
+  const pendingSaves = useRef(new Set<string>());
   // Load saved positions from localStorage on mount
   const [initialPositionsLoaded, setInitialPositionsLoaded] = useState(false);
+
+  // Error tracking and retry management
+  const failedSaves = useRef(new Map<string, { 
+    attempt: number, 
+    lastError: Error, 
+    data: any 
+  }>());
+  const MAX_RETRY_ATTEMPTS = 3;
+  const RETRY_DELAY_BASE = 1000; // 1 second base delay
+  
 
   useEffect(() => {
     // Load saved positions from localStorage
@@ -124,30 +136,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       setMilestonePositions(prev => ({ ...prev, ...updates }));
     }, 50) // Faster debounce for better UX
   ).current;
-
-  // Debounced API call reference with support for duplicate node parameters
-  const debouncedUpsertPosition = useRef(
-    debounce((
-      flightmapId: number, 
-      nodeType: 'milestone'|'workstream', 
-      nodeId: number | string, 
-      relY: number, 
-      isDuplicate: boolean = false, 
-      duplicateKey: string = "", 
-      originalNodeId?: number
-    ) => {
-      upsertPos.mutate({
-        flightmap: flightmapId,
-        nodeType,
-        nodeId,
-        relY,
-        isDuplicate,
-        duplicateKey,
-        originalNodeId
-      });
-    }, DEBOUNCE_TIMEOUT)
-  ).current;
-
+  
   const width = window.innerWidth;
   const height = window.innerHeight * 0.8;
   const margin = useMemo(() => ({ 
@@ -163,6 +152,94 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   const { data: remoteMilestonePos = [] } = useNodePositions(data.id, 'milestone');
   const { data: remoteWorkstreamPos = [] } = useNodePositions(data.id, 'workstream');
   const upsertPos = useUpsertPosition();
+
+    // Enhanced retry function with exponential backoff
+  const retryFailedSave = useCallback((saveKey: string) => {
+    const failedSave = failedSaves.current.get(saveKey);
+    if (!failedSave || failedSave.attempt >= MAX_RETRY_ATTEMPTS) {
+      failedSaves.current.delete(saveKey);
+      return;
+    }
+
+    const delay = RETRY_DELAY_BASE * Math.pow(2, failedSave.attempt - 1);
+
+    setTimeout(() => {
+      console.log(`Retrying save for ${saveKey}, attempt ${failedSave.attempt + 1}`);
+
+      upsertPos.mutate(failedSave.data, {
+        onSuccess: () => {
+          failedSaves.current.delete(saveKey);
+          pendingSaves.current.delete(saveKey);
+          console.log(`Successfully saved ${saveKey} on retry`);
+        },
+        onError: (error) => {
+          failedSave.attempt++;
+          failedSave.lastError = error as Error;
+
+          if (failedSave.attempt >= MAX_RETRY_ATTEMPTS) {
+            console.error(`Failed to save ${saveKey} after ${MAX_RETRY_ATTEMPTS} attempts:`, error);
+            failedSaves.current.delete(saveKey);
+            pendingSaves.current.delete(saveKey);
+
+            // TODO: Show user notification about sync failure
+            // Consider adding a toast notification or error banner
+          } else {
+            retryFailedSave(saveKey);
+          }
+        }
+      });
+    }, delay);
+  }, [upsertPos]);
+
+  /**
+   * Debounced API call reference with support for duplicate node parameters
+   * Tracks pending operations
+  */
+  const debouncedUpsertPosition = useRef(
+    debounce((
+      flightmapId: number, 
+      nodeType: 'milestone'|'workstream', 
+      nodeId: number | string, 
+      relY: number, 
+      isDuplicate: boolean = false, 
+      duplicateKey: string = "", 
+      originalNodeId?: number
+    ) => {
+      const saveKey = `${nodeType}-${nodeId}`;
+      const saveData = {
+        flightmap: flightmapId,
+        nodeType,
+        nodeId,
+        relY,
+        isDuplicate,
+        duplicateKey,
+        originalNodeId
+      };
+
+      pendingSaves.current.add(saveKey);
+
+      upsertPos.mutate(saveData, {
+        onSuccess: () => {
+          pendingSaves.current.delete(saveKey);
+          failedSaves.current.delete(saveKey); // Clear any previous failures
+          console.log(`Successfully saved position for ${saveKey}`);
+        },
+        onError: (error) => {
+          console.error(`Failed to save position for ${saveKey}:`, error);
+
+          // Track the failure for retry
+          failedSaves.current.set(saveKey, {
+            attempt: 1,
+            lastError: error as Error,
+            data: saveData
+          });
+
+          // Start retry process
+          retryFailedSave(saveKey);
+        }
+      });
+    }, DEBOUNCE_TIMEOUT)
+  ).current;
 
   // Create debounced save functions
   const debouncedSaveMilestonePositions = useRef(
@@ -188,21 +265,22 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
 
   // Combine remote position loading into single effect with batched state updates
   useEffect(() => {
-    // ✅ FIX: Wait for initial positions to be loaded from localStorage
     if (!initialPositionsLoaded) return;
-
     if (!remoteMilestonePos.length && !remoteWorkstreamPos.length) return;
 
-    // ✅ FIX: Check if user is currently dragging
+    // Enhanced drag check
     const isDragging = (milestonesGroup.current?.select(".milestone.dragging")?.size?.() ?? 0) > 0 ||
                       (workstreamGroup.current?.select(".workstream.dragging")?.size?.() ?? 0) > 0;
-    
+
     if (isDragging) {
       return;
     }
 
-    // ✅ FIX: Merge remote and local positions, preferring local if they exist
-    if (remoteMilestonePos.length) {
+    // NEW: Check for pending saves before applying remote data
+    const hasPendingMilestoneSaves = Array.from(pendingSaves.current).some(key => key.startsWith('milestone-'));
+    const hasPendingWorkstreamSaves = Array.from(pendingSaves.current).some(key => key.startsWith('workstream-'));
+
+    if (remoteMilestonePos.length && !hasPendingMilestoneSaves) {
       setMilestonePositions(prev => {
         const updates = {} as typeof milestonePositions;
 
@@ -211,10 +289,14 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             ? p.duplicate_key 
             : p.node_id.toString();
 
+          // Check if this specific node has a pending save
+          const nodeKey = `milestone-${stateId}`;
+          if (pendingSaves.current.has(nodeKey)) {
+            return; // Skip this node if save is pending
+          }
+
           const remoteY = margin.top + p.rel_y * contentHeight;
 
-          // ✅ FIX: Only use remote position if no local position exists
-          // OR if the local position is the default (hasn't been moved by user)
           if (!prev[stateId]) {
             updates[stateId] = { y: remoteY };
           }
@@ -224,15 +306,21 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       });
     }
 
-    if (remoteWorkstreamPos.length) {
+    if (remoteWorkstreamPos.length && !hasPendingWorkstreamSaves) {
       setWorkstreamPositions(prev => {
         const updates = {} as typeof workstreamPositions;
 
         remoteWorkstreamPos.forEach(p => {
           const nodeId = typeof p.node_id === "string" ? Number(p.node_id) : p.node_id;
+
+          // Check if this specific workstream has a pending save
+          const nodeKey = `workstream-${nodeId}`;
+          if (pendingSaves.current.has(nodeKey)) {
+            return; // Skip this workstream if save is pending
+          }
+
           const remoteY = margin.top + p.rel_y * contentHeight;
 
-          // ✅ FIX: Only use remote position if no local position exists
           if (!prev[nodeId]) {
             updates[nodeId] = { y: remoteY };
           }
@@ -1022,7 +1110,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             margin.top, 
             contentHeight, 
             processedDuplicatesSet, 
-            upsertPos
+            debouncedUpsertPosition
           );
         }
       });
@@ -1653,6 +1741,10 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       debouncedSaveWorkstreamPositions.cancel?.();
       debouncedUpdateConnections.cancel?.();
       debouncedBatchMilestoneUpdate.cancel?.();
+
+      // Clear retry timers
+      failedSaves.current.clear();
+      pendingSaves.current.clear();
     };
   }, [milestonePositions, workstreamPositions]);
 

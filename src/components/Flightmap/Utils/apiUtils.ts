@@ -1,17 +1,7 @@
 // src/utils/flightmap/apiUtils.ts
 import { MilestonePlacement } from './dataProcessing';
 import { RemoteNodePosition, WorkstreamPositions } from './types';
-import { UseMutationResult } from '@tanstack/react-query';
-
-interface UpsertPositionParams {
-  flightmap: number;
-  nodeType: 'milestone' | 'workstream';
-  nodeId: number | string;
-  relY: number;
-  isDuplicate?: boolean;
-  duplicateKey?: string;
-  originalNodeId?: number;
-}
+import { absoluteToRelative } from './positionManager';
 
 /**
  * Ensures duplicate nodes are properly recorded in the backend
@@ -24,7 +14,16 @@ export function ensureDuplicateNodeBackendRecord(
   marginTop: number,
   contentHeight: number,
   processedDuplicatesSet: React.MutableRefObject<Set<string>>,
-  upsertPosition: UseMutationResult<void, Error, UpsertPositionParams>
+  // CHANGED: Use the enhanced upsert function with error handling
+  debouncedUpsertPosition: (
+    flightmapId: number, 
+    nodeType: 'milestone'|'workstream', 
+    nodeId: number | string, 
+    relY: number, 
+    isDuplicate?: boolean, 
+    duplicateKey?: string, 
+    originalNodeId?: number
+  ) => void
 ) {
   // Only process duplicate nodes with a duplicateKey
   if (!placement.isDuplicate || !placement.duplicateKey || !placement.originalMilestoneId) {
@@ -49,22 +48,21 @@ export function ensureDuplicateNodeBackendRecord(
     const workstreamId = placement.placementWorkstreamId;
     const workstreamY = workstreamPositions[workstreamId]?.y || 0;
 
-    // Calculate relative Y position (0-1 scale for backend)
-    const relY = (workstreamY - marginTop) / contentHeight;
+    // UNIFIED: Use the same precision control as regular nodes
+    const relY = absoluteToRelative(workstreamY, marginTop, contentHeight);
 
     console.log(`Creating backend record for duplicate milestone: ${duplicateKey}`);
 
-    // Store the duplicate node in the backend
-    upsertPosition.mutate({
-      flightmap: dataId,
-      nodeType: 'milestone',
-      // Use duplicateKey as the node_id for backend storage
-      nodeId: duplicateKey, // Use duplicateKey instead of original milestone ID
-      relY: relY > 0 && relY <= 1 ? relY : 0.5,
-      isDuplicate: true,
-      duplicateKey: duplicateKey,
-      originalNodeId: placement.originalMilestoneId
-    });
+    // UNIFIED: Use the enhanced debounced upsert with error handling
+    debouncedUpsertPosition(
+      dataId,
+      'milestone',
+      duplicateKey, // Use duplicateKey as the node_id
+      relY, // Now using precision-controlled value
+      true, // isDuplicate
+      duplicateKey,
+      placement.originalMilestoneId
+    );
   }
 
   // Mark as processed
