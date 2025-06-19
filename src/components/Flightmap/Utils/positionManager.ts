@@ -5,9 +5,41 @@ import {
   WORKSTREAM_AREA_HEIGHT, 
   WORKSTREAM_AREA_PADDING,
 } from './types';
+import { TrackedPosition } from './nodeTracking';
 
 // Standard timeout for all debounced operations
 export const DEBOUNCE_TIMEOUT = 250; // ms
+
+/**
+ * Coordinate precision management
+ * Rounds coordinates to avoid floating-point drift
+ */
+const COORDINATE_PRECISION = 2; // 2 decimal places = 0.01 pixel precision
+const RELATIVE_PRECISION = 6;   // 6 decimal places for 0-1 relative values
+
+export function roundCoordinate(value: number): number {
+  return Math.round(value * Math.pow(10, COORDINATE_PRECISION)) / Math.pow(10, COORDINATE_PRECISION);
+}
+
+export function roundRelative(value: number): number {
+  return Math.round(value * Math.pow(10, RELATIVE_PRECISION)) / Math.pow(10, RELATIVE_PRECISION);
+}
+
+/**
+ * Convert absolute Y to relative with precision control
+ */
+export function absoluteToRelative(absoluteY: number, marginTop: number, contentHeight: number): number {
+  const relY = (absoluteY - marginTop) / contentHeight;
+  return roundRelative(Math.max(0, Math.min(1, relY))); // Clamp to [0,1] and round
+}
+
+/**
+ * Convert relative Y to absolute with precision control
+ */
+export function relativeToAbsolute(relativeY: number, marginTop: number, contentHeight: number): number {
+  const absoluteY = marginTop + relativeY * contentHeight;
+  return roundCoordinate(absoluteY);
+}
 
 /**
  * Updates node position across all state representations
@@ -17,7 +49,7 @@ export function updateNodePosition(
   newPosition: { x?: number, y?: number },
   options: {
     milestonesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>,
-    placementCoordinates: Record<string, any>,
+    placementCoordinates: Record<string, TrackedPosition>,
     margin: { top: number },
     contentHeight: number,
     dataId: number,
@@ -66,6 +98,12 @@ export function updateNodePosition(
   if (placementCoordinates[nodeId]) {
     if (newPosition.x !== undefined) placementCoordinates[nodeId].x = newPosition.x;
     if (newPosition.y !== undefined) placementCoordinates[nodeId].y = newPosition.y;
+    // Add timestamp for tracking
+    placementCoordinates[nodeId].lastUpdated = Date.now();
+  } else {
+    // Log warning if node not found
+    console.warn(`Node ${nodeId} not found in placement coordinates`);
+    return;
   }
   
   // 2. Update DOM if needed - CONSISTENTLY USING TRANSFORMS
@@ -103,12 +141,13 @@ export function updateNodePosition(
   
   // 4. Queue backend update (debounced)
   if (newPosition.y !== undefined) {
-    const relY = (newPosition.y - margin.top) / contentHeight;
+    const relY = absoluteToRelative(newPosition.y, margin.top, contentHeight);
+
     debouncedUpsertPosition(
       dataId,
       'milestone',
       isDuplicate ? nodeId : Number(nodeId),
-      relY,
+      relY, // Now using precision-controlled value
       isDuplicate,
       isDuplicate ? nodeId : "",
       originalMilestoneId
@@ -140,7 +179,7 @@ export function updateWorkstreamPosition(
   workstreamId: number,
   newY: number,
   options: {
-    placementCoordinates: Record<string, any>,
+    placementCoordinates: Record<string, TrackedPosition>,
     margin: { top: number },
     contentHeight: number,
     dataId: number,
@@ -171,8 +210,17 @@ export function updateWorkstreamPosition(
   const wsKey = `ws-${workstreamId}`;
   if (placementCoordinates[wsKey]) {
     placementCoordinates[wsKey].y = newY;
+    placementCoordinates[wsKey].lastUpdated = Date.now(); // Add timestamp
   } else {
-    placementCoordinates[wsKey] = { x: 0, y: newY, workstreamId };
+    // Create new entry if doesn't exist
+    placementCoordinates[wsKey] = { 
+      x: 0, 
+      y: newY, 
+      workstreamId,
+      isDuplicate: false,
+      nodeType: 'original',
+      lastUpdated: Date.now()
+    } as TrackedPosition;
   }
   
   // Update React state for THIS workstream only
@@ -212,13 +260,13 @@ export function updateWorkstreamPosition(
       });
   }
   
-  // Queue backend update (debounced)
-  const relY = (newY - margin.top) / contentHeight;
+  // Queue backend update (debounced) - UPDATED with precision control
+  const relY = absoluteToRelative(newY, margin.top, contentHeight);
   debouncedUpsertPosition(
     dataId,
     'workstream',
     workstreamId,
-    relY,
+    relY, // Now using precision-controlled value
     false,
     "",
     undefined
