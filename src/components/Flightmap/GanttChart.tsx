@@ -212,7 +212,7 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
                 id,
                 name: activity.name,
                 level: 'activity',
-                parent: activity.milestone ? `m-${activity.milestone}` : ws.id,
+                parent: activity.source_milestone ? `m-${activity.source_milestone}` : ws.id,
                 startDate: new Date(activity.target_start_date),
                 endDate: new Date(activity.target_end_date),
                 status: activity.status || 'not_started',

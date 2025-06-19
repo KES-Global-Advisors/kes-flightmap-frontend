@@ -1,35 +1,27 @@
-// src/utils/flightmap/nodeTracking.ts
+// nodeTracking.ts - NEW VERSION
 import { MilestonePlacement } from './dataProcessing';
 
+export interface TrackedPosition {
+  x: number;
+  y: number;
+  isDuplicate: boolean;
+  originalId?: number;
+  duplicateKey?: string | number;
+  workstreamId: number;
+  nodeType: 'original' | 'duplicate';
+  lastUpdated?: number; // For debugging/optimization
+}
+
 /**
- * Tracks node positions in the appropriate coordinate storage
- * to maintain a single source of truth for positions
+ * Tracks node position in the unified coordinate system
  */
 export function trackNodePosition(
   placement: MilestonePlacement,
   x: number,
   y: number,
-  duplicateNodeCoordinates: React.MutableRefObject<Record<string, { x: number; y: number }>>,
-  originalNodeCoordinates: React.MutableRefObject<Record<string, { x: number; y: number }>>,
-  placementCoordinates: Record<string, { 
-    x: number; 
-    y: number; 
-    isDuplicate?: boolean; 
-    originalId?: number; 
-    duplicateKey?: string | number;
-    workstreamId: number;
-  }>
-) {
-  // Store position in dedicated tracking object based on node type
-  if (placement.isDuplicate) {
-    duplicateNodeCoordinates.current[placement.id] = { x, y };
-  } else {
-    originalNodeCoordinates.current[placement.id] = { x, y };
-  }
-  
-  // Store position in unified placement coordinates object
-  // which serves as the single source of truth for all element positions
-  placementCoordinates[placement.id] = {
+  placementCoordinates: Record<string, TrackedPosition>
+): TrackedPosition {
+  const position: TrackedPosition = {
     x,
     y,
     isDuplicate: !!placement.isDuplicate,
@@ -37,6 +29,35 @@ export function trackNodePosition(
     duplicateKey: placement.duplicateKey,
     workstreamId: placement.isDuplicate 
       ? placement.placementWorkstreamId 
-      : placement.milestone.workstreamId
+      : placement.milestone.workstreamId,
+    nodeType: placement.isDuplicate ? 'duplicate' : 'original',
+    lastUpdated: Date.now()
   };
+  
+  placementCoordinates[placement.id] = position;
+  return position;
+}
+
+// Helper functions for common queries
+export function getNodePosition(
+  nodeId: string, 
+  placementCoordinates: Record<string, TrackedPosition>
+): TrackedPosition | undefined {
+  return placementCoordinates[nodeId];
+}
+
+export function getNodesByType(
+  type: 'original' | 'duplicate',
+  placementCoordinates: Record<string, TrackedPosition>
+): Array<[string, TrackedPosition]> {
+  return Object.entries(placementCoordinates)
+    .filter(([, pos]) => pos.nodeType === type);
+}
+
+export function getNodesInWorkstream(
+  workstreamId: number,
+  placementCoordinates: Record<string, TrackedPosition>
+): Array<[string, TrackedPosition]> {
+  return Object.entries(placementCoordinates)
+    .filter(([, pos]) => pos.workstreamId === workstreamId);
 }

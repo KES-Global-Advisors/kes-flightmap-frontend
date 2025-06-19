@@ -76,7 +76,7 @@ const VALIDATION_RULES = {
     arrayField: 'milestones'
   },
   activities: {
-    required: ['name', 'status', 'priority', 'target_start_date', 'target_end_date'],
+    required: ['source_milestone', 'target_milestone', 'name', 'status', 'priority', 'target_start_date', 'target_end_date'],
     arrayField: 'activities'
   }
 };
@@ -170,6 +170,81 @@ const FormStepper: React.FC = () => {
           errors.push(rule.required);
         }
       });
+    } else if (currentStepId === 'activities') {
+        // ✅ SPECIAL HANDLING: Activities need custom validation for new structure
+        const activityData = data as ActivityFormData;
+
+        if (!activityData.activities || activityData.activities.length === 0) {
+          errors.push('At least one activity is required');
+        } else {
+          activityData.activities.forEach((activity, index) => {
+            // ✅ UPDATED: Validate new required fields
+            if (!activity.source_milestone || activity.source_milestone === 0) {
+              errors.push(`Activity ${index + 1}: Source milestone is required`);
+            }
+            if (!activity.target_milestone || activity.target_milestone === 0) {
+              errors.push(`Activity ${index + 1}: Target milestone is required`);
+            }
+            if (!activity.name || activity.name.trim() === '') {
+              errors.push(`Activity ${index + 1}: Name is required`);
+            }
+            if (!activity.status) {
+              errors.push(`Activity ${index + 1}: Status is required`);
+            }
+            if (!activity.priority) {
+              errors.push(`Activity ${index + 1}: Priority is required`);
+            }
+            if (!activity.target_start_date) {
+              errors.push(`Activity ${index + 1}: Target start date is required`);
+            }
+            if (!activity.target_end_date) {
+              errors.push(`Activity ${index + 1}: Target end date is required`);
+            }
+
+            // ✅ NEW VALIDATION: Source and target cannot be the same
+            if (activity.source_milestone === activity.target_milestone) {
+              errors.push(`Activity ${index + 1}: Source and target milestone cannot be the same`);
+            }
+
+            // ✅ NEW VALIDATION: Date logic validation
+            if (activity.target_start_date && activity.target_end_date) {
+              const startDate = new Date(activity.target_start_date);
+              const endDate = new Date(activity.target_end_date);
+              if (startDate >= endDate) {
+                errors.push(`Activity ${index + 1}: End date must be after start date`);
+              }
+
+              // Validate future dates
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              startDate.setHours(0, 0, 0, 0);
+
+              if (startDate < today) {
+                errors.push(`Activity ${index + 1}: Start date should be today or in the future`);
+              }
+            }
+
+            // ✅ NEW VALIDATION: Check for self-referencing dependencies
+            const allDependencies = [
+              ...(activity.prerequisite_activities || []),
+              ...(activity.parallel_activities || []),
+              ...(activity.successive_activities || [])
+            ];
+
+            if (activity.id && allDependencies.includes(activity.id)) {
+              errors.push(`Activity ${index + 1}: Cannot depend on itself`);
+            }
+
+            // ✅ NEW VALIDATION: Check for duplicate dependencies across types
+            const duplicateDeps = allDependencies.filter((dep, idx) => 
+              allDependencies.indexOf(dep) !== idx
+            );
+
+            if (duplicateDeps.length > 0) {
+              errors.push(`Activity ${index + 1}: Cannot list the same activity in multiple dependency types`);
+            }
+          });
+        } 
     } else {
       // Array-based entity validation
       if ('arrayField' in rules && typeof rules.arrayField === 'string') {
@@ -295,13 +370,15 @@ const FormStepper: React.FC = () => {
       }
       case 'activities': {
         return (data as ActivityFormData).activities.map(activity => ({
-          workstream: activity.workstream,
-          milestone: activity.milestone,
+          source_milestone: activity.source_milestone,
+          target_milestone: activity.target_milestone,
           name: activity.name,
           status: activity.status,
           priority: activity.priority,
           target_start_date: activity.target_start_date,
           target_end_date: activity.target_end_date,
+
+          // Activity dependency relationships
           prerequisite_activities: Array.isArray(activity.prerequisite_activities)
             ? activity.prerequisite_activities.flat()
             : activity.prerequisite_activities,
@@ -311,12 +388,16 @@ const FormStepper: React.FC = () => {
           successive_activities: Array.isArray(activity.successive_activities)
             ? activity.successive_activities.flat()
             : activity.successive_activities,
+
+          // Cross-workstream milestone support (maintained)
           supported_milestones: Array.isArray(activity.supported_milestones)
             ? activity.supported_milestones.flat()
             : activity.supported_milestones,
           additional_milestones: Array.isArray(activity.additional_milestones)
             ? activity.additional_milestones.flat()
             : activity.additional_milestones,
+
+          // Resource allocation fields
           impacted_employee_groups: Array.isArray(activity.impacted_employee_groups)
             ? activity.impacted_employee_groups.flat()
             : activity.impacted_employee_groups,
@@ -685,9 +766,6 @@ const FormStepper: React.FC = () => {
   };
 
   const [milestoneModalOpen, setMilestoneModalOpen] = useState<boolean>(false);
-  // const openMilestoneModal = () => {
-  //   setMilestoneModalOpen(true);
-  // };
 
   const [dependentActivities, setDependentActivities] = useState<Activity[]>([]);
   const handleDependentActivityCreate = (activity: Activity) => {
@@ -848,7 +926,6 @@ const FormStepper: React.FC = () => {
             )}
             {currentStepId === 'milestones' && (
               <MilestoneForm 
-                // openMilestoneModal={openMilestoneModal} 
                 dependentMilestones={dependentMilestones}
                 editMode={false}
               />

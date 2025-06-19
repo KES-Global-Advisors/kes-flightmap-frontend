@@ -22,8 +22,8 @@ export interface Activity {
   delay_days: number;
   is_overdue: boolean;
   contributors: Contributor[];
-  milestone: number;
-  workstream: number;
+  source_milestone: number;
+  target_milestone: number;
   supported_milestones: number[];
   additional_milestones: number[];
   actual_duration: number | null | undefined;
