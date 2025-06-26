@@ -13,3 +13,31 @@
   .milestone.dragging, .workstream.dragging {
     transition: none;
   }
+
+  /* Enhanced visual feedback for workstream areas in creation mode */
+.workstream-area.creation-mode-active {
+  transition: all 0.2s ease;
+}
+
+.workstream-area.creation-mode-active:hover {
+  filter: brightness(1.1);
+}
+
+/* Add a subtle animation for creation mode */
+.workstream.creation-mode-active .workstream-area {
+  animation: pulse-creation 2s infinite;
+}
+
+@keyframes pulse-creation {
+  0%, 100% {
+    stroke-opacity: 0.4;
+  }
+  50% {
+    stroke-opacity: 0.7;
+  }
+}
+
+/* Style for selected milestones in edit mode */
+.milestone.selected circle {
+  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.5));
+}

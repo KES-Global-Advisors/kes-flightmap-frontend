@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// cSpell:ignore workstream workstreams roadmaps Flightmap
+// cSpell:ignore workstream workstreams roadmaps Flightmap flightmaps
 import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import '../../style.css'
 import * as d3 from "d3";
@@ -38,7 +38,9 @@ import {
 import { trackNodePosition, TrackedPosition } from './Utils/nodeTracking';
 import { ensureDuplicateNodeBackendRecord } from './Utils/apiUtils';
 import { useTooltip } from '../../hooks/useTooltip';
-import { createLegend } from './Utils/legendUtils';
+import { useQuickEditModes, EditModeCallbacks } from '../../hooks/useQuickEditModes';
+import { EditModeManager, VisualizationData } from './FlightmapComponents/QuickEdit';
+import { createEditableLegend, updateLegendEditState } from './Utils/legendUtils';
 import { setupZoomBehavior, resetZoom } from './Utils/zoomUtils';
 import { initializeVisualizationSVG, addResetViewButton, SvgContainers } from './Utils/svgSetup';
 import { 
@@ -124,12 +126,10 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
 
   // Create a ref for SVG containers
   const svgContainers = useRef<SvgContainers | null>(null);
-
   const placementCoordinates = useRef<Record<string, TrackedPosition>>({}).current;
   // Add helper ref for tracking processed duplicates if needed
   const processedDuplicatesSet = useRef(new Set<string>());
 
-  
   // Add after the existing debouncedUpsertPosition ref (around line 190)
   const debouncedBatchMilestoneUpdate = useRef(
     debounce((updates: Record<string, { y: number }>) => {
@@ -263,6 +263,93 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     }, 16) // ~60fps
   ).current;
 
+    // ✅ NEW: Add quick edit modes hook
+  const editModeCallbacks: EditModeCallbacks = useMemo(() => ({
+    onMilestoneUpdate: async (milestoneId: string, updates: any) => {
+      console.log('Updating milestone:', milestoneId, updates);
+      if (updates.deadline) {
+        await onMilestoneDeadlineChange(milestoneId, new Date(updates.deadline));
+      }
+    },
+
+    onDependencyCreate: async (source: number, target: number) => {
+      console.log('Creating dependency:', source, '→', target);
+      try {
+        const token = sessionStorage.getItem('accessToken');
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/dependencies/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+          body: JSON.stringify({ source, target, flightmap: data.id })
+        });
+
+        if (!response.ok) throw new Error('Failed to create dependency');
+
+        queryClient.invalidateQueries({ queryKey: ['flightmaps'] });
+      } catch (error) {
+        console.error('Error creating dependency:', error);
+        throw error;
+      }
+    },
+
+    onActivityCreate: async (sourceId: number, targetId: number, activityData: any) => {
+      console.log('Creating activity:', sourceId, '→', targetId, activityData);
+    },
+
+    onMilestoneCreate: async (workstreamId: number, position: { x: number, y: number }, milestoneData: any) => {
+      console.log('Creating milestone in workstream:', workstreamId, 'at position:', position, milestoneData);
+    },
+
+    onTimelineUpdate: async (milestoneIds: string[], newDeadline: Date) => {
+      console.log('Updating timeline for milestones:', milestoneIds, 'to:', newDeadline);
+      for (const milestoneId of milestoneIds) {
+        await onMilestoneDeadlineChange(milestoneId, newDeadline);
+      }
+    }
+  }), [onMilestoneDeadlineChange, data.id, queryClient]);
+
+  const {
+    editState,
+    activateMode,
+    deactivateMode,
+    selectNode,
+    isNodeSelected,
+    getStepDescription,
+    isEditMode,
+    currentMode
+  } = useQuickEditModes(editModeCallbacks);
+
+  // ✅ NEW: Enhanced data update handler for edit operations
+  const handleDataUpdate = useCallback(async (updateType: string, data: any) => {
+    try {
+      switch (updateType) {
+        case 'milestone':
+          await editModeCallbacks.onMilestoneUpdate?.(data.id.toString(), data);
+          break;
+        case 'dependency':
+          await editModeCallbacks.onDependencyCreate?.(data.source, data.target);
+          break;
+        case 'activity':
+          await editModeCallbacks.onActivityCreate?.(data.sourceId, data.targetId, data);
+          break;
+        case 'milestone-create':
+          await editModeCallbacks.onMilestoneCreate?.(data.workstreamId, data.position, data.milestoneData);
+          break;
+        case 'timeline':
+          await editModeCallbacks.onTimelineUpdate?.(data.milestoneIds, data.newDeadline);
+          break;
+        default:
+          console.warn('Unknown update type:', updateType);
+      }
+    } catch (error) {
+      console.error(`Error handling ${updateType} update:`, error);
+      // You might want to show a user-friendly error message here
+    }
+  }, [editModeCallbacks]);
+
+
   // Combine remote position loading into single effect with batched state updates
   useEffect(() => {
     if (!initialPositionsLoaded) return;
@@ -364,54 +451,53 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     dependencyGroup.current = svgContainers.current.dependencyGroup;    
       
     // Create legend
-    createLegend(
+    createEditableLegend(
       svgContainers.current.svg, 
       legendData,
       { x: width - margin.right + -50, y: margin.top },
-      // Reset button callback
-      () => {
-        // Show a loading state
-        const resetButton = svgContainers.current?.svg.select(".reset-positions-button");
-        resetButton?.select("text").text("Resetting positions...");
-        
-        // Clear local storage
-        localStorage.removeItem(getMilestonePositionsKey(dataId.current));
-        localStorage.removeItem(getWorkstreamPositionsKey(dataId.current));
-        
-        // Reset local state
-        setMilestonePositions({});
-        setWorkstreamPositions({});
-        
-        // Call the reset endpoint
-        const resetPositions = async () => {
-          const token = sessionStorage.getItem('accessToken');
-          try {
-            const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/positions/reset/?flightmap=${data.id}`, {
-              method: 'DELETE',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token && { Authorization: `Bearer ${token}` }),
-              },
-            });
-            
-            if (!res.ok) {
-              console.error('Failed to reset positions on server');
+      {
+        onEditModeChange: activateMode,
+        resetCallback: () => {
+          // Existing reset logic
+          const resetButton = svgContainers.current?.svg.select(".reset-positions-button");
+          resetButton?.select("text").text("Resetting positions...");
+          
+          localStorage.removeItem(getMilestonePositionsKey(dataId.current));
+          localStorage.removeItem(getWorkstreamPositionsKey(dataId.current));
+          
+          setMilestonePositions({});
+          setWorkstreamPositions({});
+          
+          // Reset endpoint call (existing logic)
+          const resetPositions = async () => {
+            const token = sessionStorage.getItem('accessToken');
+            try {
+              const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/positions/reset/?flightmap=${data.id}`, {
+                method: 'DELETE',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token && { Authorization: `Bearer ${token}` }),
+                },
+              });
+              
+              if (!res.ok) {
+                console.error('Failed to reset positions on server');
+              }
+              
+              queryClient.invalidateQueries({ queryKey: ['positions', data.id, 'milestone'] });
+              queryClient.invalidateQueries({ queryKey: ['positions', data.id, 'workstream'] });
+              
+              resetButton?.select("text").text("🔄 Reset Positions");
+            } catch (error) {
+              console.error('Error resetting positions:', error);
+              resetButton?.select("text").text("🔄 Reset Positions");
             }
-            
-            // Invalidate queries to refresh data from server
-            queryClient.invalidateQueries({ queryKey: ['positions', data.id, 'milestone'] });
-            queryClient.invalidateQueries({ queryKey: ['positions', data.id, 'workstream'] });
-            
-            // Reset button text
-            resetButton?.select("text").text("Reset Node Positions");
-          } catch (error) {
-            console.error('Error resetting positions:', error);
-            resetButton?.select("text").text("Reset Node Positions");
-          }
-        };
-        
-        resetPositions();
-      }
+          };
+          
+          resetPositions();
+        }
+      },
+      currentMode // ✅ NEW: Pass current edit mode for visual feedback
     );
 
     // Add reset view button
@@ -426,6 +512,13 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     );
 
   }, [width, height, margin, data.id, queryClient]);
+
+    // ✅ NEW: Update legend when edit mode changes
+  useEffect(() => {
+    if (svgContainers.current?.svg) {
+      updateLegendEditState(svgContainers.current.svg, currentMode);
+    }
+  }, [currentMode]);
 
   // 2. Initialize zoom behavior - executed once after container is created
   useEffect(() => {
@@ -555,6 +648,21 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       .range([100, contentHeight - 100])
       .padding(1.0);
   }, [workstreams, contentHeight]);
+
+    // ✅ NEW: Prepare visualization data for edit components
+  const visualizationData: VisualizationData = {
+    allMilestones,
+    activities,
+    dependencies,
+    workstreams,
+    placementCoordinates,
+    timelineMarkers,
+    xScale,
+    yScale,
+    margin,
+    contentHeight,
+    contentWidth
+  };
 
   // OPTIMIZATION 1: Memoize placement groups
   const placementGroups = useMemo(() => {
@@ -924,7 +1032,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         .datum({ ...workstream, initialY: y })
         .attr("class", "workstream")
         .attr("data-id", workstream.id)
-        .attr("cursor", "ns-resize")
+        .attr("cursor", currentMode === 'milestone-creator' ? "crosshair" : "ns-resize")
         .call(workstreamDragBehavior as any);
 
       wsGroup.attr("transform", "translate(0, 0)");
@@ -970,7 +1078,63 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         .attr("stroke-opacity", 0.3)
         .attr("stroke-dasharray", "4 2");
     });
-  }, [workstreams, workstreamInitialPositions, createWorkstreamDragBehavior, contentWidth]);
+
+    if (currentMode === 'milestone-creator') {
+      workstreamGroup.current.selectAll(".workstream-area")
+        .on("click.create", function(event, d: any) {
+          event.stopPropagation();
+        
+          // ✅ FIX: Proper type checking and error handling
+          if (!d || typeof d.id !== 'number') {
+            console.warn('Invalid workstream data for milestone creation');
+            return;
+          }
+        
+          const [x, y] = d3.pointer(event, this);
+          console.log(`Create milestone in workstream ${d.id} at position:`, { x, y });
+        
+          // ✅ FIX: Safer position calculation
+          // const workstreamRect = (this as SVGElement).getBoundingClientRect();
+          const svg = workstreamGroup.current!.node()?.ownerSVGElement;
+
+          if (svg) {
+            const absoluteX = x;
+            const absoluteY = parseFloat(d3.select(this).attr("y")) + y;
+          
+            selectNode(`create-${d.id}`, {
+              workstreamId: d.id,
+              position: { x: absoluteX, y: absoluteY },
+              workstreamData: d
+            });
+          }
+        })
+        .classed("creation-mode-active", true)
+        .style("cursor", "crosshair")
+        .on("mouseenter.create", function() {
+          d3.select(this)
+            .attr("fill-opacity", 0.15)
+            .attr("stroke-width", 2);
+        })
+        .on("mouseleave.create", function() {
+          d3.select(this)
+            .attr("fill-opacity", 0.05)
+            .attr("stroke-width", 1);
+        });
+    } else {
+      // ✅ FIX: Remove creation click handlers and reset styling
+      workstreamGroup.current.selectAll(".workstream-area")
+        .on("click.create", null)
+        .on("mouseenter.create", null)
+        .on("mouseleave.create", null)
+        .classed("creation-mode-active", false)
+        .style("cursor", null)
+        .attr("fill-opacity", 0.05)
+        .attr("stroke-width", 1);
+    
+      workstreamGroup.current.selectAll(".workstream")
+        .attr("cursor", "ns-resize");
+    }
+  }, [workstreams, workstreamInitialPositions, createWorkstreamDragBehavior, contentWidth, currentMode, selectNode]);
 
   const renderMilestones = useCallback(() => {
     if (!milestonesGroup.current) return;
@@ -1021,7 +1185,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
             workstreamRef: workstreamId
           })
           .attr("class", "milestone")
-          .attr("cursor", "move")
+          .attr("cursor", isEditMode ? "pointer" : "move")
           .call(milestoneDragBehavior as any);
 
         const originalWorkstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
@@ -1115,10 +1279,58 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         }
       });
     });
+
+      // ✅ NEW: Add edit mode click handlers AFTER all milestone groups are created
+      if (isEditMode) {
+        milestonesGroup.current.selectAll(".milestone")
+          .on("click.edit", function(event, d: any) {
+            event.stopPropagation();
+
+            // ✅ FIX: Type checking for d parameter
+            if (!d || !d.id) {
+              console.warn('Invalid milestone data for edit mode');
+              return;
+            }
+
+            if (currentMode === 'milestone-editor' || 
+                currentMode === 'dependency-creator' || 
+                currentMode === 'activity-builder') {
+                
+              console.log(`Edit mode click on milestone: ${d.id}`, d);
+              selectNode(d.id, d);
+            }
+          })
+          .classed("edit-mode-active", true)
+          .each(function(d: any) {
+            // ✅ FIX: Type checking and safe property access
+            if (d && d.id && isNodeSelected && isNodeSelected(d.id)) {
+              d3.select(this)
+                .classed("selected", true)
+                .select("circle")
+                .attr("stroke-width", 3)
+                .attr("stroke", "#3b82f6");
+            }
+          });
+      } else {
+        // ✅ FIX: Remove edit mode click handlers when not in edit mode
+        milestonesGroup.current.selectAll(".milestone")
+          .on("click.edit", null)
+          .classed("edit-mode-active", false)
+          .classed("selected", false)
+          .select("circle")
+          .attr("stroke-width", (d: any) => d?.activityId ? 2 : 1)
+          .attr("stroke", (d: any) => {
+            if (!d || !d.milestone) return "#6366f1";
+            const milestone = d.milestone;
+            const originalWorkstream = workstreams.find((ws) => ws.id === milestone.workstreamId);
+            const fillColor = milestone.status === "completed" ? "#ccc" : originalWorkstream?.color || "#6366f1";
+            return d3.color(fillColor)?.darker(0.5) + "";
+          });
+      }
   }, [placementGroups, allNodePositions, workstreams, xScale, yScale, workstreamPositions, 
       milestonePositions, createMilestoneDragBehavior, handleD3MouseOver, handleD3MouseMove, 
       handleD3MouseOut, data.id, remoteMilestonePos, margin.top, contentHeight, upsertPos, 
-      placementCoordinates]);
+      placementCoordinates, isEditMode, currentMode, selectNode]);
 
   const renderConnections = useCallback(() => {
     if (!activitiesGroup.current || !dependencyGroup.current) return;
@@ -1751,6 +1963,19 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   return (
     <div className="w-full h-full relative">
       <svg ref={svgRef}></svg>
+
+      <EditModeManager
+        editState={editState}
+        onDeactivate={deactivateMode}
+        onDataUpdate={handleDataUpdate}
+        svgRef={svgRef as React.RefObject<SVGSVGElement>}
+        visualizationData={visualizationData}
+        onMilestoneUpdate={editModeCallbacks.onMilestoneUpdate}
+        onDependencyCreate={editModeCallbacks.onDependencyCreate}
+        onActivityCreate={editModeCallbacks.onActivityCreate}
+        onMilestoneCreate={editModeCallbacks.onMilestoneCreate}
+        onTimelineUpdate={editModeCallbacks.onTimelineUpdate}
+      />
       <Tooltip
         content={tooltip.content}
         left={tooltip.left}
@@ -1759,6 +1984,12 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       />
       <div className="absolute top-4 left-4 flex flex-col gap-2">
         <ScreenshotButton svgRef={svgRef} />
+                {/* ✅ NEW: Optional edit mode debug info (remove in production) */}
+        {process.env.NODE_ENV === 'development' && isEditMode && (
+          <div className="bg-gray-800 text-white text-xs px-2 py-1 rounded">
+            Mode: {currentMode} | Step: {getStepDescription()} | Selected: {editState.selectedNodes.length}
+          </div>
+        )}
       </div>
     </div>
   );
