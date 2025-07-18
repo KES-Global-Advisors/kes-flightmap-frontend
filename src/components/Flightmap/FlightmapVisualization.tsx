@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import '../../style.css'
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
-import { FlightmapData } from "@/types/flightmap";
+import { Strategy } from "@/types/flightmap";
 import { useQueryClient } from '@tanstack/react-query';
 import { useNodePositions, useUpsertPosition } from '@/api/flightmap';
 
@@ -51,7 +51,7 @@ import {
 import useDragBehaviors from '../../hooks/useDragBehaviors';
 
 interface FlightmapVisualizationProps {
-  data: FlightmapData;
+  data: Strategy;
   onMilestoneDeadlineChange: (milestoneId: string, newDeadline: Date) => Promise<boolean>;
 }
 

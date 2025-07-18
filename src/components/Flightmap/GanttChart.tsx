@@ -1,6 +1,6 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat flightmap
+// cSpell:ignore workstream workstreams flightmaps Gantt hoverable strat flightmap
 import React, { useState, useEffect, MouseEvent, useRef } from 'react';
-import { FlightmapData } from '@/types/flightmap';
+import { Strategy } from '@/types/flightmap';
 import { useAuth } from '@/contexts/UserContext';
 import { updateTaskStatus } from './GanttUtils/updateTaskStatus';
 import { sendContribution } from './GanttUtils/sendContribution';
@@ -29,7 +29,7 @@ export interface GanttItem {
 }
 
 interface GanttChartProps {
-  data: FlightmapData;
+  data: Strategy;
 }
 
 function formatDate(date: Date): string {
@@ -116,12 +116,12 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
   // Ref for click timeout to differentiate single and double clicks
   const clickTimeoutRef = useRef<number | null>(null);
 
-  // --- STEP 1: Flatten the roadmap data into a single tasks array ---
+  // --- STEP 1: Flatten the flightmap data into a single tasks array ---
   const processData = (): GanttItem[] => {
     const itemMap = new Map<string, GanttItem>();
   
-    data.strategies.forEach(strategy => {
-      const strat: GanttItem = {
+    const strategy: Strategy = data;
+    const strat: GanttItem = {
         id: `s-${strategy.id}`,
         name: strategy.name,
         level: 'strategy',
@@ -136,7 +136,7 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
       };
       itemMap.set(strat.id, strat);
   
-      strategy.programs.forEach(program => {
+      data.programs.forEach(program => {
         const prog: GanttItem = {
           id: `p-${program.id}`,
           name: program.name,
@@ -226,7 +226,6 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
           });
         });
       });
-    });
   
     return Array.from(itemMap.values());
   };

@@ -6,7 +6,6 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { Save, Edit } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
 
-import { FlightmapForm, FlightmapFormData } from '../components/Forms/FlightmapForm';
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
 import { StrategicGoalForm, StrategicGoalFormData } from '../components/Forms/StrategicGoalForm';
 import { ProgramForm, ProgramFormData } from '../components/Forms/ProgramForm';
@@ -18,7 +17,6 @@ import DependentMilestoneModal from '../components/Forms/Utils/DependentMileston
 import { Activity, Milestone } from '../types/model';
 
 type StepId =
-  | 'flightmaps'
   | 'strategies'
   | 'strategic-goals'
   | 'programs'
@@ -27,7 +25,6 @@ type StepId =
   | 'activities';
 
 interface FormDataMap {
-  flightmaps?: FlightmapFormData;
   strategies?: StrategyFormData;
   'strategic-goals'?: StrategicGoalFormData;
   programs?: ProgramFormData;
@@ -37,7 +34,6 @@ interface FormDataMap {
 }
 
 type AllFormData =
-  | FlightmapFormData
   | StrategyFormData
   | StrategicGoalFormData
   | ProgramFormData
@@ -46,7 +42,6 @@ type AllFormData =
   | ActivityFormData;
 
 const FORM_STEPS = [
-  { id: 'flightmaps' as StepId, label: 'Flightmap', component: FlightmapForm },
   { id: 'strategies' as StepId, label: 'Strategy', component: StrategyForm },
   { id: 'strategic-goals' as StepId, label: 'Strategic Goal', component: StrategicGoalForm },
   { id: 'programs' as StepId, label: 'Program', component: ProgramForm },
@@ -61,7 +56,7 @@ interface EditStepperProps {
 }
 
 const EditStepper: React.FC<EditStepperProps> = ({ 
-  initialStepId = 'flightmaps',
+  initialStepId = 'strategies',
   initialEntityId 
 }) => {
   const { themeColor } = useContext(ThemeContext);
@@ -130,176 +125,175 @@ const EditStepper: React.FC<EditStepperProps> = ({
   // Load entity data into form
   const loadEntityData = (entity: any) => {
     if (!entity) return;
+    // Array-based form - need to properly structure the data
+    let formData: any = {};
 
-    if (currentStepId === 'flightmaps') {
-      // Single entity form
-      methods.reset(entity);
-      setFormData(prev => ({ ...prev, [currentStepId]: entity }));
-    } else {
-      // Array-based form - need to properly structure the data
-      let formData: any = {};
+    switch (currentStepId) {
+      case 'strategies':
+        formData = {
+          strategies: [{
+            id: entity.id,
+            name: entity.name || '',
+            tagline: entity.tagline || '',
+            description: entity.description || '', // ADD this field
+            owner: entity.owner || 0, // ADD this field
+            vision: entity.vision || '',
+            time_horizon: entity.time_horizon || '',
+            // Ensure arrays are properly formatted for multiselect
+            executive_sponsors: entity.executive_sponsors?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || [],
+            strategy_leads: entity.strategy_leads?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || [],
+            communication_leads: entity.communication_leads?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || []
+          }]
+        };
+        break;
 
-      switch (currentStepId) {
-        case 'strategies':
-          formData = {
-            strategies: [{
-              ...entity,
-              // Ensure arrays are properly formatted for multiselect
-              executive_sponsors: entity.executive_sponsors?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || [],
-              strategy_leads: entity.strategy_leads?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || [],
-              communication_leads: entity.communication_leads?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || []
-            }]
-          };
-          break;
+      case 'strategic-goals':
+        formData = {
+          goals: [{
+            ...entity,
+            // Ensure strategy is the ID, not an object
+            strategy: typeof entity.strategy === 'object' ? entity.strategy.id : entity.strategy
+          }]
+        };
+        break;
 
-        case 'strategic-goals':
-          formData = {
-            goals: [{
-              ...entity,
-              // Ensure strategy is the ID, not an object
-              strategy: typeof entity.strategy === 'object' ? entity.strategy.id : entity.strategy
-            }]
-          };
-          break;
+      case 'programs':
+        formData = {
+          programs: [{
+            ...entity,
+            // Ensure all multi-select fields are arrays of IDs
+            executive_sponsors: entity.executive_sponsors?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || [],
+            program_leads: entity.program_leads?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || [],
+            workforce_sponsors: entity.workforce_sponsors?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || [],
+            key_improvement_targets: entity.key_improvement_targets?.map((goal: any) => 
+              typeof goal === 'object' ? goal.id : goal
+            ) || [],
+            key_organizational_goals: entity.key_organizational_goals?.map((goal: any) => 
+              typeof goal === 'object' ? goal.id : goal
+            ) || []
+          }]
+        };
+        break;
 
-        case 'programs':
-          formData = {
-            programs: [{
-              ...entity,
-              // Ensure all multi-select fields are arrays of IDs
-              executive_sponsors: entity.executive_sponsors?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || [],
-              program_leads: entity.program_leads?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || [],
-              workforce_sponsors: entity.workforce_sponsors?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || [],
-              key_improvement_targets: entity.key_improvement_targets?.map((goal: any) => 
-                typeof goal === 'object' ? goal.id : goal
-              ) || [],
-              key_organizational_goals: entity.key_organizational_goals?.map((goal: any) => 
-                typeof goal === 'object' ? goal.id : goal
-              ) || []
-            }]
-          };
-          break;
+      case 'workstreams':
+        formData = {
+          workstreams: [{
+            ...entity,
+            workstream_leads: entity.workstream_leads?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || [],
+            team_members: entity.team_members?.map((user: any) => 
+              typeof user === 'object' ? user.id : user
+            ) || [],
+            // Handle JSON fields that might be strings or arrays
+            improvement_targets: Array.isArray(entity.improvement_targets) 
+              ? entity.improvement_targets 
+              : [],
+            organizational_goals: Array.isArray(entity.organizational_goals) 
+              ? entity.organizational_goals 
+              : []
+          }]
+        };
+        break;
+           
+      case 'milestones':
+        formData = {
+          milestones: [{
+            // Preserve all original fields
+            id: entity.id,
+            name: entity.name || '',
+            description: entity.description || '',
+            deadline: entity.deadline || '',
+            status: entity.status || 'not_started',
 
-        case 'workstreams':
-          formData = {
-            workstreams: [{
-              ...entity,
-              workstream_leads: entity.workstream_leads?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || [],
-              team_members: entity.team_members?.map((user: any) => 
-                typeof user === 'object' ? user.id : user
-              ) || [],
-              // Handle JSON fields that might be strings or arrays
-              improvement_targets: Array.isArray(entity.improvement_targets) 
-                ? entity.improvement_targets 
-                : [],
-              organizational_goals: Array.isArray(entity.organizational_goals) 
-                ? entity.organizational_goals 
-                : []
-            }]
-          };
-          break;
-             
-        case 'milestones':
-          formData = {
-            milestones: [{
-              // Preserve all original fields
-              id: entity.id,
-              name: entity.name || '',
-              description: entity.description || '',
-              deadline: entity.deadline || '',
-              status: entity.status || 'not_started',
+            // Handle workstream - should be a number based on your API data
+            workstream: entity.workstream || null,
 
-              // Handle workstream - should be a number based on your API data
-              workstream: entity.workstream || null,
+            // Handle parent_milestone - should be a number or null
+            parent_milestone: entity.parent_milestone || null,
 
-              // Handle parent_milestone - should be a number or null
-              parent_milestone: entity.parent_milestone || null,
+            // Transform strategic_goals array (if it contains objects, extract IDs)
+            strategic_goals: entity.strategic_goals?.map((goal: any) => 
+              typeof goal === 'object' ? goal.id : goal
+            ) || [],
 
-              // Transform strategic_goals array (if it contains objects, extract IDs)
-              strategic_goals: entity.strategic_goals?.map((goal: any) => 
-                typeof goal === 'object' ? goal.id : goal
-              ) || [],
+            // Transform dependencies array (if it contains objects, extract IDs)  
+            dependencies: entity.dependencies?.map((dep: any) => 
+              typeof dep === 'object' ? dep.id : dep
+            ) || [],
 
-              // Transform dependencies array (if it contains objects, extract IDs)  
-              dependencies: entity.dependencies?.map((dep: any) => 
-                typeof dep === 'object' ? dep.id : dep
-              ) || [],
+            // Preserve other fields that might be needed
+            completed_date: entity.completed_date || null,
+            updated_at: entity.updated_at || null,
+            updated_by: entity.updated_by || null
+          }]
+        };
+        break;
 
-              // Preserve other fields that might be needed
-              completed_date: entity.completed_date || null,
-              updated_at: entity.updated_at || null,
-              updated_by: entity.updated_by || null
-            }]
-          };
-          break;
+      case 'activities':
+        formData = {
+          activities: [{
+            ...entity,
+            // Handle all the multiselect fields
+            prerequisite_activities: entity.prerequisite_activities?.map((act: any) => 
+              typeof act === 'object' ? act.id : act
+            ) || [],
+            parallel_activities: entity.parallel_activities?.map((act: any) => 
+              typeof act === 'object' ? act.id : act
+            ) || [],
+            successive_activities: entity.successive_activities?.map((act: any) => 
+              typeof act === 'object' ? act.id : act
+            ) || [],
+            supported_milestones: entity.supported_milestones?.map((ms: any) => 
+              typeof ms === 'object' ? ms.id : ms
+            ) || [],
+            additional_milestones: entity.additional_milestones?.map((ms: any) => 
+              typeof ms === 'object' ? ms.id : ms
+            ) || [],
+            // Handle JSON fields
+            impacted_employee_groups: Array.isArray(entity.impacted_employee_groups) 
+              ? entity.impacted_employee_groups 
+              : [],
+            change_leaders: Array.isArray(entity.change_leaders) 
+              ? entity.change_leaders 
+              : [],
+            development_support: Array.isArray(entity.development_support) 
+              ? entity.development_support 
+              : [],
+            external_resources: Array.isArray(entity.external_resources) 
+              ? entity.external_resources 
+              : [],
+            corporate_resources: Array.isArray(entity.corporate_resources) 
+              ? entity.corporate_resources 
+              : []
+          }]
+        };
+        break;
 
-        case 'activities':
-          formData = {
-            activities: [{
-              ...entity,
-              // Handle all the multiselect fields
-              prerequisite_activities: entity.prerequisite_activities?.map((act: any) => 
-                typeof act === 'object' ? act.id : act
-              ) || [],
-              parallel_activities: entity.parallel_activities?.map((act: any) => 
-                typeof act === 'object' ? act.id : act
-              ) || [],
-              successive_activities: entity.successive_activities?.map((act: any) => 
-                typeof act === 'object' ? act.id : act
-              ) || [],
-              supported_milestones: entity.supported_milestones?.map((ms: any) => 
-                typeof ms === 'object' ? ms.id : ms
-              ) || [],
-              additional_milestones: entity.additional_milestones?.map((ms: any) => 
-                typeof ms === 'object' ? ms.id : ms
-              ) || [],
-              // Handle JSON fields
-              impacted_employee_groups: Array.isArray(entity.impacted_employee_groups) 
-                ? entity.impacted_employee_groups 
-                : [],
-              change_leaders: Array.isArray(entity.change_leaders) 
-                ? entity.change_leaders 
-                : [],
-              development_support: Array.isArray(entity.development_support) 
-                ? entity.development_support 
-                : [],
-              external_resources: Array.isArray(entity.external_resources) 
-                ? entity.external_resources 
-                : [],
-              corporate_resources: Array.isArray(entity.corporate_resources) 
-                ? entity.corporate_resources 
-                : []
-            }]
-          };
-          break;
-
-        default:
-          formData = { [currentStepId]: [entity] };
-      }
-
-          // ADD THIS LOG BEFORE RESET
-      console.log('About to reset form with:', formData);
-
-      methods.reset(formData);
-      setFormData(prev => ({ ...prev, [currentStepId]: formData }));
-
-          // ADD THIS LOG AFTER RESET
-      console.log('Form reset complete. Current form values:', methods.getValues());
+      default:
+        formData = { [currentStepId]: [entity] };
     }
+
+        // ADD THIS LOG BEFORE RESET
+    console.log('About to reset form with:', formData);
+
+    methods.reset(formData);
+    setFormData(prev => ({ ...prev, [currentStepId]: formData }));
+
+        // ADD THIS LOG AFTER RESET
+    console.log('Form reset complete. Current form values:', methods.getValues());
   };
 
   // Handle entity selection
@@ -352,17 +346,14 @@ const EditStepper: React.FC<EditStepperProps> = ({
     if (!selectedEntity) return null;
 
     switch (stepId) {
-      case 'flightmaps': {
-        const { name, description, owner } = data as FlightmapFormData;
-        return { id: selectedEntity.id, name, description, owner };
-      }
       case 'strategies': {
         const strategy = (data as StrategyFormData).strategies[0];
         return {
           id: selectedEntity.id,
-          flightmap: strategy.flightmap,
           name: strategy.name,
           tagline: strategy.tagline,
+          description: strategy.description,
+          owner: strategy.owner,
           vision: strategy.vision,
           time_horizon: strategy.time_horizon,
           executive_sponsors: Array.isArray(strategy.executive_sponsors)

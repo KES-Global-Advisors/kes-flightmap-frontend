@@ -2,8 +2,8 @@
 import React, { useCallback, useEffect } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
-import { Flightmap, User } from '../../types/model';
-import { PlusCircle, Trash2, Info } from 'lucide-react';
+import { User } from '../../types/model';
+import { PlusCircle, Trash2, Info, AlertTriangle } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 import { FormLabel } from './Utils/RequiredFieldIndicator';
 
@@ -12,9 +12,10 @@ const API = import.meta.env.VITE_API_BASE_URL;
 export type StrategyFormData = {
   strategies: {
     id?: number;
-    flightmap: number;
     name: string;
     tagline?: string;
+    description?: string; // ADD this field
+    owner: number; // ADD this field
     vision: string;
     time_horizon: string;
     executive_sponsors: number[];
@@ -35,7 +36,6 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
   });
 
   // Fetch arrays for Flightmaps and users
-  const { data: flightmaps, loading: loadingFlightmaps, error: errorFlightmaps } = useFetch<Flightmap[]>(`${API}/flightmaps/`);
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
 
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
@@ -45,9 +45,10 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
     
     try {
       append({
-        flightmap: 0,
         name: "",
         tagline: "",
+        description: "",
+        owner: 0, 
         vision: "",
         time_horizon: "",
         executive_sponsors: [],
@@ -120,6 +121,27 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
     return true;
   };
 
+  const validateDescription = (value: string | undefined) => {
+    if (!value || value.trim().length === 0) {
+      return 'Description is required';
+    }
+    if (value.trim().length < 10) {
+      return 'Description should be at least 10 characters';
+    }
+    if (value.trim().length > 1000) {
+      return 'Description must be less than 1000 characters';
+    }
+    return true;
+  };
+
+  const validateOwner = (value: string | number) => {
+    if (!value || value === '' || value === 0) {
+      return 'Owner selection is required';
+    }
+    return true;
+  };
+
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -172,50 +194,6 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
           </div>
           
           <div className="space-y-4">
-            {/* Flightmap Field */}
-            <div>
-              <FormLabel label="Flightmap" required />
-              {loadingFlightmaps ? (
-                <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md">
-                  Loading flightmaps...
-                </div>
-              ) : errorFlightmaps ? (
-                <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
-                  Error loading flightmaps: {errorFlightmaps}
-                </div>
-              ) : (
-                <>
-                  <select
-                    {...register(`strategies.${index}.flightmap` as const, {
-                      required: 'Flightmap selection is required',
-                      validate: value => value !== 0 || 'Please select a valid flightmap'
-                    })}
-                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
-                      errors.strategies?.[index]?.flightmap ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
-                    }`}
-                    disabled={editMode} // Disable flightmap changes in edit mode
-                  >
-                    <option value="">Select a flightmap</option>
-                    {(flightmaps || []).map((flightmap: Flightmap) => (
-                      <option key={flightmap.id} value={flightmap.id}>
-                        {flightmap.name}
-                      </option>
-                    ))}
-                  </select>
-                  {editMode && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Flightmap association cannot be changed in edit mode
-                    </p>
-                  )}
-                  {errors.strategies?.[index]?.flightmap && (
-                    <p className="mt-1 text-sm text-red-600">
-                      {errors.strategies[index]?.flightmap?.message}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-            
             {/* Name Field */}
             <div>
               <FormLabel label="Name" required />
@@ -255,10 +233,82 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
                 </p>
               )}
             </div>
+            {/* NEW: Description Field */}
+            <div>
+              <FormLabel label="Description" required={false}/>
+              <textarea
+                {...register(`strategies.${index}.description` as const, {
+                  validate: validateDescription
+                })}
+                rows={3}
+                className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
+                  errors.strategies?.[index]?.description ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                }`}
+                placeholder="Provide a comprehensive description of the strategy's purpose, scope, and key initiatives..."
+              />
+              {errors.strategies?.[index]?.description && (
+                <p className="mt-1 text-sm text-red-600">
+                  {errors.strategies[index]?.description?.message}
+                </p>
+              )}
+              {!editMode && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Include strategy purpose, scope, key initiatives, and organizational context
+                </p>
+              )}
+            </div>
             
+            {/* NEW: Owner Field */}
+            <div>
+              <FormLabel label="Owner" required />
+              {loadingUsers ? (
+                <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
+                  Loading users...
+                </div>
+              ) : errorUsers ? (
+                <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
+                  <AlertTriangle className="w-4 h-4 inline mr-2" />
+                  Error loading users: {errorUsers}
+                </div>
+              ) : (
+                <>
+                  <select
+                    {...register(`strategies.${index}.owner` as const, {
+                      validate: validateOwner
+                    })}
+                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
+                      errors.strategies?.[index]?.owner ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                    }`}
+                    disabled={editMode} // Disable owner changes in edit mode for accountability
+                  >
+                    <option value="">Select strategy owner</option>
+                    {(users || []).map((user: User) => (
+                      <option key={user.id} value={user.id}>
+                        {user.username}
+                      </option>
+                    ))}
+                  </select>
+                  {editMode && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Strategy ownership cannot be changed in edit mode for accountability tracking
+                    </p>
+                  )}
+                  {errors.strategies?.[index]?.owner && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.strategies[index]?.owner?.message}
+                    </p>
+                  )}
+                  {!editMode && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      The strategy owner has ultimate accountability for strategic outcomes and execution oversight
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
             {/* Vision Field */}
             <div>
-              <FormLabel label="Vision" required />
+              <FormLabel label="Vision" required={false}/>
               <textarea
                 {...register(`strategies.${index}.vision` as const, {
                   validate: validateVision

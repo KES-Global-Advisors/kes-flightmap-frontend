@@ -6,7 +6,6 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { Check, AlertCircle, FolderOpen, Clock } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
 
-import { FlightmapForm, FlightmapFormData } from '../components/Forms/FlightmapForm';
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
 import { StrategicGoalForm, StrategicGoalFormData } from '../components/Forms/StrategicGoalForm';
 import { ProgramForm, ProgramFormData } from '../components/Forms/ProgramForm';
@@ -21,7 +20,6 @@ import { DraftListModal } from '../components/Forms/Utils/DraftListModal';
 import { Activity, Milestone } from '../types/model';
 
 type StepId =
-  | 'flightmaps'
   | 'strategies'
   | 'strategic-goals'
   | 'programs'
@@ -30,7 +28,6 @@ type StepId =
   | 'activities';
 
 interface FormDataMap {
-  flightmaps?: FlightmapFormData;
   strategies?: StrategyFormData;
   'strategic-goals'?: StrategicGoalFormData;
   programs?: ProgramFormData;
@@ -40,7 +37,6 @@ interface FormDataMap {
 }
 
 type AllFormData =
-  | FlightmapFormData
   | StrategyFormData
   | StrategicGoalFormData
   | ProgramFormData
@@ -50,13 +46,8 @@ type AllFormData =
 
 // Validation rules for each step
 const VALIDATION_RULES = {
-  flightmaps: {
-    name: { required: 'Name is required' },
-    description: { required: 'Description is required' },
-    owner: { required: 'Owner is required' }
-  },
   strategies: {
-    required: ['flightmap', 'name', 'vision', 'time_horizon'],
+    required: ['name', 'owner', 'time_horizon'],
     arrayField: 'strategies'
   },
   'strategic-goals': {
@@ -82,7 +73,6 @@ const VALIDATION_RULES = {
 };
 
 const FORM_STEPS = [
-  { id: 'flightmaps' as StepId, label: 'Flightmap', component: FlightmapForm },
   { id: 'strategies' as StepId, label: 'Strategy', component: StrategyForm },
   { id: 'strategic-goals' as StepId, label: 'Strategic Goal', component: StrategicGoalForm },
   { id: 'programs' as StepId, label: 'Program', component: ProgramForm },
@@ -162,15 +152,7 @@ const FormStepper: React.FC = () => {
     const errors: string[] = [];
     const rules = VALIDATION_RULES[currentStepId];
 
-    if (currentStepId === 'flightmaps') {
-      // Single entity validation
-      const flightmapData = data as FlightmapFormData;
-      Object.entries(rules).forEach(([field, rule]: [string, any]) => {
-        if (rule.required && (!flightmapData[field as keyof FlightmapFormData] || flightmapData[field as keyof FlightmapFormData] === '')) {
-          errors.push(rule.required);
-        }
-      });
-    } else if (currentStepId === 'activities') {
+      if (currentStepId === 'activities') {
         // ✅ SPECIAL HANDLING: Activities need custom validation for new structure
         const activityData = data as ActivityFormData;
 
@@ -271,21 +253,14 @@ const FormStepper: React.FC = () => {
   // Transform data for API submission (unchanged from original)
   const transformData = (stepId: StepId, data: AllFormData): unknown[] => {
     switch (stepId) {
-      case 'flightmaps': {
-        const { name, description, owner } = data as FlightmapFormData;
-        return [{
-          name,
-          description,
-          owner,
-          is_draft: true,  // Mark as draft when creating
-          draft_id: draftId  // Link to the draft session
-        }];
-      }
       case 'strategies': {
         return (data as StrategyFormData).strategies.map(strategy => ({
-          flightmap: strategy.flightmap,
           name: strategy.name,
           tagline: strategy.tagline,
+          description: strategy.description, // ADD this field
+          owner: strategy.owner,
+          is_draft: true,  // Mark as draft when creating
+          draft_id: draftId,  // Link to the draft session
           vision: strategy.vision,
           time_horizon: strategy.time_horizon,
           executive_sponsors: Array.isArray(strategy.executive_sponsors)
@@ -420,7 +395,7 @@ const FormStepper: React.FC = () => {
     }
   };
 
-// Enhanced save session function to save the entire session with automatic draft naming
+  // Enhanced save session function to save the entire session with automatic draft naming
   const saveSession = async (isAutoSave = false) => {
     if (!isAutoSave) {
       setIsSavingDraft(true);
@@ -433,17 +408,17 @@ const FormStepper: React.FC = () => {
         [currentStepId]: methods.getValues() // Include current unsaved data
       };
 
-      // Generate draft name based on flightmap name if available
+      // Generate draft name based on strategy name if available
       let generatedDraftName = draftName;
-      if (!generatedDraftName && fullFormData.flightmaps) {
-        const flightmapData = fullFormData.flightmaps as FlightmapFormData;
-        if (flightmapData.name) {
-          generatedDraftName = `${flightmapData.name} - Draft`;
+      if (!generatedDraftName && fullFormData.strategies) {
+        const strategyData = fullFormData.strategies as StrategyFormData;
+        if (strategyData.strategies && strategyData.strategies[0]?.name) {
+          generatedDraftName = `${strategyData.strategies[0].name} - Draft`;
         }
       }
 
       const sessionData = {
-        name: generatedDraftName || `Untitled Draft - ${new Date().toLocaleDateString()}`,
+        name: generatedDraftName || `Untitled Strategy Draft - ${new Date().toLocaleDateString()}`,
         current_step: currentStepId,
         form_data: fullFormData,
         completed_steps: completedSteps,
@@ -451,7 +426,7 @@ const FormStepper: React.FC = () => {
       };
 
       const url = draftId 
-        ? `${API}/flightmap-drafts/${draftId}/`
+        ? `${API}/flightmap-drafts/${draftId}/`  // Note: API endpoint remains same for backward compatibility
         : `${API}/flightmap-drafts/`;
 
       const response = await fetch(url, {
@@ -470,7 +445,7 @@ const FormStepper: React.FC = () => {
         setDraftName(draft.name);
 
         // Also save to localStorage as backup
-        localStorage.setItem('flightmap_draft_backup', JSON.stringify({
+        localStorage.setItem('strategy_draft_backup', JSON.stringify({  // Updated key name
           ...sessionData,
           draftId: draft.id,
           timestamp: new Date().toISOString()
@@ -650,9 +625,9 @@ const FormStepper: React.FC = () => {
 
       if (isLastStep) {
           // Mark the flightmap as complete (no longer a draft)
-        if (formData.flightmaps && Array.isArray(formData.flightmaps) && formData.flightmaps[0]?.id) {
+        if (formData.strategies && Array.isArray(formData.strategies) && formData.strategies[0]?.id) {
           try {
-            await fetch(`${API}/flightmaps/${formData.flightmaps[0].id}/mark_complete/`, {
+            await fetch(`${API}/flightmaps/${formData.strategies[0].id}/mark_complete/`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${accessToken || ''}`,
@@ -660,7 +635,7 @@ const FormStepper: React.FC = () => {
               credentials: 'include',
             });
           } catch (error) {
-            console.error('Error marking flightmap as complete:', error);
+            console.error('Error marking strategy as complete:', error);
           }
         }
 
@@ -681,7 +656,7 @@ const FormStepper: React.FC = () => {
           }
         }
 
-        showToast.success('Flightmap created successfully!');
+        showToast.success('Strategy created successfully!');
 
         // Reset everything
         setFormData({});
@@ -768,13 +743,22 @@ const FormStepper: React.FC = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Flightmap Data</h1>
-            <p className="text-gray-600">Step-by-step process to create complete flightmap structure.</p>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              Create Strategic Initiative  {/* Updated title */}
+            </h1>
+            <p className="text-gray-600">
+              Step-by-step process to create comprehensive strategy execution framework.
+            </p>
+            {formData.strategies && formData.strategies.strategies?.[0] && (
+              <div className="mt-2 text-sm text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full inline-block">
+                Strategy: {formData.strategies.strategies[0].name}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button

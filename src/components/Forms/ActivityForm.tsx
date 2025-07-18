@@ -2,6 +2,7 @@
 import React, { useEffect, useCallback, useMemo } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
+import { useStrategyScoped } from '../../contexts/StrategyContext';
 import { Milestone, Activity, Workstream } from '../../types/model';
 import { PlusCircle, Trash2, Activity as ActivityIcon, AlertTriangle, CheckCircle2, Clock, Users, Info, Zap } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
@@ -10,8 +11,8 @@ import { FormLabel } from './Utils/RequiredFieldIndicator';
 export type ActivityFormData = {
   activities: {
     id?: number;
-    source_milestone: number; // NEW: Required source milestone
-    target_milestone: number; // NEW: Required target milestones
+    source_milestone: number;
+    target_milestone: number;
     name: string;
     status: 'not_started' | 'in_progress' | 'completed';
     priority: 1 | 2 | 3;
@@ -68,11 +69,15 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
     name: "activities",
   });
 
+  // NEW: Get strategy-scoped filtering functions
+  const { getStrategyFilteredUrl, getCurrentStrategyId } = useStrategyScoped();
+
   const API = import.meta.env.VITE_API_BASE_URL;
 
   // Data fetching with comprehensive error boundary handling and performance optimization
+  const milestonesUrl = getStrategyFilteredUrl(`${API}/milestones/`, 'workstream__program__strategy');
   const { data: fetchedActivities, loading: loadingActivities, error: errorActivities } = useFetch<Activity[]>(`${API}/activities/`);
-  const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
+  const { data: milestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(milestonesUrl);
   const { data: workstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
 
   /**
@@ -594,6 +599,11 @@ const ActivityForm: React.FC<ActivityFormProps> = ({
             <ActivityIcon className="w-6 h-6 mr-2 text-indigo-600" />
             {editMode ? 'Edit Activities' : 'Create Activities'}
           </h2>
+          {getCurrentStrategyId() && (
+            <div className="mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+              Activities scoped to current strategy
+            </div>
+          )}
           <p className="text-sm text-gray-600 mt-1">
             {editMode 
               ? 'Modify activity definitions, dependencies, resource assignments, and execution parameters'

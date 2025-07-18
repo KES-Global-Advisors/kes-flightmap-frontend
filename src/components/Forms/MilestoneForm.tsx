@@ -3,6 +3,7 @@ import React, { useEffect, useCallback, useMemo } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
 import { StrategicGoal, Workstream, Milestone } from '../../types/model';
+import { useStrategyScoped } from '../../contexts/StrategyContext';
 import { PlusCircle, Trash2, Target, Calendar, AlertTriangle, CheckCircle2, Info, Clock } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 import { FormLabel } from './Utils/RequiredFieldIndicator';
@@ -52,10 +53,14 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
   });
   
   const API = import.meta.env.VITE_API_BASE_URL;
+
+  // NEW: Get strategy-scoped filtering functions
+  const { getStrategyFilteredUrl } = useStrategyScoped();
   
   // Data fetching with comprehensive error boundary handling
+  const workstreamsUrl = getStrategyFilteredUrl(`${API}/workstreams/`, 'program__strategy');
   const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
+  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(workstreamsUrl);
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
 
   /**
