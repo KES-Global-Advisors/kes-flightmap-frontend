@@ -1,7 +1,7 @@
 // src/utils/dataProcessing.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams roadmaps Flightmap
-import { FlightmapData } from '@/types/flightmap';
+import { Strategy } from '@/types/flightmap';
 import { buildHierarchy } from './buildHierarchy';
 
 export interface MilestonePlacement {
@@ -18,7 +18,7 @@ export interface MilestonePlacement {
  * Extracts workstreams, milestones, and activities (including dependencies)
  * from the hierarchical flightmap data.
  */
-export function extractMilestonesAndActivities(data: FlightmapData) {
+export function extractMilestonesAndActivities(data: Strategy) {
   const rootNode = buildHierarchy(data);
   const workstreams: Record<number, { id: number; name: string; color: string; milestones: any[] }> = {};
   const activities: any[] = [];

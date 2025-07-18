@@ -110,13 +110,39 @@ export interface Strategy {
   tagline: string;
   vision: string;
   time_horizon: string;
+  
+  // Merged Flightmap fields
+  description?: string;
+  owner: number;
+  created_at: string;
+  updated_at: string;
+  
+  // Draft-related fields
+  is_draft: boolean;
+  draft_id?: number | null;
+  completed_at?: string | null;
+  
+  // Draft badge info from backend
+  draft_badge?: {
+    show: boolean;
+    text: string;
+    color: string;
+  };
+  
+  // Relationships
   programs: Program[];
   goal_summary: {
     business_goals: string[];
     organizational_goals: string[];
   };
-  // Additional optional fields from Model.ts:
-  roadmap?: number;
+  milestone_summary?: {
+    total: number;
+    completed: number;
+    in_progress: number;
+    overdue: number;
+  };
+  
+  // Governance fields
   executive_sponsors?: number[];
   strategy_leads?: number[];
   communication_leads?: number[];

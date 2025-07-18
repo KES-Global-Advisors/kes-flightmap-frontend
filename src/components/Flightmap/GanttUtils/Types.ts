@@ -1,4 +1,4 @@
-// Define TypeScript export interfaces for the data structure
+// Gantt chart data types
 export interface Activity {
   id: number;
   name: string;

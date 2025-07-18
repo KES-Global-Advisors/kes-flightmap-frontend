@@ -7,22 +7,23 @@
     role: string;
   };
   
-  export type Flightmap = {
-    id: number;
-    name: string;
-    description?: string;
-    owner: number; // Reference to User
-    created_at: string;
-    updated_at: string;
-  };
-  
   export type Strategy = {
     id: number;
-    flightmap: number; // Reference to Flightmap
     name: string;
     tagline?: string;
     vision: string;
     time_horizon: string; // Date string
+    
+    // Merged Flightmap fields
+    description?: string;
+    owner: number; // Reference to User
+    created_at: string;
+    updated_at: string;
+    is_draft: boolean;
+    draft_id?: number | null;
+    completed_at?: string | null;
+    
+    // Governance
     executive_sponsors: number[]; // Array of User IDs
     strategy_leads: number[]; // Array of User IDs
     communication_leads: number[]; // Array of User IDs
