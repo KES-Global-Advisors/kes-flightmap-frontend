@@ -54,7 +54,7 @@
   
   export type Workstream = {
     id: number;
-    program: number; // Reference to Program
+    program: number | Program; // Reference to Program
     name: string;
     vision?: string;
     time_horizon: string; // Date string

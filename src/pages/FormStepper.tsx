@@ -63,7 +63,7 @@ const VALIDATION_RULES = {
     arrayField: 'workstreams'
   },
   milestones: {
-    required: ['workstream', 'name', 'deadline', 'status'],
+    required: ['program', 'workstream', 'name', 'deadline', 'status'],
     arrayField: 'milestones'
   },
   activities: {
@@ -331,6 +331,7 @@ const FormStepper: React.FC = () => {
       }
       case 'milestones': {
         return (data as MilestoneFormData).milestones.map(milestone => ({
+          program: milestone.program,
           workstream: milestone.workstream,
           name: milestone.name,
           description: milestone.description,
