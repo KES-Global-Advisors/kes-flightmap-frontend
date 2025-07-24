@@ -16,7 +16,7 @@ import DependentActivityModal from '../components/Forms/Utils/DependentActivityM
 import DependentMilestoneModal from '../components/Forms/Utils/DependentMilestoneModal';
 import { DraftRecoveryModal } from '../components/Forms/Utils/DraftRecoveryModal';
 import { DraftListModal } from '../components/Forms/Utils/DraftListModal';
-
+import { FlowCreationPopup } from '../components/Forms/Utils/FlowCreationPopup';
 import { Activity, Milestone } from '../types/model';
 
 type StepId =
@@ -87,6 +87,8 @@ const FormStepper: React.FC = () => {
   const [formData, setFormData] = useState<FormDataMap>({});
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(Array(FORM_STEPS.length).fill(false));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showFlowCreationPopup, setShowFlowCreationPopup] = useState(false);
+  const [flowCreationCompleted, setFlowCreationCompleted] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Flightmap Draft States
@@ -577,6 +579,15 @@ const FormStepper: React.FC = () => {
     loadAvailableDrafts();
   }, []);
 
+  // ADD this useEffect near your other useEffects (around line 100-150):
+  useEffect(() => {
+    // Reset flow creation state when on milestones step
+    if (currentStepId === 'milestones') {
+      console.log('🔄 Reset flowCreationCompleted because we are on milestones step');
+      setFlowCreationCompleted(false);
+    }
+  }, [currentStepId]);
+
   // Enhanced submit function that removes draft on completion
   const onSubmitStep = async (data: AllFormData) => {
     // Validate current step before proceeding
@@ -586,6 +597,27 @@ const FormStepper: React.FC = () => {
       showToast.error('Please fix the validation errors before proceeding');
       return;
     }
+
+      // NEW: Flow Creation Check - Phase 1 Implementation
+   if (currentStepId === 'milestones' && !flowCreationCompleted) {
+     const milestonesData = data as MilestoneFormData;
+
+     // Show flow creation popup if multiple milestones exist
+     if (milestonesData.milestones && milestonesData.milestones.length > 1) {
+       // Save milestone data first
+       setFormData(prev => ({
+         ...prev,
+         [currentStepId]: data as MilestoneFormData,
+       }));
+
+       // Show popup instead of proceeding immediately
+       setShowFlowCreationPopup(true);
+       return; // Don't proceed to next step yet
+     } else {
+       // Single milestone or no milestones - skip flow creation
+       setFlowCreationCompleted(true);
+     }
+   }
 
     setIsSubmitting(true);
     setValidationErrors([]);
@@ -707,6 +739,23 @@ const FormStepper: React.FC = () => {
       setCurrentStepIndex(index);
     }
   };
+
+  // Flow Creation Handlers - Phase 1 minimal implementation
+  const handleEnterFlowMode = () => {
+    setShowFlowCreationPopup(false);
+    setFlowCreationCompleted(true);
+
+    // For Phase 1, just proceed to next step (Flow Creation Modal will be added in Phase 2)
+    setCurrentStepIndex(prev => prev + 1);
+    showToast.success('Flow creation feature coming soon! Proceeding to activities.');
+  };
+
+  const handleSkipFlowCreation = () => {
+    setShowFlowCreationPopup(false);
+    setFlowCreationCompleted(true);
+    setCurrentStepIndex(prev => prev + 1);
+  };
+
 
   // Modal states for dependent entities
   const [activityModalOpen, setActivityModalOpen] = useState<boolean>(false);
@@ -976,6 +1025,20 @@ const FormStepper: React.FC = () => {
           isLoading={isLoadingDrafts}
         />
       )}
+      {/* Flow Creation Popup */}
+      {(() => {
+        const shouldShow = showFlowCreationPopup && formData.milestones;
+        const milestoneCount = formData.milestones?.milestones?.length || 0;
+    
+        return shouldShow ? (
+          <FlowCreationPopup
+            isVisible={showFlowCreationPopup}
+            milestoneCount={milestoneCount}
+            onEnterFlowMode={handleEnterFlowMode}
+            onSkip={handleSkipFlowCreation}
+          />
+        ) : null;
+      })()}
       {lastAutoSave && (
         <div className="text-xs text-gray-500 flex items-center gap-1">
           <Clock className="w-3 h-3" />
