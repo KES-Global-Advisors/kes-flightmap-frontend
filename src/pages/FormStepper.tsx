@@ -17,6 +17,7 @@ import DependentMilestoneModal from '../components/Forms/Utils/DependentMileston
 import { DraftRecoveryModal } from '../components/Forms/Utils/DraftRecoveryModal';
 import { DraftListModal } from '../components/Forms/Utils/DraftListModal';
 import { FlowCreationPopup } from '../components/Forms/Utils/FlowCreationPopup';
+import { FlowCreationModal, MilestoneDependency } from '../components/Forms/Utils/FlowCreationModal';
 import { Activity, Milestone } from '../types/model';
 
 type StepId =
@@ -89,6 +90,7 @@ const FormStepper: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFlowCreationPopup, setShowFlowCreationPopup] = useState(false);
   const [flowCreationCompleted, setFlowCreationCompleted] = useState(false);
+  const [showFlowCreationModal, setShowFlowCreationModal] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Flightmap Draft States
@@ -740,14 +742,61 @@ const FormStepper: React.FC = () => {
     }
   };
 
+  /**
+   * Apply flow creation dependencies to milestone form data
+   * Updates the milestones with their dependency relationships
+   */
+  const applyFlowDependenciesToMilestones = (
+    currentFormData: FormDataMap,
+    dependencies: MilestoneDependency[]
+  ): FormDataMap => {
+    if (!currentFormData.milestones) {
+      console.warn('No milestone data found to apply dependencies');
+      return currentFormData;
+    }
+
+    console.log('🔄 Applying dependencies to milestones:', dependencies);
+
+    const updatedMilestones = currentFormData.milestones.milestones.map(milestone => {
+      // Find all dependencies where this milestone is the target
+      const incomingDependencies = dependencies
+        .filter(dep => dep.targetId === milestone.id)
+        .map(dep => dep.sourceId);
+
+      // Merge with existing dependencies (avoid duplicates)
+      const existingDeps = milestone.dependencies || [];
+      const allDependencies = [...existingDeps];
+
+      incomingDependencies.forEach(depId => {
+        if (!allDependencies.includes(depId)) {
+          allDependencies.push(depId);
+        }
+      });
+
+      console.log(`📋 Milestone "${milestone.name}" dependencies:`, allDependencies);
+
+      return {
+        ...milestone,
+        dependencies: allDependencies
+      };
+    });
+
+    return {
+      ...currentFormData,
+      milestones: {
+        ...currentFormData.milestones,
+        milestones: updatedMilestones
+      }
+    };
+  };
+
   // Flow Creation Handlers - Phase 1 minimal implementation
   const handleEnterFlowMode = () => {
     setShowFlowCreationPopup(false);
-    setFlowCreationCompleted(true);
 
-    // For Phase 1, just proceed to next step (Flow Creation Modal will be added in Phase 2)
-    setCurrentStepIndex(prev => prev + 1);
-    showToast.success('Flow creation feature coming soon! Proceeding to activities.');
+    // Phase 2: Show the actual flow creation modal
+    setShowFlowCreationModal(true);
+    console.log('🎨 Opening Flow Creation Modal');
   };
 
   const handleSkipFlowCreation = () => {
@@ -756,6 +805,32 @@ const FormStepper: React.FC = () => {
     setCurrentStepIndex(prev => prev + 1);
   };
 
+  const handleSaveDependencies = async (dependencies: MilestoneDependency[]): Promise<void> => {
+    console.log('💾 Saving dependencies:', dependencies);
+    
+    try {
+      // Apply dependencies to milestone form data
+      const updatedFormData = applyFlowDependenciesToMilestones(formData, dependencies);
+      setFormData(updatedFormData);
+
+      // Close modal and proceed to activities
+      setShowFlowCreationModal(false);
+      setFlowCreationCompleted(true);
+      setCurrentStepIndex(prev => prev + 1);
+
+      showToast.success(`✨ Flow created with ${dependencies.length} dependencies!`);
+    } catch (error) {
+      console.error('Error saving flow dependencies:', error);
+      showToast.error('Failed to save flow dependencies');
+    }
+  };
+
+  const handleSkipFromModal = () => {
+    setShowFlowCreationModal(false);
+    setFlowCreationCompleted(true);
+    setCurrentStepIndex(prev => prev + 1);
+    showToast.success('Skipped flow creation - proceeding to activities');
+  };
 
   // Modal states for dependent entities
   const [activityModalOpen, setActivityModalOpen] = useState<boolean>(false);
@@ -1039,6 +1114,16 @@ const FormStepper: React.FC = () => {
           />
         ) : null;
       })()}
+      {/* Phase 2: Flow Creation Modal */}
+      {showFlowCreationModal && formData.milestones && (
+        <FlowCreationModal
+          isOpen={showFlowCreationModal}
+          onClose={() => setShowFlowCreationModal(false)}
+          milestones={formData.milestones.milestones}
+          onSaveDependencies={handleSaveDependencies}
+          onSkip={handleSkipFromModal}
+        />
+      )}
       {lastAutoSave && (
         <div className="text-xs text-gray-500 flex items-center gap-1">
           <Clock className="w-3 h-3" />
