@@ -26,6 +26,7 @@ interface FlowCreationModalProps {
   milestones: any[]; // Backend milestone objects with real IDs
   onSaveDependencies: (dependencies: MilestoneDependency[]) => Promise<void>;
   onSkip: () => void;
+  isSaving?: boolean;
 }
 
 export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
@@ -33,14 +34,14 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
   onClose,
   milestones,
   onSaveDependencies,
-  onSkip
+  onSkip,
+  isSaving = false 
 }) => {
   // ─── State Management ─────────────────────────────────────────────────
   const [selectedSourceMilestone, setSelectedSourceMilestone] = useState<number | null>(null);
   const [connectionMode, setConnectionMode] = useState<'idle' | 'selecting_target'>('idle');
   const [pendingDependencies, setPendingDependencies] = useState<MilestoneDependency[]>([]);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
   const [hoveredMilestone, setHoveredMilestone] = useState<number | null>(null);
 
   // ─── SVG References (Reuse FlightmapVisualization Pattern) ─────────────
@@ -248,17 +249,17 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
 
   const handleSave = useCallback(async () => {
     if (validationErrors.length > 0) return;
-    
-    setIsSaving(true);
+
+    console.log('💾 Initiating dependency save process...');
+
     try {
       await onSaveDependencies(pendingDependencies);
-      onClose();
+      // Note: onClose will be called by the parent component after successful save
     } catch (error) {
-      console.error('Error saving dependencies:', error);
-    } finally {
-      setIsSaving(false);
+      console.error('❌ Error in handleSave:', error);
+      // Error handling is done in parent component
     }
-  }, [pendingDependencies, validationErrors, onSaveDependencies, onClose]);
+  }, [pendingDependencies, validationErrors, onSaveDependencies]);
 
   // ─── D3 Rendering (Simplified from FlightmapVisualization) ─────────────
   useEffect(() => {
@@ -450,8 +451,18 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
           </div>
         </div>
 
-        {/* Canvas */}
-        <div className="flex-1 p-6 overflow-auto">
+        {/* Canvas with loading overlay */}
+        <div className="flex-1 p-6 overflow-auto relative">
+          {/* Loading overlay while saving */}
+          {isSaving && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
+              <div className="flex items-center gap-3 text-indigo-600">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent"></div>
+                <span className="text-lg font-medium">Saving dependencies to backend...</span>
+              </div>
+            </div>
+          )}
+
           <svg
             ref={svgRef}
             width={width}
@@ -516,7 +527,14 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
                 className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
-                {isSaving ? 'Saving...' : `Save Flow (${pendingDependencies.length})`}
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Saving to Backend...
+                  </>
+                ) : (
+                  `Save Flow (${pendingDependencies.length})`
+                )}
               </button>
             </div>
           </div>

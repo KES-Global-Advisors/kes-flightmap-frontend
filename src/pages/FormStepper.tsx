@@ -92,6 +92,7 @@ const FormStepper: React.FC = () => {
   const [flowCreationCompleted, setFlowCreationCompleted] = useState(false);
   const [showFlowCreationModal, setShowFlowCreationModal] = useState(false);
   const [savedMilestones, setSavedMilestones] = useState<any[]>([]);
+  const [isSavingDependencies, setIsSavingDependencies] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Flightmap Draft States
@@ -755,26 +756,116 @@ const FormStepper: React.FC = () => {
   };
 
   const handleSaveDependencies = async (dependencies: MilestoneDependency[]): Promise<void> => {
-    console.log('💾 Saving dependencies with real milestone IDs:', dependencies);
-    
-    try {
-      // TODO: Optionally save dependencies to backend here
-      // For now, we'll just proceed to activities since milestones are already saved
-      
+    console.log('💾 Saving dependencies to backend:', dependencies);
+
+    if (dependencies.length === 0) {
+      console.log('📭 No dependencies to save - proceeding to activities');
       setShowFlowCreationModal(false);
       setFlowCreationCompleted(true);
       setCurrentStepIndex(prev => prev + 1);
-      
+      return;
+    }
+
+    setIsSavingDependencies(true);
+
+    try {
+      // Step 1: Group dependencies by target milestone
+      // Each target milestone needs to know which milestones it depends on
+      const dependenciesByTarget = new Map<number, number[]>();
+
+      dependencies.forEach(dep => {
+        const targetId = dep.targetId;
+        const sourceId = dep.sourceId;
+
+        if (!dependenciesByTarget.has(targetId)) {
+          dependenciesByTarget.set(targetId, []);
+        }
+        dependenciesByTarget.get(targetId)!.push(sourceId);
+      });
+
+      console.log('📊 Dependencies grouped by target milestone:', Object.fromEntries(dependenciesByTarget));
+
+      // Step 2: Update each target milestone with its dependencies
+      const updatePromises: Promise<any>[] = [];
+
+      for (const [targetMilestoneId, sourceMilestoneIds] of dependenciesByTarget) {
+        const targetMilestone = savedMilestones.find(m => m.id === targetMilestoneId);
+
+        if (!targetMilestone) {
+          console.warn(`⚠️ Target milestone ${targetMilestoneId} not found in saved milestones`);
+          continue;
+        }
+
+        // Get existing dependencies for this milestone (if any)
+        const existingDependencies = targetMilestone.dependencies || [];
+
+        // Merge new dependencies with existing ones (avoid duplicates)
+        const allDependencies = [...existingDependencies];
+        sourceMilestoneIds.forEach(sourceId => {
+          if (!allDependencies.includes(sourceId)) {
+            allDependencies.push(sourceId);
+          }
+        });
+
+        console.log(`🔄 Updating milestone "${targetMilestone.name}" (ID: ${targetMilestoneId}) with dependencies:`, allDependencies);
+
+        // Prepare PATCH request for this milestone
+        const updatePromise = fetch(`${API}/milestones/${targetMilestoneId}/`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken || ''}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            dependencies: allDependencies
+          }),
+        }).then(async response => {
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Failed to update milestone ${targetMilestoneId}: ${errorData.detail || 'Unknown error'}`);
+          }
+
+          const updatedMilestone = await response.json();
+          console.log(`✅ Successfully updated milestone "${targetMilestone.name}" dependencies`);
+          return updatedMilestone;
+        });
+
+        updatePromises.push(updatePromise);
+      }
+
+      // Step 3: Wait for all milestone updates to complete
+      console.log(`🚀 Sending ${updatePromises.length} PATCH requests to update milestone dependencies...`);
+
+      const results = await Promise.all(updatePromises);
+
+      console.log('✅ All milestone dependencies saved successfully:', results);
+
+      // Step 4: Update local saved milestones with new dependency data
+      const updatedSavedMilestones = savedMilestones.map(milestone => {
+        const updatedMilestone = results.find(r => r.id === milestone.id);
+        return updatedMilestone || milestone;
+      });
+      setSavedMilestones(updatedSavedMilestones);
+
+      // Step 5: Show success and proceed to activities
+      setShowFlowCreationModal(false);
+      setFlowCreationCompleted(true);
+      setCurrentStepIndex(prev => prev + 1);
+
       const dependencyCount = dependencies.length;
       const dependencyNames = dependencies.map(dep => 
-        `${savedMilestones.find(m => m.id === dep.sourceId)?.name} → ${savedMilestones.find(m => m.id === dep.targetId)?.name}`
+        `${dep.sourceName || 'Unknown'} → ${dep.targetName || 'Unknown'}`
       ).join(', ');
-      
-      showToast.success(`✨ Flow created with ${dependencyCount} dependencies: ${dependencyNames}`);
-      console.log('✅ Flow creation completed with real milestone IDs');
+
+      showToast.success(`✨ Flow saved! ${dependencyCount} dependencies: ${dependencyNames}`);
+      console.log('🎉 Flow creation completed and saved to backend');
+
     } catch (error) {
-      console.error('❌ Error saving flow dependencies:', error);
-      showToast.error('Failed to save flow dependencies');
+      console.error('❌ Error saving dependencies to backend:', error);
+      showToast.error(`Failed to save dependencies: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingDependencies(false);
     }
   };
 
@@ -1063,6 +1154,7 @@ const FormStepper: React.FC = () => {
           milestones={savedMilestones} // Use saved milestones with real IDs
           onSaveDependencies={handleSaveDependencies}
           onSkip={handleSkipFlowCreation}
+          isSaving={isSavingDependencies}
         />
       )}
       {lastAutoSave && (
