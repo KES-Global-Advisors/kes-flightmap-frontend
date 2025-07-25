@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /******************************************************************************
  * FlowCreationModal.tsx - Phase 2 Enhanced Implementation
  * Location: src/components/Forms/Utils/FlowCreationModal.tsx
@@ -9,19 +10,20 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { X, Save, SkipForward, AlertTriangle, Check, RefreshCw } from 'lucide-react';
 import * as d3 from 'd3';
-import { MilestoneFormData } from '../MilestoneForm';
 
 export interface MilestoneDependency {
   sourceId: number;
   targetId: number;
   tempId: string;
   isValid: boolean;
+  sourceName?: string;
+  targetName?: string; 
 }
 
 interface FlowCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  milestones: MilestoneFormData['milestones'];
+  milestones: any[]; // Backend milestone objects with real IDs
   onSaveDependencies: (dependencies: MilestoneDependency[]) => Promise<void>;
   onSkip: () => void;
 }
@@ -86,23 +88,27 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
   // ─── Milestone Positions (Simplified Layout) ─────────────────────────
   const milestonePositions = useMemo(() => {
     if (!xScale || !milestones) return [];
-    
+
+    console.log('📍 Processing backend milestones for visualization:', milestones);
+
     // Group milestones by deadline to handle overlapping positions
     const groupedByDeadline = d3.groups(milestones, d => d.deadline);
-    
+
     return milestones.map((milestone, index) => {
       const x = xScale(new Date(milestone.deadline));
-      
+
       // Find how many milestones share this deadline
       const sameDeadlineGroup = groupedByDeadline.find(([deadline]) => deadline === milestone.deadline)?.[1] || [];
       const indexInGroup = sameDeadlineGroup.findIndex(m => m.id === milestone.id);
-      
-      // Vertical staggering for overlapping milestones (simplified from FlightmapVisualization)
+
+      // Vertical staggering for overlapping milestones
       const baseY = contentHeight / 2;
       const staggerOffset = sameDeadlineGroup.length > 1 
         ? (indexInGroup - (sameDeadlineGroup.length - 1) / 2) * 60 
         : 0;
-      
+
+      console.log(`📌 Milestone "${milestone.name}" (ID: ${milestone.id}) positioned at x:${x}, y:${baseY + staggerOffset}`);
+
       return {
         ...milestone,
         x,
@@ -115,27 +121,30 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
   // ─── Dependency Validation (Enhanced from MilestoneForm) ─────────────
   const validateDependencies = useCallback((deps: MilestoneDependency[]) => {
     const errors: string[] = [];
-    
-    // 1. Circular dependency detection (reuse MilestoneForm algorithm)
+
+    console.log('🔍 Validating dependencies:', deps);
+    console.log('📋 Available milestones:', milestones?.map(m => ({ id: m.id, name: m.name })));
+
+    // 1. Circular dependency detection using real milestone IDs
     const detectCycles = (startId: number, visited: Set<number>, recStack: Set<number>): boolean => {
       if (recStack.has(startId)) return true;
       if (visited.has(startId)) return false;
-      
+
       visited.add(startId);
       recStack.add(startId);
-      
+
       const dependents = deps.filter(d => d.sourceId === startId);
       for (const dep of dependents) {
         if (detectCycles(dep.targetId, visited, recStack)) {
           return true;
         }
       }
-      
+
       recStack.delete(startId);
       return false;
     };
 
-    // Check each milestone for cycles
+    // Check each milestone ID for cycles
     const allMilestoneIds = milestones?.map(m => m.id).filter((id): id is number => id !== undefined && id !== null) || [];
     for (const id of allMilestoneIds) {
       if (detectCycles(id, new Set(), new Set())) {
@@ -144,29 +153,38 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
       }
     }
 
-    // 2. Timeline consistency validation (from MilestoneForm)
+    // 2. Timeline consistency validation using real milestone data
     deps.forEach(dep => {
       const source = milestones?.find(m => m.id === dep.sourceId);
       const target = milestones?.find(m => m.id === dep.targetId);
-      
+
       if (source && target) {
         const sourceDeadline = new Date(source.deadline);
         const targetDeadline = new Date(target.deadline);
-        
+
         if (sourceDeadline >= targetDeadline) {
           errors.push(`Timeline conflict: "${source.name}" must complete before "${target.name}"`);
         }
       }
     });
 
-    // Update validation with individual dependency validity
-    const updatedDeps = deps.map(dep => ({
-      ...dep,
-      isValid: !errors.some(error => 
-        error.includes(milestones?.find(m => m.id === dep.sourceId)?.name || '') ||
-        error.includes(milestones?.find(m => m.id === dep.targetId)?.name || '')
-      )
-    }));
+    // Update validation with individual dependency validity and names
+    const updatedDeps = deps.map(dep => {
+      const source = milestones?.find(m => m.id === dep.sourceId);
+      const target = milestones?.find(m => m.id === dep.targetId);
+
+      return {
+        ...dep,
+        sourceName: source?.name,
+        targetName: target?.name,
+        isValid: !errors.some(error => 
+          error.includes(source?.name || '') ||
+          error.includes(target?.name || '')
+        )
+      };
+    });
+
+    console.log('✅ Validation completed. Errors:', errors.length, 'Updated deps:', updatedDeps);
 
     setValidationErrors(errors);
     setPendingDependencies(updatedDeps);
@@ -175,21 +193,31 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
 
   // ─── Interaction Handlers ─────────────────────────────────────────────
   const handleMilestoneClick = useCallback((milestoneId: number) => {
+    const milestone = milestones?.find(m => m.id === milestoneId);
+    console.log('🎯 Clicked milestone:', milestone?.name, '(ID:', milestoneId, ')');
+
     if (connectionMode === 'idle') {
       setSelectedSourceMilestone(milestoneId);
       setConnectionMode('selecting_target');
-      console.log('🎯 Selected source milestone:', milestoneId);
+      console.log('🎯 Selected source milestone:', milestone?.name, '(ID:', milestoneId, ')');
     } else if (selectedSourceMilestone !== null && selectedSourceMilestone !== milestoneId) {
-      // Create new dependency
+      // Create new dependency using real milestone IDs
+      const sourceMilestone = milestones?.find(m => m.id === selectedSourceMilestone);
+      const targetMilestone = milestones?.find(m => m.id === milestoneId);
+
       const newDependency: MilestoneDependency = {
         sourceId: selectedSourceMilestone,
         targetId: milestoneId,
         tempId: `temp_${Date.now()}_${Math.random()}`,
-        isValid: true
+        isValid: true,
+        sourceName: sourceMilestone?.name,
+        targetName: targetMilestone?.name
       };
-      
+
       const updatedDeps = [...pendingDependencies, newDependency];
-      console.log('🔗 Created dependency:', selectedSourceMilestone, '→', milestoneId);
+      console.log('🔗 Created dependency with real IDs:', 
+        sourceMilestone?.name, '(ID:', selectedSourceMilestone, ') →', 
+        targetMilestone?.name, '(ID:', milestoneId, ')');
       
       // Validate after adding
       validateDependencies(updatedDeps);
@@ -199,10 +227,11 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
       setConnectionMode('idle');
     } else if (selectedSourceMilestone === milestoneId) {
       // Clicking the same milestone cancels selection
+      console.log('🚫 Cancelled selection');
       setSelectedSourceMilestone(null);
       setConnectionMode('idle');
     }
-  }, [connectionMode, selectedSourceMilestone, pendingDependencies, validateDependencies]);
+  }, [connectionMode, selectedSourceMilestone, pendingDependencies, validateDependencies, milestones]);
 
   const handleDependencyRemove = useCallback((tempId: string) => {
     const updatedDeps = pendingDependencies.filter(dep => dep.tempId !== tempId);
@@ -325,6 +354,8 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
       const target = milestonePositions.find(m => m.id === dep.targetId);
       
       if (source && target) {
+        console.log('🎨 Rendering dependency line:', dep.sourceName, '(ID:', dep.sourceId, ') →', dep.targetName, '(ID:', dep.targetId, ')');
+        
         // Create curved line (reuse d3.linkHorizontal from FlightmapVisualization)
         const line = d3.linkHorizontal()({
           source: [source.x, source.y],
@@ -339,8 +370,7 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
           .style('cursor', 'pointer')
           .on('click', () => handleDependencyRemove(dep.tempId));
 
-
-        // Add arrow marker (simplified from FlightmapVisualization)
+        // Add arrow marker
         const angle = Math.atan2(target.y - source.y, target.x - source.x);
         const arrowX = target.x - Math.cos(angle) * 30;
         const arrowY = target.y - Math.sin(angle) * 30;
@@ -352,12 +382,26 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
           .attr('transform', `translate(${arrowX}, ${arrowY}) rotate(${angle * 180 / Math.PI})`)
           .style('cursor', 'pointer')
           .on('click', () => handleDependencyRemove(dep.tempId));
+      } else {
+        console.warn('⚠️ Could not find milestone positions for dependency:', dep);
       }
     });
 
   }, [isOpen, milestonePositions, pendingDependencies, selectedSourceMilestone, connectionMode, hoveredMilestone, xScale, timelineMarkers, handleMilestoneClick, handleDependencyRemove]);
 
+  useEffect(() => {
+    if (isOpen && milestones) {
+      console.log('🔍 FlowCreationModal opened with milestones:', milestones);
+      console.log('📊 Milestone summary:');
+      milestones.forEach(m => {
+        console.log(`  • ${m.name} (ID: ${m.id}, Deadline: ${m.deadline})`);
+      });
+    }
+  }, [isOpen, milestones]);
+
   if (!isOpen) return null;
+
+  // ADD this useEffect for debugging (add after existing useEffects):
 
   // ─── Render Modal ─────────────────────────────────────────────────
   return (
@@ -391,7 +435,7 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
               {connectionMode === 'idle' ? (
                 'Click a milestone to start creating a dependency'
               ) : (
-                `Selected: ${milestones.find(m => m.id === selectedSourceMilestone)?.name}. Click target milestone to create dependency.`
+                `Selected: ${milestones?.find(m => m.id === selectedSourceMilestone)?.name || 'Unknown'}. Click target milestone to create dependency.`
               )}
             </div>
             {pendingDependencies.length > 0 && (

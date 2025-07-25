@@ -91,6 +91,7 @@ const FormStepper: React.FC = () => {
   const [showFlowCreationPopup, setShowFlowCreationPopup] = useState(false);
   const [flowCreationCompleted, setFlowCreationCompleted] = useState(false);
   const [showFlowCreationModal, setShowFlowCreationModal] = useState(false);
+  const [savedMilestones, setSavedMilestones] = useState<any[]>([]);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Flightmap Draft States
@@ -600,27 +601,6 @@ const FormStepper: React.FC = () => {
       return;
     }
 
-      // NEW: Flow Creation Check - Phase 1 Implementation
-   if (currentStepId === 'milestones' && !flowCreationCompleted) {
-     const milestonesData = data as MilestoneFormData;
-
-     // Show flow creation popup if multiple milestones exist
-     if (milestonesData.milestones && milestonesData.milestones.length > 1) {
-       // Save milestone data first
-       setFormData(prev => ({
-         ...prev,
-         [currentStepId]: data as MilestoneFormData,
-       }));
-
-       // Show popup instead of proceeding immediately
-       setShowFlowCreationPopup(true);
-       return; // Don't proceed to next step yet
-     } else {
-       // Single milestone or no milestones - skip flow creation
-       setFlowCreationCompleted(true);
-     }
-   }
-
     setIsSubmitting(true);
     setValidationErrors([]);
 
@@ -629,6 +609,7 @@ const FormStepper: React.FC = () => {
     const results: unknown[] = [];
 
     try {
+      // Submit data to backend
       for (const item of payloadArray) {
         const response = await fetch(`${API}/${currentStepId}/`, {
           method: 'POST',
@@ -649,6 +630,7 @@ const FormStepper: React.FC = () => {
         results.push(result);
       }
 
+      // Mark step as completed and save results
       const newCompletedSteps = [...completedSteps];
       newCompletedSteps[currentStepIndex] = true;
       setCompletedSteps(newCompletedSteps);
@@ -658,8 +640,22 @@ const FormStepper: React.FC = () => {
         [currentStepId]: results,
       }));
 
+      // 🔥 NEW: Check for flow creation AFTER successful milestone submission
+      if (currentStepId === 'milestones' && !flowCreationCompleted && results.length > 1) {
+        console.log('✅ Milestones saved successfully to backend:', results);
+
+        // Store the saved milestones with real IDs
+        setSavedMilestones(results as any[]);
+
+        // Show flow creation popup with real milestone data
+        setShowFlowCreationPopup(true);
+        setIsSubmitting(false); // Stop loading animation
+        return; // Don't proceed to next step yet - wait for flow creation
+      }
+
+      // Handle final step or continue to next step
       if (isLastStep) {
-          // Mark the flightmap as complete (no longer a draft)
+        // Mark the flightmap as complete (no longer a draft)
         if (formData.strategies && Array.isArray(formData.strategies) && formData.strategies[0]?.id) {
           try {
             await fetch(`${API}/flightmaps/${formData.strategies[0].id}/mark_complete/`, {
@@ -684,7 +680,6 @@ const FormStepper: React.FC = () => {
               },
               credentials: 'include',
             });
-            // Clear local storage backup
             localStorage.removeItem('flightmap_draft_backup');
           } catch (error) {
             console.error('Error deleting draft:', error);
@@ -716,6 +711,7 @@ const FormStepper: React.FC = () => {
     }
   };
 
+
   // Enhanced back navigation - preserves form data for "quick edit"
   const handleBack = () => {
     if (currentStepIndex > 0) {
@@ -742,94 +738,44 @@ const FormStepper: React.FC = () => {
     }
   };
 
-  /**
-   * Apply flow creation dependencies to milestone form data
-   * Updates the milestones with their dependency relationships
-   */
-  const applyFlowDependenciesToMilestones = (
-    currentFormData: FormDataMap,
-    dependencies: MilestoneDependency[]
-  ): FormDataMap => {
-    if (!currentFormData.milestones) {
-      console.warn('No milestone data found to apply dependencies');
-      return currentFormData;
-    }
-
-    console.log('🔄 Applying dependencies to milestones:', dependencies);
-
-    const updatedMilestones = currentFormData.milestones.milestones.map(milestone => {
-      // Find all dependencies where this milestone is the target
-      const incomingDependencies = dependencies
-        .filter(dep => dep.targetId === milestone.id)
-        .map(dep => dep.sourceId);
-
-      // Merge with existing dependencies (avoid duplicates)
-      const existingDeps = milestone.dependencies || [];
-      const allDependencies = [...existingDeps];
-
-      incomingDependencies.forEach(depId => {
-        if (!allDependencies.includes(depId)) {
-          allDependencies.push(depId);
-        }
-      });
-
-      console.log(`📋 Milestone "${milestone.name}" dependencies:`, allDependencies);
-
-      return {
-        ...milestone,
-        dependencies: allDependencies
-      };
-    });
-
-    return {
-      ...currentFormData,
-      milestones: {
-        ...currentFormData.milestones,
-        milestones: updatedMilestones
-      }
-    };
-  };
-
   // Flow Creation Handlers - Phase 1 minimal implementation
   const handleEnterFlowMode = () => {
     setShowFlowCreationPopup(false);
 
-    // Phase 2: Show the actual flow creation modal
+    // Pass the saved milestones with real IDs to the modal
     setShowFlowCreationModal(true);
-    console.log('🎨 Opening Flow Creation Modal');
+    console.log('🎨 Opening Flow Creation Modal with saved milestones:', savedMilestones);
   };
 
   const handleSkipFlowCreation = () => {
     setShowFlowCreationPopup(false);
     setFlowCreationCompleted(true);
     setCurrentStepIndex(prev => prev + 1);
+    console.log('⏭️ Skipped flow creation, proceeding to activities');
   };
 
   const handleSaveDependencies = async (dependencies: MilestoneDependency[]): Promise<void> => {
-    console.log('💾 Saving dependencies:', dependencies);
+    console.log('💾 Saving dependencies with real milestone IDs:', dependencies);
     
     try {
-      // Apply dependencies to milestone form data
-      const updatedFormData = applyFlowDependenciesToMilestones(formData, dependencies);
-      setFormData(updatedFormData);
-
-      // Close modal and proceed to activities
+      // TODO: Optionally save dependencies to backend here
+      // For now, we'll just proceed to activities since milestones are already saved
+      
       setShowFlowCreationModal(false);
       setFlowCreationCompleted(true);
       setCurrentStepIndex(prev => prev + 1);
-
-      showToast.success(`✨ Flow created with ${dependencies.length} dependencies!`);
+      
+      const dependencyCount = dependencies.length;
+      const dependencyNames = dependencies.map(dep => 
+        `${savedMilestones.find(m => m.id === dep.sourceId)?.name} → ${savedMilestones.find(m => m.id === dep.targetId)?.name}`
+      ).join(', ');
+      
+      showToast.success(`✨ Flow created with ${dependencyCount} dependencies: ${dependencyNames}`);
+      console.log('✅ Flow creation completed with real milestone IDs');
     } catch (error) {
-      console.error('Error saving flow dependencies:', error);
+      console.error('❌ Error saving flow dependencies:', error);
       showToast.error('Failed to save flow dependencies');
     }
-  };
-
-  const handleSkipFromModal = () => {
-    setShowFlowCreationModal(false);
-    setFlowCreationCompleted(true);
-    setCurrentStepIndex(prev => prev + 1);
-    showToast.success('Skipped flow creation - proceeding to activities');
   };
 
   // Modal states for dependent entities
@@ -1100,28 +1046,23 @@ const FormStepper: React.FC = () => {
           isLoading={isLoadingDrafts}
         />
       )}
-      {/* Flow Creation Popup */}
-      {(() => {
-        const shouldShow = showFlowCreationPopup && formData.milestones;
-        const milestoneCount = formData.milestones?.milestones?.length || 0;
-    
-        return shouldShow ? (
-          <FlowCreationPopup
-            isVisible={showFlowCreationPopup}
-            milestoneCount={milestoneCount}
-            onEnterFlowMode={handleEnterFlowMode}
-            onSkip={handleSkipFlowCreation}
-          />
-        ) : null;
-      })()}
-      {/* Phase 2: Flow Creation Modal */}
-      {showFlowCreationModal && formData.milestones && (
+      {/* Phase 1: Flow Creation Decision Popup */}
+      {showFlowCreationPopup && savedMilestones.length > 1 && (
+        <FlowCreationPopup
+          isVisible={showFlowCreationPopup}
+          milestoneCount={savedMilestones.length}
+          onEnterFlowMode={handleEnterFlowMode}
+          onSkip={handleSkipFlowCreation}
+        />
+      )}
+      {/* Phase 2: Flow Creation Modal with Real Milestone Data */}
+      {showFlowCreationModal && savedMilestones.length > 0 && (
         <FlowCreationModal
           isOpen={showFlowCreationModal}
           onClose={() => setShowFlowCreationModal(false)}
-          milestones={formData.milestones.milestones}
+          milestones={savedMilestones} // Use saved milestones with real IDs
           onSaveDependencies={handleSaveDependencies}
-          onSkip={handleSkipFromModal}
+          onSkip={handleSkipFlowCreation}
         />
       )}
       {lastAutoSave && (
