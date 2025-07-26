@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams flightmaps Renderable flightmap
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Save, Edit } from 'lucide-react';
+import { Save, Edit, Search, X } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
@@ -68,6 +68,8 @@ const EditStepper: React.FC<EditStepperProps> = ({
   const [selectedEntity, setSelectedEntity] = useState<any>(null);
   const [availableEntities, setAvailableEntities] = useState<any[]>([]);
   const [isLoadingEntities, setIsLoadingEntities] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [visibleItemCount, setVisibleItemCount] = useState(10);
   
   const API = import.meta.env.VITE_API_BASE_URL;
   const accessToken = sessionStorage.getItem('accessToken');
@@ -76,6 +78,43 @@ const EditStepper: React.FC<EditStepperProps> = ({
   const methods = useForm<AllFormData>({
     defaultValues: formData[currentStepId] || {},
   });
+
+  const filteredEntities = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return availableEntities;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return availableEntities.filter(entity => {
+      // Search in primary display fields
+      const displayName = entity.name || entity.goal_text || entity.tagline || '';
+      const entityId = entity.id?.toString() || '';
+
+      // Search in subtitle (strategy name for strategic goals)
+      let subtitle = '';
+      if (currentStepId === 'strategic-goals' && entity.strategy) {
+        subtitle = typeof entity.strategy === 'object' 
+          ? entity.strategy.name || ''
+          : `Strategy ${entity.strategy}`;
+      }
+
+      // Perform case-insensitive search across all searchable fields
+      return displayName.toLowerCase().includes(query) ||
+             entityId.toLowerCase().includes(query) ||
+             subtitle.toLowerCase().includes(query);
+    });
+  }, [availableEntities, searchQuery, currentStepId]);
+
+  // Reset visible count when search changes
+  useEffect(() => {
+    setVisibleItemCount(10);
+  }, [searchQuery]);
+
+  // Reset search when step changes
+  useEffect(() => {
+    setSearchQuery('');
+    setVisibleItemCount(10);
+  }, [currentStepId]);
 
   // Load available entities for current step
   useEffect(() => {
@@ -668,27 +707,52 @@ const EditStepper: React.FC<EditStepperProps> = ({
         
         {/* Right Column: Side Panel */}
         <div className="col-span-4">
-          <div className="bg-white rounded-lg shadow-md h-full flex flex-col">
+          <div className="bg-white rounded-lg shadow-md h-[600px] flex flex-col">
             {/* Panel Header */}
-            <div className="p-4 border-b border-gray-200">
+            <div className="p-4 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-lg font-semibold text-gray-900">
                 Available {FORM_STEPS[currentStepIndex].label}s
               </h3>
               <p className="text-sm text-gray-600 mt-1">
                 Click any item below to edit
               </p>
+                
+              {/* Search Input - Only show if there are entities */}
+              {!isLoadingEntities && availableEntities.length > 0 && (
+                <div className="mt-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder={`Search ${currentStepId}...`}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-        
+            
             {/* Scrollable Entity List */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto min-h-0">
               {isLoadingEntities ? (
                 <div className="p-4 text-center">
                   <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
                   <p className="text-gray-500 text-sm">Loading available {currentStepId}...</p>
                 </div>
-              ) : availableEntities.length > 0 ? (
+              ) : filteredEntities.length > 0 ? (
                 <div className="p-2">
-                  {availableEntities.map((entity) => {
+                  {/* Display filtered entities with virtual scrolling optimization */}
+                  {filteredEntities.slice(0, visibleItemCount).map((entity) => {
                     // Handle different entity types for display (same logic as dropdown)
                     const displayName = entity.name || entity.goal_text || entity.tagline;
                     let subtitle = '';
@@ -744,8 +808,37 @@ const EditStepper: React.FC<EditStepperProps> = ({
                       </button>
                     );
                   })}
+                  
+                  {/* Load More Button - Only show if there are more items to display */}
+                  {filteredEntities.length > visibleItemCount && (
+                    <div className="text-center mt-2">
+                      <button
+                        onClick={() => setVisibleItemCount(prev => Math.min(prev + 6, filteredEntities.length))}
+                        className="px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                      >
+                        Load More ({filteredEntities.length - visibleItemCount} remaining)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : searchQuery ? (
+                // No search results
+                <div className="p-4 text-center">
+                  <div className="text-gray-400 mb-2">
+                    <Search className="w-8 h-8 mx-auto" />
+                  </div>
+                  <p className="text-sm text-gray-500 mb-2">
+                    No {currentStepId} found matching "{searchQuery}"
+                  </p>
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Clear search
+                  </button>
                 </div>
               ) : (
+                // No entities available
                 <div className="p-4 text-center">
                   <div className="text-gray-400 mb-2">
                     <Edit className="w-8 h-8 mx-auto" />
@@ -757,12 +850,34 @@ const EditStepper: React.FC<EditStepperProps> = ({
               )}
             </div>
             
-            {/* Panel Footer - Optional Stats */}
+            {/* Panel Footer - Enhanced Stats */}
             {!isLoadingEntities && availableEntities.length > 0 && (
-              <div className="p-3 border-t border-gray-200 bg-gray-50">
+              <div className="p-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                 <p className="text-xs text-gray-500 text-center">
-                  {availableEntities.length} {availableEntities.length === 1 ? 'item' : 'items'} available
+                  {searchQuery ? (
+                    <>
+                      Showing {Math.min(visibleItemCount, filteredEntities.length)} of {filteredEntities.length} filtered results
+                      {filteredEntities.length !== availableEntities.length && (
+                        <span className="text-gray-400"> ({availableEntities.length} total)</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      Showing {Math.min(visibleItemCount, availableEntities.length)} of {availableEntities.length} {availableEntities.length === 1 ? 'item' : 'items'}
+                    </>
+                  )}
                 </p>
+                {searchQuery && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setVisibleItemCount(6);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 mt-1 block mx-auto"
+                  >
+                    Clear search and reset view
+                  </button>
+                )}
               </div>
             )}
           </div>
