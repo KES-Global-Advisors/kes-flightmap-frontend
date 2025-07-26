@@ -5,6 +5,7 @@ import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Check, AlertCircle, FolderOpen, Clock } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
+import FlowCreationErrorBoundary from '@/pages/components/FlowCreationErrorBoundary';
 
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
 import { StrategicGoalForm, StrategicGoalFormData } from '../components/Forms/StrategicGoalForm';
@@ -583,15 +584,6 @@ const FormStepper: React.FC = () => {
     loadAvailableDrafts();
   }, []);
 
-  // ADD this useEffect near your other useEffects (around line 100-150):
-  useEffect(() => {
-    // Reset flow creation state when on milestones step
-    if (currentStepId === 'milestones') {
-      console.log('🔄 Reset flowCreationCompleted because we are on milestones step');
-      setFlowCreationCompleted(false);
-    }
-  }, [currentStepId]);
-
   // Enhanced submit function that removes draft on completion
   const onSubmitStep = async (data: AllFormData) => {
     // Validate current step before proceeding
@@ -739,77 +731,64 @@ const FormStepper: React.FC = () => {
     }
   };
 
-  // Flow Creation Handlers - Phase 1 minimal implementation
+  // UPDATE handleEnterFlowMode function:
   const handleEnterFlowMode = () => {
     setShowFlowCreationPopup(false);
-
-    // Pass the saved milestones with real IDs to the modal
     setShowFlowCreationModal(true);
-    console.log('🎨 Opening Flow Creation Modal with saved milestones:', savedMilestones);
   };
 
+  // UPDATE handleSkipFlowCreation function:
   const handleSkipFlowCreation = () => {
     setShowFlowCreationPopup(false);
     setFlowCreationCompleted(true);
     setCurrentStepIndex(prev => prev + 1);
-    console.log('⏭️ Skipped flow creation, proceeding to activities');
   };
 
+  // UPDATE handleSaveDependencies function
   const handleSaveDependencies = async (dependencies: MilestoneDependency[]): Promise<void> => {
-    console.log('💾 Saving dependencies to backend:', dependencies);
-
     if (dependencies.length === 0) {
-      console.log('📭 No dependencies to save - proceeding to activities');
       setShowFlowCreationModal(false);
       setFlowCreationCompleted(true);
       setCurrentStepIndex(prev => prev + 1);
       return;
     }
-
+  
     setIsSavingDependencies(true);
-
+    
     try {
-      // Step 1: Group dependencies by target milestone
-      // Each target milestone needs to know which milestones it depends on
+      // Group dependencies by target milestone
       const dependenciesByTarget = new Map<number, number[]>();
-
+      
       dependencies.forEach(dep => {
         const targetId = dep.targetId;
         const sourceId = dep.sourceId;
-
+        
         if (!dependenciesByTarget.has(targetId)) {
           dependenciesByTarget.set(targetId, []);
         }
         dependenciesByTarget.get(targetId)!.push(sourceId);
       });
-
-      console.log('📊 Dependencies grouped by target milestone:', Object.fromEntries(dependenciesByTarget));
-
-      // Step 2: Update each target milestone with its dependencies
+    
+      // Update each target milestone with its dependencies
       const updatePromises: Promise<any>[] = [];
-
+      
       for (const [targetMilestoneId, sourceMilestoneIds] of dependenciesByTarget) {
         const targetMilestone = savedMilestones.find(m => m.id === targetMilestoneId);
-
+        
         if (!targetMilestone) {
-          console.warn(`⚠️ Target milestone ${targetMilestoneId} not found in saved milestones`);
-          continue;
+          continue; // Skip missing milestones silently
         }
-
-        // Get existing dependencies for this milestone (if any)
+      
+        // Merge new dependencies with existing ones
         const existingDependencies = targetMilestone.dependencies || [];
-
-        // Merge new dependencies with existing ones (avoid duplicates)
         const allDependencies = [...existingDependencies];
         sourceMilestoneIds.forEach(sourceId => {
           if (!allDependencies.includes(sourceId)) {
             allDependencies.push(sourceId);
           }
         });
-
-        console.log(`🔄 Updating milestone "${targetMilestone.name}" (ID: ${targetMilestoneId}) with dependencies:`, allDependencies);
-
-        // Prepare PATCH request for this milestone
+      
+        // PATCH request for this milestone
         const updatePromise = fetch(`${API}/milestones/${targetMilestoneId}/`, {
           method: 'PATCH',
           headers: {
@@ -823,47 +802,39 @@ const FormStepper: React.FC = () => {
         }).then(async response => {
           if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`Failed to update milestone ${targetMilestoneId}: ${errorData.detail || 'Unknown error'}`);
+            throw new Error(`Failed to update milestone dependencies: ${errorData.detail || 'Unknown error'}`);
           }
-
-          const updatedMilestone = await response.json();
-          console.log(`✅ Successfully updated milestone "${targetMilestone.name}" dependencies`);
-          return updatedMilestone;
+          return response.json();
         });
-
+      
         updatePromises.push(updatePromise);
       }
-
-      // Step 3: Wait for all milestone updates to complete
-      console.log(`🚀 Sending ${updatePromises.length} PATCH requests to update milestone dependencies...`);
-
+    
+      // Wait for all milestone updates to complete
       const results = await Promise.all(updatePromises);
-
-      console.log('✅ All milestone dependencies saved successfully:', results);
-
-      // Step 4: Update local saved milestones with new dependency data
+    
+      // Update local saved milestones with new dependency data
       const updatedSavedMilestones = savedMilestones.map(milestone => {
         const updatedMilestone = results.find(r => r.id === milestone.id);
         return updatedMilestone || milestone;
       });
       setSavedMilestones(updatedSavedMilestones);
-
-      // Step 5: Show success and proceed to activities
+    
+      // Success flow
       setShowFlowCreationModal(false);
       setFlowCreationCompleted(true);
       setCurrentStepIndex(prev => prev + 1);
-
+      
       const dependencyCount = dependencies.length;
-      const dependencyNames = dependencies.map(dep => 
-        `${dep.sourceName || 'Unknown'} → ${dep.targetName || 'Unknown'}`
-      ).join(', ');
-
-      showToast.success(`✨ Flow saved! ${dependencyCount} dependencies: ${dependencyNames}`);
-      console.log('🎉 Flow creation completed and saved to backend');
-
+      
+      showToast.success(`Flow created successfully! ${dependencyCount} dependencies established.`);
+    
     } catch (error) {
-      console.error('❌ Error saving dependencies to backend:', error);
-      showToast.error(`Failed to save dependencies: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unable to save dependencies';
+      showToast.error(`Failed to save flow: ${errorMessage}`);
+      
+      // Log error for monitoring (keep this one for production debugging)
+      console.error('Flow creation error:', error);
     } finally {
       setIsSavingDependencies(false);
     }
@@ -1137,7 +1108,7 @@ const FormStepper: React.FC = () => {
           isLoading={isLoadingDrafts}
         />
       )}
-      {/* Phase 1: Flow Creation Decision Popup */}
+      {/* Flow Creation Decision Popup */}
       {showFlowCreationPopup && savedMilestones.length > 1 && (
         <FlowCreationPopup
           isVisible={showFlowCreationPopup}
@@ -1146,16 +1117,18 @@ const FormStepper: React.FC = () => {
           onSkip={handleSkipFlowCreation}
         />
       )}
-      {/* Phase 2: Flow Creation Modal with Real Milestone Data */}
+      {/* Flow Creation Modal with Real Milestone Data */}
       {showFlowCreationModal && savedMilestones.length > 0 && (
-        <FlowCreationModal
-          isOpen={showFlowCreationModal}
-          onClose={() => setShowFlowCreationModal(false)}
-          milestones={savedMilestones} // Use saved milestones with real IDs
-          onSaveDependencies={handleSaveDependencies}
-          onSkip={handleSkipFlowCreation}
-          isSaving={isSavingDependencies}
-        />
+        <FlowCreationErrorBoundary>
+          <FlowCreationModal
+            isOpen={showFlowCreationModal}
+            onClose={() => setShowFlowCreationModal(false)}
+            milestones={savedMilestones}
+            onSaveDependencies={handleSaveDependencies}
+            onSkip={handleSkipFlowCreation}
+            isSaving={isSavingDependencies}
+          />
+        </FlowCreationErrorBoundary>
       )}
       {lastAutoSave && (
         <div className="text-xs text-gray-500 flex items-center gap-1">

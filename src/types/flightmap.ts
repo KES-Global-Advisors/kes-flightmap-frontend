@@ -155,34 +155,4 @@ export type StrategicGoal = {
   goal_text: string;
 };
 
-export interface FlightmapData {
-  id: number;
-  name: string;
-  description?: string;
-  owner: number;
-  created_at: string;
-  updated_at: string;
-  
-  // Draft-related fields
-  is_draft: boolean;
-  draft_id?: number | null;
-  completed_at?: string | null;
-  
-  // Draft badge info from backend
-  draft_badge?: {
-    show: boolean;
-    text: string;
-    color: string;
-  };
-  
-  // Relationships
-  strategies: Strategy[];
-  milestone_summary?: {
-    total: number;
-    completed: number;
-    in_progress: number;
-    overdue: number;
-  };
-}
-
 

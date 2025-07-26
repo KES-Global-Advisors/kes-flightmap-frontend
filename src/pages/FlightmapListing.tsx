@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// cSpell:ignore workstream workstreams roadmaps flightmap flightmaps
+// cSpell:ignore workstream workstreams flightmaps flightmap flightmaps
 // src/pages/FlightmapListing.tsx
 import { useState, useContext } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,8 +7,7 @@ import { ThemeContext } from '@/contexts/ThemeContext';
 import Modal from '@/components/Flightmap/Modal';
 import FlightmapSwitcher from '@/components/Flightmap/FlightmapSwitcher';
 import FlightmapCard from './components/FlightmapCard';
-import { FlightmapData } from '@/types/flightmap';
-// import { useFlightmaps } from '@/api/flightmap';
+import { Strategy } from '@/types/flightmap';
 import { Filter, FileText } from 'lucide-react';
 import { ConfirmationModal } from '@/components/Forms/Utils/ConfirmationModal';
 
@@ -19,13 +18,13 @@ type DraftFilter = 'all' | 'drafts' | 'completed';
 export default function FlightmapListing() {
   const { themeColor } = useContext(ThemeContext);
   const qc = useQueryClient();
-  const [selected, setSelected] = useState<FlightmapData | null>(null);
+  const [selected, setSelected] = useState<Strategy | null>(null);
   const [draftFilter, setDraftFilter] = useState<DraftFilter>('all');
-  const [flightmapToDelete, setFlightmapToDelete] = useState<FlightmapData | null>(null);
+  const [flightmapToDelete, setFlightmapToDelete] = useState<Strategy | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Load flightmaps with draft filtering
-  const { data: roadmaps, isLoading, isError, error } = useQuery({
+  const { data: flightmaps, isLoading, isError, error } = useQuery({
     queryKey: ['flightmaps', draftFilter],
     queryFn: async () => {
       const token = sessionStorage.getItem('accessToken');
@@ -52,7 +51,7 @@ export default function FlightmapListing() {
   });
 
   const selectedId = selected?.id;
-  const freshSelected = roadmaps?.find((r: FlightmapData) => r.id === selectedId);
+  const freshSelected = flightmaps?.find((r: Strategy) => r.id === selectedId);
 
   // Delete a flightmap (optimistic)
   const deleteMutation = useMutation<void, Error, number>({
@@ -69,8 +68,8 @@ export default function FlightmapListing() {
     },
     onMutate: async (id: number) => {
       await qc.cancelQueries({ queryKey: ['flightmaps', draftFilter] });
-      const previous = qc.getQueryData<FlightmapData[]>(['flightmaps', draftFilter]);
-      qc.setQueryData<FlightmapData[]>(['flightmaps', draftFilter],
+      const previous = qc.getQueryData<Strategy[]>(['flightmaps', draftFilter]);
+      qc.setQueryData<Strategy[]>(['flightmaps', draftFilter],
         previous?.filter(r => r.id !== id) ?? []
       );
       return { previous };
@@ -85,7 +84,7 @@ export default function FlightmapListing() {
     },
   });
 
-  const handleDelete = async (flightmap: FlightmapData) => {
+  const handleDelete = async (flightmap: Strategy) => {
     setFlightmapToDelete(flightmap);
   };
 
@@ -110,9 +109,9 @@ export default function FlightmapListing() {
 
   // Calculate statistics
   const stats = {
-    total: roadmaps?.length || 0,
-    drafts: roadmaps?.filter((r: FlightmapData) => r.is_draft).length || 0,
-    completed: roadmaps?.filter((r: FlightmapData) => !r.is_draft).length || 0,
+    total: flightmaps?.length || 0,
+    drafts: flightmaps?.filter((r: Strategy) => r.is_draft).length || 0,
+    completed: flightmaps?.filter((r: Strategy) => !r.is_draft).length || 0,
   };
 
   if (isLoading) {
@@ -160,7 +159,7 @@ export default function FlightmapListing() {
       </div>
 
       {/* Empty state */}
-      {roadmaps?.length === 0 ? (
+      {flightmaps?.length === 0 ? (
         <div className="text-center py-12">
           <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-500">
@@ -173,10 +172,10 @@ export default function FlightmapListing() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {roadmaps!.map((r: FlightmapData) => (
+          {flightmaps!.map((r: Strategy) => (
             <FlightmapCard
               key={r.id}
-              roadmap={r}
+              flightmap={r}
               openModal={() => setSelected(r)}
               onDelete={() => handleDelete(r)}
             />
@@ -195,7 +194,7 @@ export default function FlightmapListing() {
               </span>
             )}
           </h2>
-          <FlightmapSwitcher roadmap={freshSelected!} />
+          <FlightmapSwitcher flightmap={freshSelected!} />
         </Modal>
       )}
 

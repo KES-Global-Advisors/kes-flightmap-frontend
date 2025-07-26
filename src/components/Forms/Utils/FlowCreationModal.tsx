@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /******************************************************************************
- * FlowCreationModal.tsx - Phase 2 Enhanced Implementation
- * Location: src/components/Forms/Utils/FlowCreationModal.tsx
+ * FlowCreationModal.tsx
  * 
- * Interactive milestone dependency creation with timeline visualization
- * Leverages existing D3.js infrastructure from FlightmapVisualization.tsx
+ * Interactive milestone dependency creation with timeline visualization.
+ * Provides visual interface for establishing milestone dependencies.
  *****************************************************************************/
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
@@ -23,7 +22,7 @@ export interface MilestoneDependency {
 interface FlowCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  milestones: any[]; // Backend milestone objects with real IDs
+  milestones: any[];
   onSaveDependencies: (dependencies: MilestoneDependency[]) => Promise<void>;
   onSkip: () => void;
   isSaving?: boolean;
@@ -194,13 +193,9 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
 
   // ─── Interaction Handlers ─────────────────────────────────────────────
   const handleMilestoneClick = useCallback((milestoneId: number) => {
-    const milestone = milestones?.find(m => m.id === milestoneId);
-    console.log('🎯 Clicked milestone:', milestone?.name, '(ID:', milestoneId, ')');
-
     if (connectionMode === 'idle') {
       setSelectedSourceMilestone(milestoneId);
       setConnectionMode('selecting_target');
-      console.log('🎯 Selected source milestone:', milestone?.name, '(ID:', milestoneId, ')');
     } else if (selectedSourceMilestone !== null && selectedSourceMilestone !== milestoneId) {
       // Create new dependency using real milestone IDs
       const sourceMilestone = milestones?.find(m => m.id === selectedSourceMilestone);
@@ -216,19 +211,13 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
       };
 
       const updatedDeps = [...pendingDependencies, newDependency];
-      console.log('🔗 Created dependency with real IDs:', 
-        sourceMilestone?.name, '(ID:', selectedSourceMilestone, ') →', 
-        targetMilestone?.name, '(ID:', milestoneId, ')');
-      
-      // Validate after adding
       validateDependencies(updatedDeps);
-      
+
       // Reset selection
       setSelectedSourceMilestone(null);
       setConnectionMode('idle');
     } else if (selectedSourceMilestone === milestoneId) {
-      // Clicking the same milestone cancels selection
-      console.log('🚫 Cancelled selection');
+      // Cancel selection
       setSelectedSourceMilestone(null);
       setConnectionMode('idle');
     }
@@ -237,7 +226,6 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
   const handleDependencyRemove = useCallback((tempId: string) => {
     const updatedDeps = pendingDependencies.filter(dep => dep.tempId !== tempId);
     validateDependencies(updatedDeps);
-    console.log('🗑️ Removed dependency:', tempId);
   }, [pendingDependencies, validateDependencies]);
 
   const handleClearAll = useCallback(() => {
@@ -248,15 +236,13 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (validationErrors.length > 0) return;
-
-    console.log('💾 Initiating dependency save process...');
-
+    if (validationErrors.length > 0) {
+      return;
+    }
+    
     try {
       await onSaveDependencies(pendingDependencies);
-      // Note: onClose will be called by the parent component after successful save
-    } catch (error) {
-      console.error('❌ Error in handleSave:', error);
+    } catch {
       // Error handling is done in parent component
     }
   }, [pendingDependencies, validationErrors, onSaveDependencies]);
@@ -390,15 +376,6 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
 
   }, [isOpen, milestonePositions, pendingDependencies, selectedSourceMilestone, connectionMode, hoveredMilestone, xScale, timelineMarkers, handleMilestoneClick, handleDependencyRemove]);
 
-  useEffect(() => {
-    if (isOpen && milestones) {
-      console.log('🔍 FlowCreationModal opened with milestones:', milestones);
-      console.log('📊 Milestone summary:');
-      milestones.forEach(m => {
-        console.log(`  • ${m.name} (ID: ${m.id}, Deadline: ${m.deadline})`);
-      });
-    }
-  }, [isOpen, milestones]);
 
   if (!isOpen) return null;
 

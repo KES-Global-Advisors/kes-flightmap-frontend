@@ -17,6 +17,7 @@ import { wrapText } from "./Utils/wrapText";
 import Tooltip from "./FlightmapComponents/Tooltip";
 import { getTooltipContent } from "./Utils/getTooltip";
 import { getStatusColor } from "./Utils/getStatusColor";
+import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 import {
   extractMilestonesAndActivities,
@@ -129,8 +130,6 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   // Add helper ref for tracking processed duplicates if needed
   const processedDuplicatesSet = useRef(new Set<string>());
 
-  
-  // Add after the existing debouncedUpsertPosition ref (around line 190)
   const debouncedBatchMilestoneUpdate = useRef(
     debounce((updates: Record<string, { y: number }>) => {
       setMilestonePositions(prev => ({ ...prev, ...updates }));
@@ -164,25 +163,21 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     const delay = RETRY_DELAY_BASE * Math.pow(2, failedSave.attempt - 1);
 
     setTimeout(() => {
-      console.log(`Retrying save for ${saveKey}, attempt ${failedSave.attempt + 1}`);
-
       upsertPos.mutate(failedSave.data, {
         onSuccess: () => {
           failedSaves.current.delete(saveKey);
           pendingSaves.current.delete(saveKey);
-          console.log(`Successfully saved ${saveKey} on retry`);
         },
         onError: (error) => {
           failedSave.attempt++;
           failedSave.lastError = error as Error;
 
           if (failedSave.attempt >= MAX_RETRY_ATTEMPTS) {
-            console.error(`Failed to save ${saveKey} after ${MAX_RETRY_ATTEMPTS} attempts:`, error);
             failedSaves.current.delete(saveKey);
             pendingSaves.current.delete(saveKey);
 
-            // TODO: Show user notification about sync failure
-            // Consider adding a toast notification or error banner
+          // Show user-friendly error notification
+            showToast.error('Unable to save position changes. Please try refreshing the page.');
           } else {
             retryFailedSave(saveKey);
           }
@@ -197,7 +192,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
   */
   const debouncedUpsertPosition = useRef(
     debounce((
-      flightmapId: number, 
+      strategyId: number, 
       nodeType: 'milestone'|'workstream', 
       nodeId: number | string, 
       relY: number, 
@@ -207,7 +202,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     ) => {
       const saveKey = `${nodeType}-${nodeId}`;
       const saveData = {
-        flightmap: flightmapId,
+        strategy: strategyId,
         nodeType,
         nodeId,
         relY,

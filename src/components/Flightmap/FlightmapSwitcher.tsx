@@ -1,17 +1,17 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt flightmap flightmaps
+// cSpell:ignore workstream workstreams flightmaps Gantt flightmap flightmaps
 import React, { useState } from 'react';
 import FlightmapVisualization from './FlightmapVisualization';
 import GanttChart from './GanttChart';
 import FrameworkView from './FrameworkView';
-import { FlightmapData } from '@/types/flightmap';
+import { Strategy } from '@/types/flightmap';
 import { useUpdateMilestoneDeadline } from '@/api/flightmap';
 
 
 interface Props {
-  roadmap: FlightmapData;
+  flightmap: Strategy;
 }
 
-const FlightmapSwitcher: React.FC<Props> = React.memo(({ roadmap }) => {
+const FlightmapSwitcher: React.FC<Props> = React.memo(({ flightmap }) => {
   const [viewMode, setViewMode] = useState<'flightmap' | 'gantt' | 'framework'>('flightmap');
   const updateMilestoneMutation = useUpdateMilestoneDeadline();
 
@@ -57,18 +57,18 @@ const FlightmapSwitcher: React.FC<Props> = React.memo(({ roadmap }) => {
 
       {viewMode === 'flightmap' && (
         <FlightmapVisualization
-          data={roadmap}
+          data={flightmap}
           onMilestoneDeadlineChange={onMilestoneDeadlineChange}
         />
       )}
-      {viewMode === 'gantt' && <GanttChart data={roadmap} />}
-      {viewMode === 'framework' && <FrameworkView data={roadmap} />}
+      {viewMode === 'gantt' && <GanttChart data={flightmap} />}
+      {viewMode === 'framework' && <FrameworkView data={flightmap} />}
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Only re-render if roadmap ID or critical fields change
-  return prevProps.roadmap.id === nextProps.roadmap.id && 
-         prevProps.roadmap.name === nextProps.roadmap.name;
+  // Only re-render if flightmap ID or critical fields change
+  return prevProps.flightmap.id === nextProps.flightmap.id && 
+         prevProps.flightmap.name === nextProps.flightmap.name;
 });
 
 export default FlightmapSwitcher;

@@ -168,31 +168,20 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
       return 'Milestone name should not exceed 100 characters for practical display';
     }
 
-    // Duplicate detection within form scope with enhanced comparison
+    // Duplicate detection
     const currentMilestones = watch('milestones') || [];
     const duplicateCount = currentMilestones.filter((m, i) => 
       i !== index && m.name && m.name.trim().toLowerCase() === trimmedValue.toLowerCase()
     ).length;
-    
+
     if (duplicateCount > 0) {
       return 'Milestone names must be unique within the same workstream for clarity';
     }
 
-    // Business naming convention validation
+    // Basic naming convention validation
     const hasValidStructure = /^[A-Za-z][\w\s\-&\\.\\(\\)]+[A-Za-z0-9\\)]$/.test(trimmedValue);
     if (!hasValidStructure && trimmedValue.length > 1) {
-      return 'Milestone name should follow standard naming conventions';
-    }
-
-    // Semantic quality indicators with proactive guidance
-    const hasActionableLanguage = /\b(complete|deliver|achieve|implement|launch|establish|finalize|deploy)\b/i.test(trimmedValue);
-    if (!hasActionableLanguage) {
-      console.warn(`Milestone ${index + 1}: Consider using action-oriented language for clarity`);
-    }
-
-    const hasSpecificOutcome = /\b(phase|stage|version|release|approval|review|demo|pilot|beta|production)\b/i.test(trimmedValue);
-    if (!hasSpecificOutcome) {
-      console.warn(`Milestone ${index + 1}: Consider including specific outcome indicators`);
+      return 'Please use standard naming conventions';
     }
 
     return true;

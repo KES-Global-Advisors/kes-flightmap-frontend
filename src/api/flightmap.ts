@@ -1,7 +1,7 @@
 // src/api/flightmap.ts
 // cSpell:ignore workstream workstreams roadmaps flightmap flightmaps
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { FlightmapData } from '@/types/flightmap';
+import type { Strategy } from '@/types/flightmap';
 const API = import.meta.env.VITE_API_BASE_URL;
 
 export interface NodePos { 
@@ -28,7 +28,7 @@ export const fetchFlightmaps = async () => {
 
 
 export function useFlightmaps() {
-  return useQuery<FlightmapData[], Error>({
+  return useQuery<Strategy[], Error>({
     queryKey: ['flightmaps'],
     queryFn: fetchFlightmaps,
     staleTime: 60_000,
@@ -39,20 +39,20 @@ export function useFlightmaps() {
 export type NodeType = 'milestone'|'workstream';
 export interface NodePos { node_type: NodeType; node_id: number | string; rel_y: number; }
 
-const fetchPositions = async (flightmap: number, nodeType: NodeType) => {
+const fetchPositions = async (strategy: number, nodeType: NodeType) => {
   const token = sessionStorage.getItem('accessToken');
   const res = await fetch(
-    `${API}/positions/?flightmap=${flightmap}&node_type=${nodeType}`,
+    `${API}/positions/?strategy=${strategy}&node_type=${nodeType}`,
     { headers: { 'Content-Type':'application/json', ...(token && { Authorization:`Bearer ${token}` }) }}
   );
   if (!res.ok) throw new Error('Failed to fetch positions');
   return res.json() as Promise<NodePos[]>;
 };
 
-export function useNodePositions(flightmap: number, nodeType: NodeType) {
+export function useNodePositions(strategy: number, nodeType: NodeType) {
   return useQuery<NodePos[], Error>({
-    queryKey: ['positions', flightmap, nodeType],
-    queryFn: () => fetchPositions(flightmap, nodeType),
+    queryKey: ['positions', strategy, nodeType],
+    queryFn: () => fetchPositions(strategy, nodeType),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -60,7 +60,7 @@ export function useNodePositions(flightmap: number, nodeType: NodeType) {
 
 // Update the upsert function to handle duplicates
 const upsertPosition = async (
-  flightmap: number, 
+  strategy: number, 
   nodeType: NodeType, 
   nodeId: number | string, 
   relY: number,
@@ -73,7 +73,7 @@ const upsertPosition = async (
     method: 'POST',
     headers: { 'Content-Type':'application/json', ...(token && { Authorization:`Bearer ${token}` }) },
     body: JSON.stringify({ 
-      flightmap, 
+      strategy, 
       node_type: nodeType, 
       // Use duplicateKey as the node_id for duplicates instead of original ID
       node_id: isDuplicate && duplicateKey ? duplicateKey : nodeId, 
@@ -89,7 +89,7 @@ const upsertPosition = async (
 export function useUpsertPosition() {
   const qc = useQueryClient();
   return useMutation<void, Error, { 
-    flightmap: number; 
+    strategy: number; 
     nodeType: NodeType; 
     nodeId: number | string; 
     relY: number;
@@ -97,10 +97,10 @@ export function useUpsertPosition() {
     duplicateKey?: string;
     originalNodeId?: number;
   }>({
-    mutationFn: ({ flightmap, nodeType, nodeId, relY, isDuplicate, duplicateKey, originalNodeId }) =>
-      upsertPosition(flightmap, nodeType, nodeId, relY, isDuplicate, duplicateKey, originalNodeId),
+    mutationFn: ({ strategy, nodeType, nodeId, relY, isDuplicate, duplicateKey, originalNodeId }) =>
+      upsertPosition(strategy, nodeType, nodeId, relY, isDuplicate, duplicateKey, originalNodeId),
      onSuccess: (_data, variables) => {
-       qc.invalidateQueries({ queryKey: ['positions', variables.flightmap, variables.nodeType] });
+       qc.invalidateQueries({ queryKey: ['positions', variables.strategy, variables.nodeType] });
      },
   });
 }
