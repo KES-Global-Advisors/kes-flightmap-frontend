@@ -271,15 +271,11 @@ const EditStepper: React.FC<EditStepperProps> = ({
         case 'milestones':
           // Filter by selected workstream (requires workstream context)
           if (editingContext.selectedWorkstream) {
-            console.log('Filtering milestones by workstream:', editingContext.selectedWorkstream.id);
             entitiesToFilter = availableEntities.filter(milestone => {
               const matches = milestone.workstream == editingContext.selectedWorkstream.id;
-              console.log(`Milestone ${milestone.id} (${milestone.name}) workstream: ${milestone.workstream} vs selected: ${editingContext.selectedWorkstream.id} = ${matches}`);
               return matches;
             });
-            console.log('Filtered milestones result:', entitiesToFilter.length, 'milestones');
           } else {
-            console.log('No workstream selected for milestone filtering');
             entitiesToFilter = [];
           }
           break;
@@ -333,72 +329,68 @@ const EditStepper: React.FC<EditStepperProps> = ({
   }, [currentStepId]);
 
   // Load available entities for current step
-// Load available entities for current step - SPECIAL HANDLING FOR MILESTONES
-useEffect(() => {
-  const loadEntitiesForStep = async () => {
-    setIsLoadingEntities(true);
+  useEffect(() => {
+    const loadEntitiesForStep = async () => {
+      setIsLoadingEntities(true);
 
-    try {
-      if (currentStepId === 'milestones') {
-        console.log('Loading milestones from contextOptions (full data)');
-        
-        // Extract all milestones from contextOptions which has full data
-        let allMilestones: any[] = [];
-        
-        // Get milestones from workstreams in contextOptions
-        contextOptions.workstreams.forEach(workstream => {
-          if (workstream.milestones && Array.isArray(workstream.milestones)) {
-            allMilestones = allMilestones.concat(workstream.milestones);
-          }
-        });
-        
-        // Remove duplicates by ID (in case same milestone appears in multiple places)
-        const uniqueMilestones = allMilestones.reduce((acc, milestone) => {
-          if (!acc.find((m: any) => m.id === milestone.id)) {
-            acc.push(milestone);
-          }
-          return acc;
-        }, []);
-        
-        console.log('Extracted milestones with full data:', uniqueMilestones.length);
-        console.log('Sample milestone with workstream:', uniqueMilestones[0]);
-        
-        setAvailableEntities(uniqueMilestones);
-      } else {
-        // For all other steps, use regular API
-        const response = await fetch(`${API}/${currentStepId}/`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken || ''}`,
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-        });
+      try {
+        if (currentStepId === 'milestones') {
 
-        if (response.ok) {
-          const data = await response.json();
-          const entities = Array.isArray(data) ? data : (data.results || []);
-          setAvailableEntities(entities);
+          // Extract all milestones from contextOptions which has full data
+          let allMilestones: any[] = [];
 
-          // Auto-select if initialEntityId provided and matches current step
-          if (initialEntityId && currentStepId === initialStepId && !selectedEntity) {
-            const entity = entities.find((e: any) => e.id.toString() === initialEntityId);
-            if (entity) {
-              setSelectedEntity(entity);
-              loadEntityData(entity);
+          // Get milestones from workstreams in contextOptions
+          contextOptions.workstreams.forEach(workstream => {
+            if (workstream.milestones && Array.isArray(workstream.milestones)) {
+              allMilestones = allMilestones.concat(workstream.milestones);
+            }
+          });
+
+          // Remove duplicates by ID (in case same milestone appears in multiple places)
+          const uniqueMilestones = allMilestones.reduce((acc, milestone) => {
+            if (!acc.find((m: any) => m.id === milestone.id)) {
+              acc.push(milestone);
+            }
+            return acc;
+          }, []);
+
+
+          setAvailableEntities(uniqueMilestones);
+        } else {
+          // For all other steps, use regular API
+          const response = await fetch(`${API}/${currentStepId}/`, {
+            headers: {
+              'Authorization': `Bearer ${accessToken || ''}`,
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const entities = Array.isArray(data) ? data : (data.results || []);
+            setAvailableEntities(entities);
+
+            // Auto-select if initialEntityId provided and matches current step
+            if (initialEntityId && currentStepId === initialStepId && !selectedEntity) {
+              const entity = entities.find((e: any) => e.id.toString() === initialEntityId);
+              if (entity) {
+                setSelectedEntity(entity);
+                loadEntityData(entity);
+              }
             }
           }
         }
+      } catch (error) {
+        console.error('Error loading entities:', error);
+        showToast.error(`Failed to load ${currentStepId}`);
+      } finally {
+        setIsLoadingEntities(false);
       }
-    } catch (error) {
-      console.error('Error loading entities:', error);
-      showToast.error(`Failed to load ${currentStepId}`);
-    } finally {
-      setIsLoadingEntities(false);
-    }
-  };
+    };
 
-  loadEntitiesForStep();
-}, [currentStepId, API, accessToken, initialEntityId, initialStepId, contextOptions]);
+    loadEntitiesForStep();
+  }, [currentStepId, API, accessToken, initialEntityId, initialStepId, contextOptions]);
 
   // Clear selected entity when context changes to avoid confusion
   useEffect(() => {
@@ -570,7 +562,6 @@ useEffect(() => {
 
   // Context change handlers - IMPROVED
   const handleStrategyChange = useCallback((strategy: any) => {
-    console.log('handleStrategyChange called with:', strategy);
     setEditingContext(prev => {
       const newContext = {
         ...prev,
@@ -578,32 +569,27 @@ useEffect(() => {
         selectedProgram: null,
         selectedWorkstream: null
       };
-      console.log('Setting new editing context:', newContext);
       return newContext;
     });
   }, []);
 
   const handleProgramChange = useCallback((program: any) => {
-    console.log('handleProgramChange called with:', program);
     setEditingContext(prev => {
       const newContext = {
         ...prev,
         selectedProgram: program,
         selectedWorkstream: null
       };
-      console.log('Setting new editing context:', newContext);
       return newContext;
     });
   }, []);
 
   const handleWorkstreamChange = useCallback((workstream: any) => {
-    console.log('handleWorkstreamChange called with:', workstream);
     setEditingContext(prev => {
       const newContext = {
         ...prev,
         selectedWorkstream: workstream
       };
-      console.log('Setting new editing context:', newContext);
       return newContext;
     });
   }, []);
@@ -819,7 +805,6 @@ useEffect(() => {
   // Step navigation
 // Step navigation - PRESERVE CONTEXT
   const handleStepClick = (index: number) => {
-    console.log('Step clicked:', index, 'Current context:', editingContext);
     setSelectedEntity(null);
     methods.reset({});
     setCurrentStepIndex(index);
@@ -866,8 +851,6 @@ useEffect(() => {
     const showProgramSelect = currentStepIndex >= 3; // workstreams, milestones, activities
     const showWorkstreamSelect = currentStepIndex >= 4; // milestones, activities
 
-    console.log('EditingContextHeader render - context:', context);
-    console.log('EditingContextHeader render - contextOptions:', contextOptions);
 
     return (
       <div className="mb-6 p-4 rounded-lg border-2" style={{ 
@@ -891,14 +874,11 @@ useEffect(() => {
                   id="strategy-select"
                   value={context.selectedStrategy?.id || ''}
                   onChange={(e) => {
-                    console.log('Strategy dropdown changed to:', e.target.value);
                     const strategyId = e.target.value;
                     if (strategyId) {
                       const strategy = contextOptions.strategies.find(s => s.id == strategyId);
-                      console.log('Found strategy:', strategy);
                       onStrategyChange(strategy || null);
                     } else {
-                      console.log('Clearing strategy selection');
                       onStrategyChange(null);
                     }
                   }}
@@ -923,14 +903,11 @@ useEffect(() => {
                     id="program-select"
                     value={context.selectedProgram?.id || ''}
                     onChange={(e) => {
-                      console.log('Program dropdown changed to:', e.target.value);
                       const programId = e.target.value;
                       if (programId) {
                         const program = contextOptions.programs.find(p => p.id == programId);
-                        console.log('Found program:', program);
                         onProgramChange(program || null);
                       } else {
-                        console.log('Clearing program selection');
                         onProgramChange(null);
                       }
                     }}
@@ -964,14 +941,11 @@ useEffect(() => {
                     id="workstream-select"
                     value={context.selectedWorkstream?.id || ''}
                     onChange={(e) => {
-                      console.log('Workstream dropdown changed to:', e.target.value);
                       const workstreamId = e.target.value;
                       if (workstreamId) {
                         const workstream = contextOptions.workstreams.find(w => w.id == workstreamId);
-                        console.log('Found workstream:', workstream);
                         onWorkstreamChange(workstream || null);
                       } else {
-                        console.log('Clearing workstream selection');
                         onWorkstreamChange(null);
                       }
                     }}
