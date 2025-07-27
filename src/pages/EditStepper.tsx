@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams flightmaps Renderable flightmap
-import React, { useState, useContext, useEffect, useMemo } from 'react';
+import React, { useState, useContext, useEffect, useMemo, useCallback } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Save, Edit, Search, X } from 'lucide-react';
+import { Save, Edit, Search, X, RotateCcw } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
@@ -31,6 +31,23 @@ interface FormDataMap {
   workstreams?: WorkstreamFormData;
   milestones?: MilestoneFormData;
   activities?: ActivityFormData;
+}
+
+interface EditingContext {
+  selectedStrategy: any | null;
+  selectedProgram: any | null;
+  selectedWorkstream: any | null;
+  filteringEnabled: boolean;
+}
+
+interface ContextHeaderProps {
+  context: EditingContext;
+  onResetContext: () => void;
+  themeColor: string;
+  currentStepIndex: number;
+  onStrategyChange: (strategy: any) => void;
+  onProgramChange: (program: any) => void;
+  onWorkstreamChange: (workstream: any) => void;
 }
 
 type AllFormData =
@@ -71,6 +88,26 @@ const EditStepper: React.FC<EditStepperProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleItemCount, setVisibleItemCount] = useState(10);
   
+  // Context state
+  const [editingContext, setEditingContext] = useState<EditingContext>({
+    selectedStrategy: null,
+    selectedProgram: null,
+    selectedWorkstream: null,
+    filteringEnabled: true
+  });
+
+  // Context options for dropdowns
+  const [contextOptions, setContextOptions] = useState<{
+    strategies: any[];
+    programs: any[];
+    workstreams: any[];
+  }>({
+    strategies: [],
+    programs: [],
+    workstreams: []
+  });
+  const [isLoadingContextOptions, setIsLoadingContextOptions] = useState(false);
+
   const API = import.meta.env.VITE_API_BASE_URL;
   const accessToken = sessionStorage.getItem('accessToken');
   const currentStepId = FORM_STEPS[currentStepIndex].id;
@@ -79,31 +116,210 @@ const EditStepper: React.FC<EditStepperProps> = ({
     defaultValues: formData[currentStepId] || {},
   });
 
+  // Load all strategies on mount
+  useEffect(() => {
+    const loadStrategies = async () => {
+      try {
+        const response = await fetch(`${API}/strategies/`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken || ''}`,
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const strategies = Array.isArray(data) ? data : (data.results || []);
+          setContextOptions(prev => ({ ...prev, strategies }));
+        }
+      } catch (error) {
+        console.error('Error loading strategies:', error);
+      }
+    };
+
+    loadStrategies();
+  }, [API, accessToken]);
+
+  // Load programs when strategy changes
+  useEffect(() => {
+    const loadPrograms = async () => {
+      if (!editingContext.selectedStrategy) {
+        setContextOptions(prev => ({ ...prev, programs: [], workstreams: [] }));
+        return;
+      }
+
+      setIsLoadingContextOptions(true);
+      try {
+        const response = await fetch(`${API}/programs/?strategy=${editingContext.selectedStrategy.id}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken || ''}`,
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const programs = Array.isArray(data) ? data : (data.results || []);
+          setContextOptions(prev => ({ ...prev, programs, workstreams: [] }));
+        }
+      } catch (error) {
+        console.error('Error loading programs:', error);
+      } finally {
+        setIsLoadingContextOptions(false);
+      }
+    };
+
+    loadPrograms();
+  }, [editingContext.selectedStrategy, API, accessToken]);
+
+  // Load workstreams when program changes
+  useEffect(() => {
+    const loadWorkstreams = async () => {
+      if (!editingContext.selectedProgram) {
+        setContextOptions(prev => ({ ...prev, workstreams: [] }));
+        return;
+      }
+
+      setIsLoadingContextOptions(true);
+      try {
+        const response = await fetch(`${API}/workstreams/?program=${editingContext.selectedProgram.id}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken || ''}`,
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const workstreams = Array.isArray(data) ? data : (data.results || []);
+          setContextOptions(prev => ({ ...prev, workstreams }));
+        }
+      } catch (error) {
+        console.error('Error loading workstreams:', error);
+      } finally {
+        setIsLoadingContextOptions(false);
+      }
+    };
+
+    loadWorkstreams();
+  }, [editingContext.selectedProgram, API, accessToken]);
+
+  // Filtered entities based on context
   const filteredEntities = useMemo(() => {
+    let entitiesToFilter = availableEntities;
+
+    // Apply context-based filtering only if filtering is enabled
+    if (editingContext.filteringEnabled) {
+      switch (currentStepId) {
+        case 'strategies':
+          // For strategies, show all (no filtering needed)
+          break;
+
+        case 'strategic-goals':
+          // Filter by selected strategy
+          if (editingContext.selectedStrategy) {
+            entitiesToFilter = availableEntities.filter(goal => {
+              const goalStrategyId = typeof goal.strategy === 'object' 
+                ? goal.strategy.id 
+                : goal.strategy || goal.strategy_id;
+              return goalStrategyId == editingContext.selectedStrategy.id;
+            });
+          }
+          break;
+        
+        case 'programs':
+          // Filter by selected strategy
+          if (editingContext.selectedStrategy) {
+            entitiesToFilter = availableEntities.filter(program => {
+              const programStrategyId = typeof program.strategy === 'object' 
+                ? program.strategy.id 
+                : program.strategy || program.strategy_id;
+              return programStrategyId == editingContext.selectedStrategy.id;
+            });
+          }
+          break;
+
+        case 'workstreams':
+          // Filter by selected program (requires program context)
+          if (editingContext.selectedProgram) {
+            entitiesToFilter = availableEntities.filter(workstream => {
+              const workstreamProgramId = typeof workstream.program === 'object' 
+                ? workstream.program.id 
+                : workstream.program || workstream.program_id;
+              return workstreamProgramId == editingContext.selectedProgram.id;
+            });
+          } else if (editingContext.selectedStrategy) {
+            // If only strategy selected, show workstreams from programs in that strategy
+            entitiesToFilter = availableEntities.filter(workstream => {
+              if (typeof workstream.program === 'object' && workstream.program.strategy) {
+                const strategyId = typeof workstream.program.strategy === 'object'
+                  ? workstream.program.strategy.id
+                  : workstream.program.strategy;
+                return strategyId == editingContext.selectedStrategy.id;
+              }
+              return false;
+            });
+          } else {
+            // No context selected - show empty for workstreams step to encourage context selection
+            entitiesToFilter = [];
+          }
+          break;
+                
+        case 'milestones':
+          // Filter by selected workstream (requires workstream context)
+          if (editingContext.selectedWorkstream) {
+            console.log('Filtering milestones by workstream:', editingContext.selectedWorkstream.id);
+            entitiesToFilter = availableEntities.filter(milestone => {
+              const matches = milestone.workstream == editingContext.selectedWorkstream.id;
+              console.log(`Milestone ${milestone.id} (${milestone.name}) workstream: ${milestone.workstream} vs selected: ${editingContext.selectedWorkstream.id} = ${matches}`);
+              return matches;
+            });
+            console.log('Filtered milestones result:', entitiesToFilter.length, 'milestones');
+          } else {
+            console.log('No workstream selected for milestone filtering');
+            entitiesToFilter = [];
+          }
+          break;
+
+        case 'activities':
+          // Filter by selected workstream through milestone relationships
+          if (editingContext.selectedWorkstream) {
+            entitiesToFilter = availableEntities.filter(activity => {
+              // Check if source or target milestone belongs to selected workstream
+              const sourceWorkstreamId = activity.source_milestone?.workstream_id || 
+                                       activity.source_milestone?.workstream;
+              const targetWorkstreamId = activity.target_milestone?.workstream_id || 
+                                       activity.target_milestone?.workstream;
+
+              return sourceWorkstreamId == editingContext.selectedWorkstream.id ||
+                     targetWorkstreamId == editingContext.selectedWorkstream.id;
+            });
+          } else {
+            // No workstream context - show empty to encourage context selection
+            entitiesToFilter = [];
+          }
+          break;
+
+        default:
+          // Default case - no filtering
+          break;
+      }
+    }
+
+    // Apply search query filtering on top of context filtering
     if (!searchQuery.trim()) {
-      return availableEntities;
+      return entitiesToFilter;
     }
 
     const query = searchQuery.toLowerCase();
-    return availableEntities.filter(entity => {
-      // Search in primary display fields
-      const displayName = entity.name || entity.goal_text || entity.tagline || '';
-      const entityId = entity.id?.toString() || '';
-
-      // Search in subtitle (strategy name for strategic goals)
-      let subtitle = '';
-      if (currentStepId === 'strategic-goals' && entity.strategy) {
-        subtitle = typeof entity.strategy === 'object' 
-          ? entity.strategy.name || ''
-          : `Strategy ${entity.strategy}`;
-      }
-
-      // Perform case-insensitive search across all searchable fields
-      return displayName.toLowerCase().includes(query) ||
-             entityId.toLowerCase().includes(query) ||
-             subtitle.toLowerCase().includes(query);
+    return entitiesToFilter.filter((entity) => {
+      const searchableText = `${entity.name || ''} ${entity.goal_text || ''} ${entity.tagline || ''}`.toLowerCase();
+      return searchableText.includes(query);
     });
-  }, [availableEntities, searchQuery, currentStepId]);
+  }, [availableEntities, searchQuery, editingContext, currentStepId]);
 
   // Reset visible count when search changes
   useEffect(() => {
@@ -117,17 +333,39 @@ const EditStepper: React.FC<EditStepperProps> = ({
   }, [currentStepId]);
 
   // Load available entities for current step
-  useEffect(() => {
-    const loadEntitiesForStep = async () => {
-      setIsLoadingEntities(true);
+// Load available entities for current step - SPECIAL HANDLING FOR MILESTONES
+useEffect(() => {
+  const loadEntitiesForStep = async () => {
+    setIsLoadingEntities(true);
 
-      // Clear previous selection when step changes
-      if (!initialEntityId || currentStepId !== initialStepId) {
-        setSelectedEntity(null);
-        methods.reset({});
-      }
-
-      try {
+    try {
+      if (currentStepId === 'milestones') {
+        console.log('Loading milestones from contextOptions (full data)');
+        
+        // Extract all milestones from contextOptions which has full data
+        let allMilestones: any[] = [];
+        
+        // Get milestones from workstreams in contextOptions
+        contextOptions.workstreams.forEach(workstream => {
+          if (workstream.milestones && Array.isArray(workstream.milestones)) {
+            allMilestones = allMilestones.concat(workstream.milestones);
+          }
+        });
+        
+        // Remove duplicates by ID (in case same milestone appears in multiple places)
+        const uniqueMilestones = allMilestones.reduce((acc, milestone) => {
+          if (!acc.find((m: any) => m.id === milestone.id)) {
+            acc.push(milestone);
+          }
+          return acc;
+        }, []);
+        
+        console.log('Extracted milestones with full data:', uniqueMilestones.length);
+        console.log('Sample milestone with workstream:', uniqueMilestones[0]);
+        
+        setAvailableEntities(uniqueMilestones);
+      } else {
+        // For all other steps, use regular API
         const response = await fetch(`${API}/${currentStepId}/`, {
           headers: {
             'Authorization': `Bearer ${accessToken || ''}`,
@@ -150,21 +388,33 @@ const EditStepper: React.FC<EditStepperProps> = ({
             }
           }
         }
-      } catch (error) {
-        console.error('Error loading entities:', error);
-        showToast.error(`Failed to load ${currentStepId}`);
-      } finally {
-        setIsLoadingEntities(false);
       }
-    };
+    } catch (error) {
+      console.error('Error loading entities:', error);
+      showToast.error(`Failed to load ${currentStepId}`);
+    } finally {
+      setIsLoadingEntities(false);
+    }
+  };
 
-    loadEntitiesForStep();
-  }, [currentStepId, API, accessToken]); // Remove selectedEntity and initialEntityId from dependencies
+  loadEntitiesForStep();
+}, [currentStepId, API, accessToken, initialEntityId, initialStepId, contextOptions]);
+
+  // Clear selected entity when context changes to avoid confusion
+  useEffect(() => {
+    // Only clear if we have a selected entity and context filtering is enabled
+    if (selectedEntity && editingContext.filteringEnabled) {
+      const isEntityStillVisible = filteredEntities.some(entity => entity.id === selectedEntity.id);
+      if (!isEntityStillVisible) {
+        setSelectedEntity(null);
+        methods.reset({});
+      }
+    }
+  }, [editingContext, filteredEntities, selectedEntity, methods]);
 
   // Load entity data into form
   const loadEntityData = (entity: any) => {
     if (!entity) return;
-    // Array-based form - need to properly structure the data
     let formData: any = {};
 
     switch (currentStepId) {
@@ -174,11 +424,10 @@ const EditStepper: React.FC<EditStepperProps> = ({
             id: entity.id,
             name: entity.name || '',
             tagline: entity.tagline || '',
-            description: entity.description || '', // ADD this field
-            owner: entity.owner || 0, // ADD this field
+            description: entity.description || '',
+            owner: entity.owner || 0,
             vision: entity.vision || '',
             time_horizon: entity.time_horizon || '',
-            // Ensure arrays are properly formatted for multiselect
             executive_sponsors: entity.executive_sponsors?.map((user: any) => 
               typeof user === 'object' ? user.id : user
             ) || [],
@@ -196,7 +445,6 @@ const EditStepper: React.FC<EditStepperProps> = ({
         formData = {
           goals: [{
             ...entity,
-            // Ensure strategy is the ID, not an object
             strategy: typeof entity.strategy === 'object' ? entity.strategy.id : entity.strategy
           }]
         };
@@ -206,7 +454,6 @@ const EditStepper: React.FC<EditStepperProps> = ({
         formData = {
           programs: [{
             ...entity,
-            // Ensure all multi-select fields are arrays of IDs
             executive_sponsors: entity.executive_sponsors?.map((user: any) => 
               typeof user === 'object' ? user.id : user
             ) || [],
@@ -236,7 +483,6 @@ const EditStepper: React.FC<EditStepperProps> = ({
             team_members: entity.team_members?.map((user: any) => 
               typeof user === 'object' ? user.id : user
             ) || [],
-            // Handle JSON fields that might be strings or arrays
             improvement_targets: Array.isArray(entity.improvement_targets) 
               ? entity.improvement_targets 
               : [],
@@ -250,30 +496,19 @@ const EditStepper: React.FC<EditStepperProps> = ({
       case 'milestones':
         formData = {
           milestones: [{
-            // Preserve all original fields
             id: entity.id,
             name: entity.name || '',
             description: entity.description || '',
             deadline: entity.deadline || '',
             status: entity.status || 'not_started',
-
-            // Handle workstream - should be a number based on your API data
             workstream: entity.workstream || null,
-
-            // Handle parent_milestone - should be a number or null
             parent_milestone: entity.parent_milestone || null,
-
-            // Transform strategic_goals array (if it contains objects, extract IDs)
             strategic_goals: entity.strategic_goals?.map((goal: any) => 
               typeof goal === 'object' ? goal.id : goal
             ) || [],
-
-            // Transform dependencies array (if it contains objects, extract IDs)  
             dependencies: entity.dependencies?.map((dep: any) => 
               typeof dep === 'object' ? dep.id : dep
             ) || [],
-
-            // Preserve other fields that might be needed
             completed_date: entity.completed_date || null,
             updated_at: entity.updated_at || null,
             updated_by: entity.updated_by || null
@@ -285,7 +520,6 @@ const EditStepper: React.FC<EditStepperProps> = ({
         formData = {
           activities: [{
             ...entity,
-            // Handle all the multiselect fields
             prerequisite_activities: entity.prerequisite_activities?.map((act: any) => 
               typeof act === 'object' ? act.id : act
             ) || [],
@@ -301,7 +535,6 @@ const EditStepper: React.FC<EditStepperProps> = ({
             additional_milestones: entity.additional_milestones?.map((ms: any) => 
               typeof ms === 'object' ? ms.id : ms
             ) || [],
-            // Handle JSON fields
             impacted_employee_groups: Array.isArray(entity.impacted_employee_groups) 
               ? entity.impacted_employee_groups 
               : [],
@@ -325,56 +558,66 @@ const EditStepper: React.FC<EditStepperProps> = ({
         formData = { [currentStepId]: [entity] };
     }
 
-        // ADD THIS LOG BEFORE RESET
-    console.log('About to reset form with:', formData);
-
     methods.reset(formData);
     setFormData(prev => ({ ...prev, [currentStepId]: formData }));
-
-        // ADD THIS LOG AFTER RESET
-    console.log('Form reset complete. Current form values:', methods.getValues());
   };
 
   // Handle entity selection
-  const handleEntitySelect = async (entity: any) => {
-    if (entity) {
-      // For list-based entities, we need to fetch the complete details
-      // because the list endpoint only returns summary data
-      try {
-        console.log('Fetching complete entity details for:', entity.id);
-
-        const response = await fetch(`${API}/${currentStepId}/${entity.id}/`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken || ''}`,
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const completeEntity = await response.json();
-          console.log('Complete entity data fetched:', completeEntity);
-
-          setSelectedEntity(completeEntity);
-          loadEntityData(completeEntity);
-        } else {
-          console.error('Failed to fetch complete entity details');
-          // Fallback to the summary data if detail fetch fails
-          setSelectedEntity(entity);
-          loadEntityData(entity);
-        }
-      } catch (error) {
-        console.error('Error fetching complete entity details:', error);
-        // Fallback to the summary data if detail fetch fails
-        setSelectedEntity(entity);
-        loadEntityData(entity);
-      }
-    } else {
-      setSelectedEntity(null);
-      methods.reset({});
-      setFormData(prev => ({ ...prev, [currentStepId]: undefined }));
-    }
+  const handleEntitySelect = (entity: any) => {
+    setSelectedEntity(entity);
+    loadEntityData(entity);
   };
+
+  // Context change handlers - IMPROVED
+  const handleStrategyChange = useCallback((strategy: any) => {
+    console.log('handleStrategyChange called with:', strategy);
+    setEditingContext(prev => {
+      const newContext = {
+        ...prev,
+        selectedStrategy: strategy,
+        selectedProgram: null,
+        selectedWorkstream: null
+      };
+      console.log('Setting new editing context:', newContext);
+      return newContext;
+    });
+  }, []);
+
+  const handleProgramChange = useCallback((program: any) => {
+    console.log('handleProgramChange called with:', program);
+    setEditingContext(prev => {
+      const newContext = {
+        ...prev,
+        selectedProgram: program,
+        selectedWorkstream: null
+      };
+      console.log('Setting new editing context:', newContext);
+      return newContext;
+    });
+  }, []);
+
+  const handleWorkstreamChange = useCallback((workstream: any) => {
+    console.log('handleWorkstreamChange called with:', workstream);
+    setEditingContext(prev => {
+      const newContext = {
+        ...prev,
+        selectedWorkstream: workstream
+      };
+      console.log('Setting new editing context:', newContext);
+      return newContext;
+    });
+  }, []);
+
+  const handleResetContext = useCallback(() => {
+    setEditingContext({
+      selectedStrategy: null,
+      selectedProgram: null,
+      selectedWorkstream: null,
+      filteringEnabled: true
+    });
+    setSelectedEntity(null);
+    methods.reset({});
+  }, [methods]);
 
   // Transform data for PATCH request
   const transformDataForPatch = (stepId: StepId, data: AllFormData): any => {
@@ -480,7 +723,9 @@ const EditStepper: React.FC<EditStepperProps> = ({
         };
       }
       case 'activities': {
-        return (data as ActivityFormData).activities.map(activity => ({
+        const activity = (data as ActivityFormData).activities[0];
+        return {
+          id: selectedEntity.id,
           source_milestone: activity.source_milestone,
           target_milestone: activity.target_milestone,
           name: activity.name,
@@ -488,8 +733,6 @@ const EditStepper: React.FC<EditStepperProps> = ({
           priority: activity.priority,
           target_start_date: activity.target_start_date,
           target_end_date: activity.target_end_date,
-
-          // Activity dependency relationships
           prerequisite_activities: Array.isArray(activity.prerequisite_activities)
             ? activity.prerequisite_activities.flat()
             : activity.prerequisite_activities,
@@ -499,16 +742,12 @@ const EditStepper: React.FC<EditStepperProps> = ({
           successive_activities: Array.isArray(activity.successive_activities)
             ? activity.successive_activities.flat()
             : activity.successive_activities,
-
-          // Cross-workstream milestone support (maintained)
           supported_milestones: Array.isArray(activity.supported_milestones)
             ? activity.supported_milestones.flat()
             : activity.supported_milestones,
           additional_milestones: Array.isArray(activity.additional_milestones)
             ? activity.additional_milestones.flat()
             : activity.additional_milestones,
-
-          // Resource allocation fields
           impacted_employee_groups: Array.isArray(activity.impacted_employee_groups)
             ? activity.impacted_employee_groups.flat()
             : activity.impacted_employee_groups,
@@ -524,7 +763,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
           corporate_resources: Array.isArray(activity.corporate_resources)
             ? activity.corporate_resources.flat()
             : activity.corporate_resources,
-        }));
+        };
       }
       default:
         return null;
@@ -561,6 +800,11 @@ const EditStepper: React.FC<EditStepperProps> = ({
       setSelectedEntity(result);
       loadEntityData(result);
       
+      // Update the entity in availableEntities list
+      setAvailableEntities(prev => 
+        prev.map(entity => entity.id === result.id ? result : entity)
+      );
+      
       showToast.success(`${FORM_STEPS[currentStepIndex].label} updated successfully!`);
     } catch (error) {
       console.error('Error saving changes:', error);
@@ -572,15 +816,17 @@ const EditStepper: React.FC<EditStepperProps> = ({
     }
   };
 
-  // Free navigation - can jump to any step
+  // Step navigation
+// Step navigation - PRESERVE CONTEXT
   const handleStepClick = (index: number) => {
-    // Clear current selection when changing steps
+    console.log('Step clicked:', index, 'Current context:', editingContext);
     setSelectedEntity(null);
     methods.reset({});
     setCurrentStepIndex(index);
+    // Don't clear context - let it persist across steps
   };
 
-  // Modal states for dependent entities
+  // Modal states
   const [activityModalOpen, setActivityModalOpen] = useState<boolean>(false);
   const [currentDependencyType, setCurrentDependencyType] = useState<'prerequisite' | 'parallel' | 'successive' | null>(null);
   const [, setCurrentActivityIndex] = useState<number | null>(null);
@@ -592,9 +838,6 @@ const EditStepper: React.FC<EditStepperProps> = ({
   };
 
   const [milestoneModalOpen, setMilestoneModalOpen] = useState<boolean>(false);
-  // const openMilestoneModal = () => {
-  //   setMilestoneModalOpen(true);
-  // };
 
   const [dependentActivities, setDependentActivities] = useState<Activity[]>([]);
   const handleDependentActivityCreate = (activity: Activity) => {
@@ -609,15 +852,210 @@ const EditStepper: React.FC<EditStepperProps> = ({
   const CurrentStepComponent = FORM_STEPS[currentStepIndex].component;
   const RenderableComponent = CurrentStepComponent as React.FC<{ editMode?: boolean }>;
 
+  // Context Header Component
+  const EditingContextHeader: React.FC<ContextHeaderProps> = ({ 
+    context, 
+    onResetContext, 
+    themeColor,
+    currentStepIndex,
+    onStrategyChange,
+    onProgramChange,
+    onWorkstreamChange
+  }) => {
+    // Show context selections based on current step
+    const showProgramSelect = currentStepIndex >= 3; // workstreams, milestones, activities
+    const showWorkstreamSelect = currentStepIndex >= 4; // milestones, activities
+
+    console.log('EditingContextHeader render - context:', context);
+    console.log('EditingContextHeader render - contextOptions:', contextOptions);
+
+    return (
+      <div className="mb-6 p-4 rounded-lg border-2" style={{ 
+        borderColor: `${themeColor}40`, 
+        backgroundColor: `${themeColor}08` 
+      }}>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <h3 className="font-semibold text-gray-900 mb-3">Editing Context</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Select context to filter available entities in the side panel
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Strategy Selection - Always visible */}
+              <div>
+                <label htmlFor="strategy-select" className="block text-sm font-medium text-gray-700 mb-2">
+                  Strategy Context:
+                </label>
+                <select
+                  id="strategy-select"
+                  value={context.selectedStrategy?.id || ''}
+                  onChange={(e) => {
+                    console.log('Strategy dropdown changed to:', e.target.value);
+                    const strategyId = e.target.value;
+                    if (strategyId) {
+                      const strategy = contextOptions.strategies.find(s => s.id == strategyId);
+                      console.log('Found strategy:', strategy);
+                      onStrategyChange(strategy || null);
+                    } else {
+                      console.log('Clearing strategy selection');
+                      onStrategyChange(null);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All Strategies</option>
+                  {contextOptions.strategies.map((strategy) => (
+                    <option key={strategy.id} value={strategy.id}>
+                      {strategy.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Program Selection - Show for workstreams, milestones, activities */}
+              {showProgramSelect && (
+                <div>
+                  <label htmlFor="program-select" className="block text-sm font-medium text-gray-700 mb-2">
+                    Program Context:
+                  </label>
+                  <select
+                    id="program-select"
+                    value={context.selectedProgram?.id || ''}
+                    onChange={(e) => {
+                      console.log('Program dropdown changed to:', e.target.value);
+                      const programId = e.target.value;
+                      if (programId) {
+                        const program = contextOptions.programs.find(p => p.id == programId);
+                        console.log('Found program:', program);
+                        onProgramChange(program || null);
+                      } else {
+                        console.log('Clearing program selection');
+                        onProgramChange(null);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={!context.selectedStrategy || isLoadingContextOptions}
+                  >
+                    <option value="">
+                      {!context.selectedStrategy 
+                        ? 'Select Strategy First' 
+                        : isLoadingContextOptions 
+                        ? 'Loading...' 
+                        : 'All Programs'
+                      }
+                    </option>
+                    {contextOptions.programs.map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Workstream Selection - Show for milestones, activities */}
+              {showWorkstreamSelect && (
+                <div>
+                  <label htmlFor="workstream-select" className="block text-sm font-medium text-gray-700 mb-2">
+                    Workstream Context:
+                  </label>
+                  <select
+                    id="workstream-select"
+                    value={context.selectedWorkstream?.id || ''}
+                    onChange={(e) => {
+                      console.log('Workstream dropdown changed to:', e.target.value);
+                      const workstreamId = e.target.value;
+                      if (workstreamId) {
+                        const workstream = contextOptions.workstreams.find(w => w.id == workstreamId);
+                        console.log('Found workstream:', workstream);
+                        onWorkstreamChange(workstream || null);
+                      } else {
+                        console.log('Clearing workstream selection');
+                        onWorkstreamChange(null);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={!context.selectedProgram || isLoadingContextOptions}
+                  >
+                    <option value="">
+                      {!context.selectedProgram 
+                        ? 'Select Program First' 
+                        : isLoadingContextOptions 
+                        ? 'Loading...' 
+                        : 'All Workstreams'
+                      }
+                    </option>
+                    {contextOptions.workstreams.map((workstream) => (
+                      <option key={workstream.id} value={workstream.id}>
+                        {workstream.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Active Context Breadcrumb */}
+            {(context.selectedStrategy || context.selectedProgram || context.selectedWorkstream) && (
+              <div className="mt-4 p-3 bg-white bg-opacity-60 rounded-md border border-gray-200">
+                <div className="text-sm">
+                  <span className="font-medium text-gray-700">Active Context:</span>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    {context.selectedStrategy && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        📋 {context.selectedStrategy.name}
+                      </span>
+                    )}
+                    {context.selectedProgram && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        📁 {context.selectedProgram.name}
+                      </span>
+                    )}
+                    {context.selectedWorkstream && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                        🔀 {context.selectedWorkstream.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Reset Button */}
+          <button
+            onClick={onResetContext}
+            className="ml-4 px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 flex items-center gap-2 bg-white"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Reset Context
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Context Header */}
+      <EditingContextHeader 
+        context={editingContext} 
+        onResetContext={handleResetContext} 
+        themeColor={themeColor}
+        currentStepIndex={currentStepIndex}
+        onStrategyChange={handleStrategyChange}
+        onProgramChange={handleProgramChange}
+        onWorkstreamChange={handleWorkstreamChange}
+      />
+
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Edit Existing Data</h1>
         <p className="text-gray-600">Select and modify existing records across all entity types.</p>
       </div>
 
-      {/* Stepper Header - All steps always clickable */}
+      {/* Stepper Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
           {FORM_STEPS.map((step, index) => (
@@ -672,12 +1110,21 @@ const EditStepper: React.FC<EditStepperProps> = ({
               <FormProvider {...methods}>
                 <form onSubmit={methods.handleSubmit(onSaveChanges)}>
                   {currentStepId === 'activities' && (
-                    <ActivityForm openModalForType={openActivityModalForType} dependentActivities={dependentActivities} editMode={true}/>
+                    <ActivityForm 
+                      openModalForType={openActivityModalForType} 
+                      dependentActivities={dependentActivities} 
+                      editMode={true}
+                    />
                   )}
                   {currentStepId === 'milestones' && (
-                    <MilestoneForm dependentMilestones={dependentMilestones} editMode={true}/>
+                    <MilestoneForm 
+                      dependentMilestones={dependentMilestones} 
+                      editMode={true}
+                    />
                   )}
-                  {currentStepId !== 'activities' && currentStepId !== 'milestones' && <RenderableComponent editMode={true}/>}
+                  {currentStepId !== 'activities' && currentStepId !== 'milestones' && (
+                    <RenderableComponent editMode={true}/>
+                  )}
 
                   {/* Save Button */}
                   <div className="mt-6 flex justify-end">
@@ -717,7 +1164,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
                 Click any item below to edit
               </p>
                 
-              {/* Search Input - Only show if there are entities */}
+              {/* Search Input */}
               {!isLoadingEntities && availableEntities.length > 0 && (
                 <div className="mt-3">
                   <div className="relative">
@@ -743,30 +1190,100 @@ const EditStepper: React.FC<EditStepperProps> = ({
             </div>
             
             {/* Scrollable Entity List */}
-            <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="flex-1 overflow-y-auto p-2">
               {isLoadingEntities ? (
-                <div className="p-4 text-center">
-                  <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                  <p className="text-gray-500 text-sm">Loading available {currentStepId}...</p>
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <p className="text-gray-500">Loading {currentStepId}...</p>
+                  </div>
                 </div>
-              ) : filteredEntities.length > 0 ? (
-                <div className="p-2">
-                  {/* Display filtered entities with virtual scrolling optimization */}
+              ) : filteredEntities.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center max-w-sm">
+                    <div className="text-gray-400 mb-4">
+                      <Search className="w-12 h-12 mx-auto" />
+                    </div>
+
+                    {searchQuery ? (
+                      <>
+                        <h4 className="text-lg font-medium text-gray-900 mb-2">No Results Found</h4>
+                        <p className="text-gray-500 mb-4">
+                          No {currentStepId} found matching "{searchQuery}"
+                        </p>
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                        >
+                          Clear search
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <h4 className="text-lg font-medium text-gray-900 mb-2">
+                          {currentStepIndex === 0 ? 'No Strategies Available' : 'Select Context Above'}
+                        </h4>
+
+                        {currentStepIndex === 0 ? (
+                          <p className="text-gray-500">
+                            No strategies have been created yet.
+                          </p>
+                        ) : currentStepIndex <= 2 ? (
+                          // Strategic goals and programs need strategy context
+                          <div className="text-gray-500">
+                            <p className="mb-2">
+                              Select a <strong>Strategy</strong> in the context header above to see available {currentStepId}.
+                            </p>
+                            {!editingContext.selectedStrategy && (
+                              <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
+                                💡 Tip: The context header filters what appears in this panel
+                              </div>
+                            )}
+                          </div>
+                        ) : currentStepIndex === 3 ? (
+                          // Workstreams need program context
+                          <div className="text-gray-500">
+                            <p className="mb-2">
+                              Select a <strong>Program</strong> in the context header above to see available workstreams.
+                            </p>
+                            {!editingContext.selectedProgram && (
+                              <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
+                                💡 First select a Strategy, then a Program
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          // Milestones and activities need workstream context
+                          <div className="text-gray-500">
+                            <p className="mb-2">
+                              Select a <strong>Workstream</strong> in the context header above to see available {currentStepId}.
+                            </p>
+                            {!editingContext.selectedWorkstream && (
+                              <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
+                                💡 Select Strategy → Program → Workstream for full context
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
                   {filteredEntities.slice(0, visibleItemCount).map((entity) => {
-                    // Handle different entity types for display (same logic as dropdown)
                     const displayName = entity.name || entity.goal_text || entity.tagline;
                     let subtitle = '';
-                  
-                    // For entities with parent relationships, show parent context
+
                     if (currentStepId === 'strategic-goals' && entity.strategy) {
                       const strategyName = typeof entity.strategy === 'object' 
                         ? entity.strategy.name 
-                        : `Strategy ${entity.strategy}`;
+                        : editingContext.selectedStrategy?.name || `Strategy ${entity.strategy}`;
                       subtitle = strategyName;
                     }
-                  
+
                     const isSelected = selectedEntity?.id === entity.id;
-                  
+
                     return (
                       <button
                         key={entity.id}
@@ -784,73 +1301,40 @@ const EditStepper: React.FC<EditStepperProps> = ({
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
                             <p className={`text-sm font-medium truncate ${
-                              isSelected ? 'text-gray-900' : 'text-gray-800'
+                              isSelected ? 'text-gray-900' : 'text-gray-700'
                             }`}>
-                              {displayName || `${FORM_STEPS[currentStepIndex].label} ${entity.id}`}
+                              {displayName}
                             </p>
                             {subtitle && (
-                              <p className="text-xs text-gray-600 mt-1 truncate">
+                              <p className="text-xs text-gray-500 truncate mt-1">
                                 {subtitle}
                               </p>
                             )}
-                            {entity.id && (
-                              <p className="text-xs text-gray-400 mt-1">
-                                ID: {entity.id}
-                              </p>
-                            )}
                           </div>
-                          {isSelected && (
-                            <div className="ml-2 flex-shrink-0">
-                              <Edit className="w-4 h-4 text-blue-600" />
-                            </div>
-                          )}
                         </div>
                       </button>
                     );
                   })}
-                  
-                  {/* Load More Button - Only show if there are more items to display */}
+
+                  {/* Load More Button */}
                   {filteredEntities.length > visibleItemCount && (
-                    <div className="text-center mt-2">
+                    <div className="p-3 text-center">
                       <button
-                        onClick={() => setVisibleItemCount(prev => Math.min(prev + 6, filteredEntities.length))}
-                        className="px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                        onClick={() => setVisibleItemCount(prev => prev + 10)}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                       >
-                        Load More ({filteredEntities.length - visibleItemCount} remaining)
+                        Load {Math.min(10, filteredEntities.length - visibleItemCount)} more...
                       </button>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Showing {visibleItemCount} of {filteredEntities.length}
+                      </p>
                     </div>
                   )}
-                </div>
-              ) : searchQuery ? (
-                // No search results
-                <div className="p-4 text-center">
-                  <div className="text-gray-400 mb-2">
-                    <Search className="w-8 h-8 mx-auto" />
-                  </div>
-                  <p className="text-sm text-gray-500 mb-2">
-                    No {currentStepId} found matching "{searchQuery}"
-                  </p>
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="text-xs text-blue-600 hover:text-blue-800"
-                  >
-                    Clear search
-                  </button>
-                </div>
-              ) : (
-                // No entities available
-                <div className="p-4 text-center">
-                  <div className="text-gray-400 mb-2">
-                    <Edit className="w-8 h-8 mx-auto" />
-                  </div>
-                  <p className="text-sm text-gray-500">
-                    No {currentStepId} available to edit
-                  </p>
-                </div>
+                </>
               )}
             </div>
             
-            {/* Panel Footer - Enhanced Stats */}
+            {/* Panel Footer */}
             {!isLoadingEntities && availableEntities.length > 0 && (
               <div className="p-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                 <p className="text-xs text-gray-500 text-center">
@@ -863,7 +1347,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
                     </>
                   ) : (
                     <>
-                      Showing {Math.min(visibleItemCount, availableEntities.length)} of {availableEntities.length} {availableEntities.length === 1 ? 'item' : 'items'}
+                      Showing {Math.min(visibleItemCount, filteredEntities.length)} of {filteredEntities.length} {filteredEntities.length === 1 ? 'item' : 'items'}
                     </>
                   )}
                 </p>
@@ -871,11 +1355,11 @@ const EditStepper: React.FC<EditStepperProps> = ({
                   <button
                     onClick={() => {
                       setSearchQuery('');
-                      setVisibleItemCount(6);
+                      setVisibleItemCount(10);
                     }}
                     className="text-xs text-blue-600 hover:text-blue-800 mt-1 block mx-auto"
                   >
-                    Clear search and reset view
+                    Clear search
                   </button>
                 )}
               </div>
