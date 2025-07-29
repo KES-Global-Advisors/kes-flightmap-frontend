@@ -1,14 +1,16 @@
-// cSpell:ignore workstream workstreams Gantt hoverable flightmap
+// FrameworkView.tsx - Updated with Quick Edit functionality (preserving original styling)
 import React from 'react';
-import {
-  Strategy,
-  Program,
-  Workstream,
-} from '@/types/flightmap';
 import { useFlightmapContext } from '@/contexts/FlightmapContext';
+import { Strategy, Program, Workstream } from '@/types/flightmap';
+import { QuickEditProvider } from '../QuickEditProvider';
+import { QuickEditToggle } from '../QuickEditToggle';
+import { QuickEditText } from '../QuickEditText';
 
+interface FrameworkViewInnerProps {
+  data: Strategy;
+}
 
-const FrameworkViewInner: React.FC<{ data: Strategy }> = ({ data }) => {
+const FrameworkViewInner: React.FC<FrameworkViewInnerProps> = ({ data }) => {
   // Handle single strategy as root level
   const strategy = data;
 
@@ -32,13 +34,28 @@ const FrameworkViewInner: React.FC<{ data: Strategy }> = ({ data }) => {
 
   return (
     <div className="p-6 bg-gray-50 text-gray-800 space-y-8">
+      {/* Quick Edit Toggle - Added at the top */}
+      <div className="flex justify-end">
+        <QuickEditToggle variant="outline" size="sm" />
+      </div>
+
       {/* Strategy Header */}
       <section className="rounded-lg shadow border overflow-hidden">
         {/* Blue Header */}
         <div className="bg-blue-600 text-white p-6 text-center">
           <h2 className="text-2xl font-bold mb-2">{data.name}</h2>
           {data.description && (
-            <p className="text-base opacity-90">{data.description}</p>
+            <p className="text-base opacity-90">
+              <QuickEditText
+                value={data.description}
+                entityType="strategies"
+                entityId={data.id}
+                field="description"
+                className="text-base text-white opacity-90"
+                multiline={true}
+                placeholder="Add description..."
+              />
+            </p>
           )}
         </div>
       </section>
@@ -50,15 +67,41 @@ const FrameworkViewInner: React.FC<{ data: Strategy }> = ({ data }) => {
       >
         {/* Strategy Header */}
         <div className="bg-blue-600 text-white p-4 rounded-t-lg">
-          <h2 className="text-xl font-bold">{strategy.name}</h2>
+          <h2 className="text-xl font-bold">
+            <QuickEditText
+              value={strategy.name}
+              entityType="strategies"
+              entityId={strategy.id}
+              field="name"
+              className="text-xl font-bold text-white"
+            />
+          </h2>
           {strategy.tagline && (
-            <p className="italic">{strategy.tagline}</p>
+            <p className="italic">
+              <QuickEditText
+                value={strategy.tagline}
+                entityType="strategies"
+                entityId={strategy.id}
+                field="tagline"
+                className="italic text-white"
+                placeholder="Add tagline..."
+              />
+            </p>
           )}
         </div>
 
         <div className="p-6">
           <h3 className="text-lg font-semibold">Vision</h3>
-          <p className="mb-6">{strategy.vision}</p>
+          <p className="mb-6">
+            <QuickEditText
+              value={strategy.vision}
+              entityType="strategies"
+              entityId={strategy.id}
+              field="vision"
+              multiline={true}
+              placeholder="Add vision..."
+            />
+          </p>
 
           {/* Strategic Objectives */}
           <h3 className="text-lg font-semibold mb-3">Strategic Objectives</h3>
@@ -134,13 +177,28 @@ const FrameworkViewInner: React.FC<{ data: Strategy }> = ({ data }) => {
                 return (
                   <section key={program.id} className="border-l-4 border-blue-400 pl-4 ml-2">
                     <div className="bg-blue-200 text-black p-3 rounded">
-                      <h4 className="text-md font-bold">{program.name}</h4>
+                      <h4 className="text-md font-bold">
+                        <QuickEditText
+                          value={program.name}
+                          entityType="programs"
+                          entityId={program.id}
+                          field="name"
+                          className="text-md font-bold text-black"
+                        />
+                      </h4>
                     </div>
 
                     <div className="p-4">
                       <p className="mb-4">
                         <span className="font-semibold">Vision: </span>
-                        {program.vision || 'N/A'}
+                        <QuickEditText
+                          value={program.vision || ''}
+                          entityType="programs"
+                          entityId={program.id}
+                          field="vision"
+                          multiline={true}
+                          placeholder="N/A"
+                        />
                       </p>
 
                       {/* Program Governance */}
@@ -179,12 +237,39 @@ const FrameworkViewInner: React.FC<{ data: Strategy }> = ({ data }) => {
 
                             return (
                               <div key={ws.id} className="border-l-4 border-blue-300 pl-4 ml-2 bg-blue-50 p-3 rounded">
-                                <h5 className="text-lg font-semibold text-blue-700">{ws.name}</h5>
+                                <h5 className="text-lg font-semibold text-blue-700">
+                                  <QuickEditText
+                                    value={ws.name}
+                                    entityType="workstreams"
+                                    entityId={ws.id}
+                                    field="name"
+                                    className="text-lg font-semibold text-blue-700"
+                                  />
+                                </h5>
                                 <div className="ml-2 mt-2 space-y-1">
-                                  <p><span className="font-semibold">Vision:</span> {ws.vision || 'N/A'}</p>
+                                  <p>
+                                    <span className="font-semibold">Vision:</span>{' '}
+                                    <QuickEditText
+                                      value={ws.vision || ''}
+                                      entityType="workstreams"
+                                      entityId={ws.id}
+                                      field="vision"
+                                      multiline={true}
+                                      placeholder="N/A"
+                                    />
+                                  </p>
                                   <p><span className="font-semibold">Leads:</span> {wsLeads}</p>
                                   <p><span className="font-semibold">Team Members:</span> {wsTeam || 'N/A'}</p>
-                                  <p><span className="font-semibold">Target End Date:</span> {ws.time_horizon || 'N/A'}</p>
+                                  <p>
+                                    <span className="font-semibold">Target End Date:</span>{' '}
+                                    <QuickEditText
+                                      value={ws.time_horizon || ''}
+                                      entityType="workstreams"
+                                      entityId={ws.id}
+                                      field="time_horizon"
+                                      placeholder="N/A"
+                                    />
+                                  </p>
                                 </div>
                               </div>
                             );
@@ -207,6 +292,7 @@ const FrameworkViewInner: React.FC<{ data: Strategy }> = ({ data }) => {
   );
 };
 
+// Main component with context wrapper
 const FrameworkView: React.FC = () => {
   const { flightmap: data } = useFlightmapContext();
   
@@ -218,7 +304,11 @@ const FrameworkView: React.FC = () => {
     );
   }
 
-  return <FrameworkViewInner data={data} />;
+  return (
+    <QuickEditProvider>
+      <FrameworkViewInner data={data} />
+    </QuickEditProvider>
+  );
 };
 
 export default FrameworkView;
