@@ -3,34 +3,11 @@ import React, { useState } from 'react';
 import FlightmapVisualization from './FlightmapVisualization';
 import GanttChart from './GanttChart';
 import FrameworkView from './FrameworkView';
-import { Strategy } from '@/types/flightmap';
-import { useUpdateMilestoneDeadline } from '@/api/flightmap';
 
+type ViewMode = 'flightmap' | 'gantt' | 'framework';
 
-interface Props {
-  flightmap: Strategy;
-}
-
-const FlightmapSwitcher: React.FC<Props> = React.memo(({ flightmap }) => {
-  const [viewMode, setViewMode] = useState<'flightmap' | 'gantt' | 'framework'>('flightmap');
-  const updateMilestoneMutation = useUpdateMilestoneDeadline();
-
-  const onMilestoneDeadlineChange = async (milestoneId: string, newDeadline: Date): Promise<boolean> => {
-    try {
-      const milestoneIdNumber = Number(milestoneId);
-      if (isNaN(milestoneIdNumber)) throw new Error('Invalid milestone ID');
-
-      await updateMilestoneMutation.mutateAsync({
-        milestoneId: milestoneIdNumber,
-        deadline: newDeadline.toISOString().slice(0, 10),
-      });
-
-      return true;
-    } catch (err) {
-      console.error(err);
-      return false;
-    }
-  };
+const FlightmapSwitcher: React.FC = () => {
+  const [viewMode, setViewMode] = useState<ViewMode>('flightmap');
 
   return (
     <div>
@@ -55,20 +32,11 @@ const FlightmapSwitcher: React.FC<Props> = React.memo(({ flightmap }) => {
         </button>
       </div>
 
-      {viewMode === 'flightmap' && (
-        <FlightmapVisualization
-          data={flightmap}
-          onMilestoneDeadlineChange={onMilestoneDeadlineChange}
-        />
-      )}
-      {viewMode === 'gantt' && <GanttChart data={flightmap} />}
-      {viewMode === 'framework' && <FrameworkView data={flightmap} />}
+      {viewMode === 'flightmap' && <FlightmapVisualization />}
+      {viewMode === 'gantt' && <GanttChart />}
+      {viewMode === 'framework' && <FrameworkView />}
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Only re-render if flightmap ID or critical fields change
-  return prevProps.flightmap.id === nextProps.flightmap.id && 
-         prevProps.flightmap.name === nextProps.flightmap.name;
-});
+};
 
 export default FlightmapSwitcher;

@@ -1,20 +1,14 @@
 // cSpell:ignore workstream workstreams Gantt hoverable flightmap
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   Strategy,
   Program,
   Workstream,
 } from '@/types/flightmap';
+import { useFlightmapContext } from '@/contexts/FlightmapContext';
 
-interface FrameworkViewProps {
-  data: Strategy;
-}
 
-const FrameworkView: React.FC<FrameworkViewProps> = ({ data }) => {
-  useEffect(() => {
-    console.log('FrameworkView received data:', data);
-  }, [data]);
-
+const FrameworkViewInner: React.FC<{ data: Strategy }> = ({ data }) => {
   // Handle single strategy as root level
   const strategy = data;
 
@@ -211,6 +205,20 @@ const FrameworkView: React.FC<FrameworkViewProps> = ({ data }) => {
       </section>
     </div>
   );
+};
+
+const FrameworkView: React.FC = () => {
+  const { flightmap: data } = useFlightmapContext();
+  
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">No flightmap selected</p>
+      </div>
+    );
+  }
+
+  return <FrameworkViewInner data={data} />;
 };
 
 export default FrameworkView;

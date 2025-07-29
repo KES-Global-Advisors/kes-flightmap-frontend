@@ -4,9 +4,9 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import '../../style.css'
 import * as d3 from "d3";
 import type { DefaultLinkObject } from "d3-shape";
-import { Strategy } from "@/types/flightmap";
 import { useQueryClient } from '@tanstack/react-query';
 import { useNodePositions, useUpsertPosition } from '@/api/flightmap';
+import { Strategy } from '@/types/flightmap';
 
 // Utility components
 import ScreenshotButton from "./FlightmapComponents/ScreenshotButton";
@@ -49,14 +49,14 @@ import {
 } from './Utils/types';
 
 // Import our new custom hook for drag behaviors
-import useDragBehaviors from '../../hooks/useDragBehaviors';
+import useDragBehaviors from '@/hooks/useDragBehaviors';
+import { useFlightmapContext } from '@/contexts/FlightmapContext';
 
-interface FlightmapVisualizationProps {
-  data: Strategy;
+
+const FlightmapVisualizationInner: React.FC<{ 
+  data: Strategy; 
   onMilestoneDeadlineChange: (milestoneId: string, newDeadline: Date) => Promise<boolean>;
-}
-
-const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, onMilestoneDeadlineChange }) => {
+}> = ({ data, onMilestoneDeadlineChange }) => {
   const queryClient = useQueryClient();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<Element, unknown>>(null);
@@ -89,7 +89,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     data: any 
   }>());
   const MAX_RETRY_ATTEMPTS = 3;
-  const RETRY_DELAY_BASE = 1000; // 1 second base delay
+  const RETRY_DELAY_BASE = 1000; 
   
 
   useEffect(() => {
@@ -609,7 +609,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
         })
       };
     });
-  }, [timelineMarkers, timelinePositionCache]); // ✅ Stable dependencies
+  }, [timelineMarkers, timelinePositionCache]);
 
   // OPTIMIZATION 4: Optimized workstream initial positions
   const workstreamInitialPositions = useMemo(() => {
@@ -816,7 +816,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
     });
 
     return result;
-  }, [activities, allMilestones]); // ✅ Stable dependencies
+  }, [activities, allMilestones]);
 
   // ✅ OPTIMIZATION 8: Optimized same-workstream dependencies
   const sameWorkstreamDependencies = useMemo(() => {
@@ -838,7 +838,7 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
              targetWorkstream !== undefined && 
              sourceWorkstream === targetWorkstream;
     });
-  }, [dependencies, allMilestones]); // ✅ Stable dependencies
+  }, [dependencies, allMilestones]);
 
     // Initialize drag behaviors from our custom hook
   const {
@@ -1757,6 +1757,20 @@ const FlightmapVisualization: React.FC<FlightmapVisualizationProps> = ({ data, o
       </div>
     </div>
   );
+};
+
+const FlightmapVisualization: React.FC = () => {
+  const { flightmap: data, updateMilestoneDeadline: onMilestoneDeadlineChange } = useFlightmapContext();
+  
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">No flightmap selected</p>
+      </div>
+    );
+  }
+
+  return <FlightmapVisualizationInner data={data} onMilestoneDeadlineChange={onMilestoneDeadlineChange} />;
 };
 
 export default FlightmapVisualization;
