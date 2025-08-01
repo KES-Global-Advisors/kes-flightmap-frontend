@@ -3,7 +3,7 @@
 import React, { useState, useContext, useEffect, useMemo, useCallback } from 'react';
 import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Save, Edit, Search, X, RotateCcw } from 'lucide-react';
+import { Save, Edit, Search, X, RotateCcw, PlusCircle } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
@@ -87,6 +87,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
   const [isLoadingEntities, setIsLoadingEntities] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleItemCount, setVisibleItemCount] = useState(10);
+  const [isCreationMode, setIsCreationMode] = useState(false);
   
   // Context state
   const [editingContext, setEditingContext] = useState<EditingContext>({
@@ -803,12 +804,450 @@ const EditStepper: React.FC<EditStepperProps> = ({
   };
 
   // Step navigation
-// Step navigation - PRESERVE CONTEXT
   const handleStepClick = (index: number) => {
     setSelectedEntity(null);
     methods.reset({});
     setCurrentStepIndex(index);
     // Don't clear context - let it persist across steps
+  };
+
+  // Helper function to get context description
+  const getContextDescription = () => {
+    const parts = [];
+    if (editingContext.selectedStrategy) parts.push(` in ${editingContext.selectedStrategy.name}`);
+    if (editingContext.selectedProgram) parts.push(`under ${editingContext.selectedProgram.name}`);
+    if (editingContext.selectedWorkstream) parts.push(`within ${editingContext.selectedWorkstream.name}`);
+    return parts.length > 0 ? parts.join(' ') : '';
+  };
+
+  // Initialize form with context when entering creation mode
+  const initializeFormWithContext = useCallback(() => {
+    if (!isCreationMode) return;
+
+    let initialData: any = {};
+
+    switch (currentStepId) {
+      case 'strategic-goals':
+        if (editingContext.selectedStrategy) {
+          initialData = {
+            goals: [{
+              strategy: editingContext.selectedStrategy.id,
+              category: 'business',
+              goal_text: ''
+            }]
+          };
+        }
+        break;
+
+      case 'programs':
+        if (editingContext.selectedStrategy) {
+          initialData = {
+            programs: [{
+              strategy: editingContext.selectedStrategy.id,
+              name: '',
+              vision: '',
+              time_horizon: '',
+              executive_sponsors: [],
+              program_leads: [],
+              workforce_sponsors: [],
+              key_improvement_targets: [],
+              key_organizational_goals: []
+            }]
+          };
+        }
+        break;
+
+      case 'workstreams':
+        if (editingContext.selectedProgram) {
+          initialData = {
+            workstreams: [{
+              program: editingContext.selectedProgram.id,
+              name: '',
+              vision: '',
+              time_horizon: '',
+              workstream_leads: [],
+              team_members: [],
+              improvement_targets: [],
+              organizational_goals: [],
+              color: '#3B82F6'
+            }]
+          };
+        }
+        break;
+
+      case 'milestones':
+        if (editingContext.selectedWorkstream) {
+          const defaultDeadline = new Date();
+          defaultDeadline.setMonth(defaultDeadline.getMonth() + 3);
+
+          initialData = {
+            milestones: [{
+              program: editingContext.selectedProgram?.id || 0,
+              workstream: editingContext.selectedWorkstream.id,
+              name: '',
+              description: '',
+              deadline: defaultDeadline.toISOString().split('T')[0],
+              status: 'not_started',
+              strategic_goals: [],
+              dependencies: []
+            }]
+          };
+        }
+        break;
+
+      case 'activities':
+        // Activities require both source and target milestones to be selected
+        initialData = {
+          activities: [{
+            source_milestone: 0,
+            target_milestone: 0,
+            name: '',
+            status: 'not_started',
+            priority: 2,
+            target_start_date: new Date().toISOString().split('T')[0],
+            target_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            prerequisite_activities: [],
+            parallel_activities: [],
+            successive_activities: [],
+            supported_milestones: [],
+            additional_milestones: [],
+            impacted_employee_groups: [],
+            change_leaders: [],
+            development_support: [],
+            external_resources: [],
+            corporate_resources: []
+          }]
+        };
+        break;
+    }
+
+    methods.reset(initialData);
+  }, [isCreationMode, currentStepId, editingContext, methods]);
+
+  // Run initialization when creation mode is enabled or step changes
+  useEffect(() => {
+    if (isCreationMode) {
+      initializeFormWithContext();
+    }
+  }, [isCreationMode, currentStepIndex, initializeFormWithContext]);
+
+  // Enhanced onCreateNew function to handle multiple entities (simplified version)
+  const onCreateNew = async (data: AllFormData) => {
+    if (!isCreationMode) return;
+  
+    setIsSaving(true);
+  
+    try {
+      // Transform data for creation - now handles arrays like FormStepper
+      const payloadArray = transformDataForBatchCreation(currentStepId, data);
+      const results: any[] = [];
+    
+      // Submit each entity individually (like FormStepper.tsx does)
+      for (const item of payloadArray) {
+        const response = await fetch(`${API}/${currentStepId}/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken || ''}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify(item),
+        });
+      
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to create');
+        }
+      
+        const result = await response.json();
+        results.push(result);
+      }
+    
+      // Update available entities list with all new entities
+      setAvailableEntities(prev => [...prev, ...results]);
+    
+      // Success message with count
+      const entityCount = results.length;
+      const entityLabel = FORM_STEPS[currentStepIndex].label;
+      showToast.success(
+        `${entityCount} ${entityLabel}${entityCount > 1 ? 's' : ''} created successfully!`
+      );
+    
+      // Switch back to edit mode and select the last created entity
+      setIsCreationMode(false);
+      const entityToSelect = results[results.length - 1]; // Select the last created entity
+      setSelectedEntity(entityToSelect);
+      loadEntityData(entityToSelect);
+    
+    } catch (error) {
+      console.error('Error creating entities:', error);
+      showToast.error(`Failed to create ${FORM_STEPS[currentStepIndex].label}: ${
+        error instanceof Error ? error.message : String(error)
+      }`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Updated transform function to handle arrays (like FormStepper.tsx)
+  const transformDataForBatchCreation = (stepId: StepId, data: AllFormData): any[] => {
+    switch (stepId) {
+      case 'strategies': {
+        // Handle multiple strategies
+        return (data as StrategyFormData).strategies.map(strategy => ({
+          name: strategy.name,
+          tagline: strategy.tagline,
+          description: strategy.description,
+          owner: strategy.owner,
+          vision: strategy.vision,
+          time_horizon: strategy.time_horizon,
+          executive_sponsors: Array.isArray(strategy.executive_sponsors)
+            ? strategy.executive_sponsors.flat()
+            : strategy.executive_sponsors,
+          strategy_leads: Array.isArray(strategy.strategy_leads)
+            ? strategy.strategy_leads.flat()
+            : strategy.strategy_leads,
+          communication_leads: Array.isArray(strategy.communication_leads)
+            ? strategy.communication_leads.flat()
+            : strategy.communication_leads,
+        }));
+      }
+      case 'strategic-goals': {
+        // Handle multiple goals
+        return (data as StrategicGoalFormData).goals.map(goal => ({
+          strategy: goal.strategy,
+          category: goal.category,
+          goal_text: goal.goal_text,
+        }));
+      }
+      case 'programs': {
+        // Handle multiple programs
+        return (data as ProgramFormData).programs.map(program => ({
+          strategy: program.strategy,
+          name: program.name,
+          vision: program.vision,
+          time_horizon: program.time_horizon,
+          executive_sponsors: Array.isArray(program.executive_sponsors)
+            ? program.executive_sponsors.flat()
+            : program.executive_sponsors,
+          program_leads: Array.isArray(program.program_leads)
+            ? program.program_leads.flat()
+            : program.program_leads,
+          workforce_sponsors: Array.isArray(program.workforce_sponsors)
+            ? program.workforce_sponsors.flat()
+            : program.workforce_sponsors,
+          key_improvement_targets: Array.isArray(program.key_improvement_targets)
+            ? program.key_improvement_targets.flat()
+            : program.key_improvement_targets,
+          key_organizational_goals: Array.isArray(program.key_organizational_goals)
+            ? program.key_organizational_goals.flat()
+            : program.key_organizational_goals,
+        }));
+      }
+      case 'workstreams': {
+        // Handle multiple workstreams
+        return (data as WorkstreamFormData).workstreams.map(workstream => ({
+          program: workstream.program,
+          name: workstream.name,
+          vision: workstream.vision,
+          time_horizon: workstream.time_horizon,
+          workstream_leads: Array.isArray(workstream.workstream_leads)
+            ? workstream.workstream_leads.flat()
+            : workstream.workstream_leads,
+          team_members: Array.isArray(workstream.team_members)
+            ? workstream.team_members.flat()
+            : workstream.team_members,
+          improvement_targets: typeof workstream.improvement_targets === 'string'
+            ? (workstream.improvement_targets as string).split(',').map((s: string) => s.trim()).filter(Boolean)
+            : Array.isArray(workstream.improvement_targets)
+            ? workstream.improvement_targets.flat()
+            : workstream.improvement_targets,
+          organizational_goals: typeof workstream.organizational_goals === 'string'
+            ? (workstream.organizational_goals as string).split(',').map((s: string) => s.trim()).filter(Boolean)
+            : Array.isArray(workstream.organizational_goals)
+            ? workstream.organizational_goals.flat()
+            : workstream.organizational_goals,
+          color: workstream.color,
+        }));
+      }
+      case 'milestones': {
+        // Handle multiple milestones
+        return (data as MilestoneFormData).milestones.map(milestone => ({
+          program: milestone.program,
+          workstream: milestone.workstream,
+          name: milestone.name,
+          description: milestone.description,
+          deadline: milestone.deadline,
+          status: milestone.status,
+          strategic_goals: Array.isArray(milestone.strategic_goals)
+            ? milestone.strategic_goals.flat()
+            : milestone.strategic_goals,
+          parent_milestone: milestone.parent_milestone || null,
+          dependencies: milestone.dependencies || []
+        }));
+      }
+      case 'activities': {
+        // Handle multiple activities
+        return (data as ActivityFormData).activities.map(activity => ({
+          source_milestone: activity.source_milestone,
+          target_milestone: activity.target_milestone,
+          name: activity.name,
+          status: activity.status,
+          priority: activity.priority,
+          target_start_date: activity.target_start_date,
+          target_end_date: activity.target_end_date,
+          prerequisite_activities: Array.isArray(activity.prerequisite_activities)
+            ? activity.prerequisite_activities.flat()
+            : activity.prerequisite_activities,
+          parallel_activities: Array.isArray(activity.parallel_activities)
+            ? activity.parallel_activities.flat()
+            : activity.parallel_activities,
+          successive_activities: Array.isArray(activity.successive_activities)
+            ? activity.successive_activities.flat()
+            : activity.successive_activities,
+          supported_milestones: Array.isArray(activity.supported_milestones)
+            ? activity.supported_milestones.flat()
+            : activity.supported_milestones,
+          additional_milestones: Array.isArray(activity.additional_milestones)
+            ? activity.additional_milestones.flat()
+            : activity.additional_milestones,
+          impacted_employee_groups: Array.isArray(activity.impacted_employee_groups)
+            ? activity.impacted_employee_groups.flat()
+            : activity.impacted_employee_groups,
+          change_leaders: Array.isArray(activity.change_leaders)
+            ? activity.change_leaders.flat()
+            : activity.change_leaders,
+          development_support: Array.isArray(activity.development_support)
+            ? activity.development_support.flat()
+            : activity.development_support,
+          external_resources: Array.isArray(activity.external_resources)
+            ? activity.external_resources.flat()
+            : activity.external_resources,
+          corporate_resources: Array.isArray(activity.corporate_resources)
+            ? activity.corporate_resources.flat()
+            : activity.corporate_resources,
+        }));
+      }
+      default:
+        return [];
+    }
+  };
+  // Render form with context - handles special cases for activities and milestones
+  const renderFormWithContext = () => {
+    if (currentStepId === 'activities') {
+      return (
+        <ActivityForm 
+          openModalForType={openActivityModalForType} 
+          dependentActivities={dependentActivities} 
+          editMode={false} // Creation mode
+        />
+      );
+    }
+    
+    if (currentStepId === 'milestones') {
+      return (
+        <MilestoneForm 
+          dependentMilestones={dependentMilestones} 
+          editMode={false} // Creation mode
+        />
+      );
+    }
+    
+    // For all other form types, use the generic component
+    return <RenderableComponent editMode={false} />;
+  };
+
+  // Helper to show what context is needed for creation
+  const getCreationRequirements = () => {
+    const requirements = {
+      'strategies': null, // Strategies don't need context
+      'strategic-goals': 'Strategy',
+      'programs': 'Strategy', 
+      'workstreams': 'Strategy and Program',
+      'milestones': 'Strategy, Program, and Workstream',
+      'activities': 'Available Milestones (any context)'
+    };
+
+    const required = requirements[currentStepId as keyof typeof requirements];
+
+    if (!required) {
+      return (
+        <div className="text-sm text-gray-600">
+          <p className="font-medium mb-2">No additional context required.</p>
+          <p>You can create strategies directly.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="text-sm text-gray-600">
+        <p className="font-medium mb-3">Required Context:</p>
+        <p className="mb-4">{required}</p>
+
+        {/* Show current context status */}
+        <div className="space-y-2">
+          <div className={`flex items-center p-2 rounded ${
+            editingContext.selectedStrategy ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+          }`}>
+            {editingContext.selectedStrategy ? (
+              <>
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                Strategy: {editingContext.selectedStrategy.name}
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 bg-red-500 rounded-full mr-2"></div>
+                No strategy selected
+              </>
+            )}
+          </div>
+          
+          {(currentStepId === 'workstreams' || currentStepId === 'milestones' || currentStepId === 'activities') && (
+            <div className={`flex items-center p-2 rounded ${
+              editingContext.selectedProgram ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+            }`}>
+              {editingContext.selectedProgram ? (
+                <>
+                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                  Program: {editingContext.selectedProgram.name}
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 bg-red-500 rounded-full mr-2"></div>
+                  No program selected
+                </>
+              )}
+            </div>
+          )}
+
+          {(currentStepId === 'milestones' || currentStepId === 'activities') && (
+            <div className={`flex items-center p-2 rounded ${
+              editingContext.selectedWorkstream ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+            }`}>
+              {editingContext.selectedWorkstream ? (
+                <>
+                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                  Workstream: {editingContext.selectedWorkstream.name}
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 bg-red-500 rounded-full mr-2"></div>
+                  No workstream selected
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Context guidance */}
+        <div className="mt-4 p-3 bg-blue-50 rounded">
+          <p className="text-xs text-blue-700 font-medium mb-1">💡 Tip:</p>
+          <p className="text-xs text-blue-600">
+            Use the context header above to select the required {currentStepId === 'activities' ? 'context' : required.toLowerCase()}.
+          </p>
+        </div>
+      </div>
+    );
   };
 
   // Modal states
@@ -1025,8 +1464,41 @@ const EditStepper: React.FC<EditStepperProps> = ({
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Edit Existing Data</h1>
-        <p className="text-gray-600">Select and modify existing records across all entity types.</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              {isCreationMode ? 'Add New Components' : 'Edit Existing Data'}
+            </h1>
+            <p className="text-gray-600">
+              {isCreationMode 
+                ? 'Add new components to your existing strategy'
+                : 'Select and modify existing records across all entity types.'
+              }
+            </p>
+          </div>
+            
+          {/* Toggle Button */}
+          <button
+            onClick={() => {
+              setIsCreationMode(!isCreationMode);
+              setSelectedEntity(null);
+              methods.reset({});
+            }}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+          >
+            {isCreationMode ? (
+              <>
+                <Edit className="w-4 h-4 mr-2" />
+                Switch to Edit Mode
+              </>
+            ) : (
+              <>
+                <PlusCircle className="w-4 h-4 mr-2" />
+                Add New Components
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Stepper Header */}
@@ -1070,7 +1542,49 @@ const EditStepper: React.FC<EditStepperProps> = ({
       <div className="grid grid-cols-12 gap-6">
         {/* Left Column: Form Content */}
         <div className="col-span-8">
-          {selectedEntity ? (
+        {isCreationMode ? (
+          // Creation Mode - Show form directly
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="mb-4 pb-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Add New {FORM_STEPS[currentStepIndex].label}
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Create a new {FORM_STEPS[currentStepIndex].label.toLowerCase()} 
+                {getContextDescription()}
+              </p>
+            </div>
+
+            <FormProvider {...methods}>
+              <form onSubmit={methods.handleSubmit(onCreateNew)}>
+                {renderFormWithContext()}
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreationMode(false);
+                      methods.reset({});
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    style={{ backgroundColor: themeColor }}
+                    className="inline-flex items-center px-6 py-3 rounded-md text-white hover:opacity-90"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSaving ? 'Creating...' : `Create ${FORM_STEPS[currentStepIndex].label}`}
+                  </button>
+                </div>
+              </form>
+            </FormProvider>
+          </div>
+        ) : (
+          selectedEntity ? (
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="mb-4 pb-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -1123,6 +1637,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
                 Select a {FORM_STEPS[currentStepIndex].label.toLowerCase()} from the panel on the right to begin editing.
               </p>
             </div>
+          )
           )}
         </div>
         
@@ -1132,14 +1647,17 @@ const EditStepper: React.FC<EditStepperProps> = ({
             {/* Panel Header */}
             <div className="p-4 border-b border-gray-200 flex-shrink-0">
               <h3 className="text-lg font-semibold text-gray-900">
-                Available {FORM_STEPS[currentStepIndex].label}s
+                {isCreationMode ? 'Context Required' : `Available ${FORM_STEPS[currentStepIndex].label}s`}
               </h3>
               <p className="text-sm text-gray-600 mt-1">
-                Click any item below to edit
+                {isCreationMode 
+                  ? 'Ensure required context is selected above' 
+                  : 'Click any item below to edit'
+                }
               </p>
-                
-              {/* Search Input */}
-              {!isLoadingEntities && availableEntities.length > 0 && (
+
+              {/* Search Input - Only show in edit mode */}
+              {!isCreationMode && !isLoadingEntities && availableEntities.length > 0 && (
                 <div className="mt-3">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1163,153 +1681,163 @@ const EditStepper: React.FC<EditStepperProps> = ({
               )}
             </div>
             
-            {/* Scrollable Entity List */}
+            {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto p-2">
-              {isLoadingEntities ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                    <p className="text-gray-500">Loading {currentStepId}...</p>
-                  </div>
-                </div>
-              ) : filteredEntities.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center max-w-sm">
-                    <div className="text-gray-400 mb-4">
-                      <Search className="w-12 h-12 mx-auto" />
-                    </div>
-
-                    {searchQuery ? (
-                      <>
-                        <h4 className="text-lg font-medium text-gray-900 mb-2">No Results Found</h4>
-                        <p className="text-gray-500 mb-4">
-                          No {currentStepId} found matching "{searchQuery}"
-                        </p>
-                        <button
-                          onClick={() => setSearchQuery('')}
-                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                        >
-                          Clear search
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <h4 className="text-lg font-medium text-gray-900 mb-2">
-                          {currentStepIndex === 0 ? 'No Strategies Available' : 'Select Context Above'}
-                        </h4>
-
-                        {currentStepIndex === 0 ? (
-                          <p className="text-gray-500">
-                            No strategies have been created yet.
-                          </p>
-                        ) : currentStepIndex <= 2 ? (
-                          // Strategic goals and programs need strategy context
-                          <div className="text-gray-500">
-                            <p className="mb-2">
-                              Select a <strong>Strategy</strong> in the context header above to see available {currentStepId}.
-                            </p>
-                            {!editingContext.selectedStrategy && (
-                              <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
-                                💡 Tip: The context header filters what appears in this panel
-                              </div>
-                            )}
-                          </div>
-                        ) : currentStepIndex === 3 ? (
-                          // Workstreams need program context
-                          <div className="text-gray-500">
-                            <p className="mb-2">
-                              Select a <strong>Program</strong> in the context header above to see available workstreams.
-                            </p>
-                            {!editingContext.selectedProgram && (
-                              <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
-                                💡 First select a Strategy, then a Program
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          // Milestones and activities need workstream context
-                          <div className="text-gray-500">
-                            <p className="mb-2">
-                              Select a <strong>Workstream</strong> in the context header above to see available {currentStepId}.
-                            </p>
-                            {!editingContext.selectedWorkstream && (
-                              <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
-                                💡 Select Strategy → Program → Workstream for full context
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+              {isCreationMode ? (
+                // Creation Mode - Show Context Requirements
+                <div className="space-y-4">
+                  {getCreationRequirements()}
                 </div>
               ) : (
+                // Edit Mode - Show Entity List (existing logic)
                 <>
-                  {filteredEntities.slice(0, visibleItemCount).map((entity) => {
-                    const displayName = entity.name || entity.goal_text || entity.tagline;
-                    let subtitle = '';
-
-                    if (currentStepId === 'strategic-goals' && entity.strategy) {
-                      const strategyName = typeof entity.strategy === 'object' 
-                        ? entity.strategy.name 
-                        : editingContext.selectedStrategy?.name || `Strategy ${entity.strategy}`;
-                      subtitle = strategyName;
-                    }
-
-                    const isSelected = selectedEntity?.id === entity.id;
-
-                    return (
-                      <button
-                        key={entity.id}
-                        onClick={() => handleEntitySelect(entity)}
-                        className={`w-full text-left p-3 mb-2 rounded-lg border-2 transition-all duration-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-1 ${
-                          isSelected
-                            ? 'border-blue-500 bg-blue-50 shadow-md'
-                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                        }`}
-                        style={{
-                          borderColor: isSelected ? themeColor : undefined,
-                          backgroundColor: isSelected ? `${themeColor}15` : undefined,
-                        }}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium truncate ${
-                              isSelected ? 'text-gray-900' : 'text-gray-700'
-                            }`}>
-                              {displayName}
-                            </p>
-                            {subtitle && (
-                              <p className="text-xs text-gray-500 truncate mt-1">
-                                {subtitle}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  {/* Load More Button */}
-                  {filteredEntities.length > visibleItemCount && (
-                    <div className="p-3 text-center">
-                      <button
-                        onClick={() => setVisibleItemCount(prev => prev + 10)}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                      >
-                        Load {Math.min(10, filteredEntities.length - visibleItemCount)} more...
-                      </button>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Showing {visibleItemCount} of {filteredEntities.length}
-                      </p>
+                  {isLoadingEntities ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                        <p className="text-gray-500">Loading {currentStepId}...</p>
+                      </div>
                     </div>
+                  ) : filteredEntities.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center max-w-sm">
+                        <div className="text-gray-400 mb-4">
+                          <Search className="w-12 h-12 mx-auto" />
+                        </div>
+                  
+                        {searchQuery ? (
+                          <>
+                            <h4 className="text-lg font-medium text-gray-900 mb-2">No Results Found</h4>
+                            <p className="text-gray-500 mb-4">
+                              No {currentStepId} found matching "{searchQuery}"
+                            </p>
+                            <button
+                              onClick={() => setSearchQuery('')}
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                            >
+                              Clear search
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <h4 className="text-lg font-medium text-gray-900 mb-2">
+                              {currentStepIndex === 0 ? 'No Strategies Available' : 'Select Context Above'}
+                            </h4>
+                        
+                            {currentStepIndex === 0 ? (
+                              <p className="text-gray-500">
+                                No strategies have been created yet.
+                              </p>
+                            ) : currentStepIndex <= 2 ? (
+                              // Strategic goals and programs need strategy context
+                              <div className="text-gray-500">
+                                <p className="mb-2">
+                                  Select a <strong>Strategy</strong> in the context header above to see available {currentStepId}.
+                                </p>
+                                {!editingContext.selectedStrategy && (
+                                  <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
+                                    💡 Tip: The context header filters what appears in this panel
+                                  </div>
+                                )}
+                              </div>
+                            ) : currentStepIndex === 3 ? (
+                              // Workstreams need program context
+                              <div className="text-gray-500">
+                                <p className="mb-2">
+                                  Select a <strong>Program</strong> in the context header above to see available workstreams.
+                                </p>
+                                {!editingContext.selectedProgram && (
+                                  <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
+                                    💡 First select a Strategy, then a Program
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              // Milestones and activities need workstream context
+                              <div className="text-gray-500">
+                                <p className="mb-2">
+                                  Select a <strong>Workstream</strong> in the context header above to see available {currentStepId}.
+                                </p>
+                                {!editingContext.selectedWorkstream && (
+                                  <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
+                                    💡 Select Strategy → Program → Workstream for full context
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {filteredEntities.slice(0, visibleItemCount).map((entity) => {
+                        const displayName = entity.name || entity.goal_text || entity.tagline;
+                        let subtitle = '';
+                      
+                        if (currentStepId === 'strategic-goals' && entity.strategy) {
+                          const strategyName = typeof entity.strategy === 'object' 
+                            ? entity.strategy.name 
+                            : editingContext.selectedStrategy?.name || `Strategy ${entity.strategy}`;
+                          subtitle = strategyName;
+                        }
+                      
+                        const isSelected = selectedEntity?.id === entity.id;
+                      
+                        return (
+                          <button
+                            key={entity.id}
+                            onClick={() => handleEntitySelect(entity)}
+                            className={`w-full text-left p-3 mb-2 rounded-lg border-2 transition-all duration-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                              isSelected
+                                ? 'border-blue-500 bg-blue-50 shadow-md'
+                                : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                            }`}
+                            style={{
+                              borderColor: isSelected ? themeColor : undefined,
+                              backgroundColor: isSelected ? `${themeColor}15` : undefined,
+                            }}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-medium truncate ${
+                                  isSelected ? 'text-gray-900' : 'text-gray-700'
+                                }`}>
+                                  {displayName}
+                                </p>
+                                {subtitle && (
+                                  <p className="text-xs text-gray-500 truncate mt-1">
+                                    {subtitle}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+
+                      {/* Load More Button */}
+                      {filteredEntities.length > visibleItemCount && (
+                        <div className="p-3 text-center">
+                          <button
+                            onClick={() => setVisibleItemCount(prev => prev + 10)}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            Load {Math.min(10, filteredEntities.length - visibleItemCount)} more...
+                          </button>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Showing {visibleItemCount} of {filteredEntities.length}
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
                 </>
               )}
             </div>
             
-            {/* Panel Footer */}
-            {!isLoadingEntities && availableEntities.length > 0 && (
+            {/* Panel Footer - Only show in edit mode */}
+            {!isCreationMode && !isLoadingEntities && availableEntities.length > 0 && (
               <div className="p-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                 <p className="text-xs text-gray-500 text-center">
                   {searchQuery ? (
