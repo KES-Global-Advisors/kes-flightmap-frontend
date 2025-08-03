@@ -507,10 +507,12 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
                     label="Workstream Leads"
                     options={userOptions}
                     value={watch(`workstreams.${index}.workstream_leads`) || []}
-                    onChange={(newValue) => setValue(`workstreams.${index}.workstream_leads`, newValue.map(val => Number(val)))}
+                    onChange={(newValue) => setValue(`workstreams.${index}.workstream_leads`, newValue)}
                     isLoading={loadingUsers}
                     error={errorUsers}
                     placeholder="Assign workstream leadership..."
+                    allowCustomInput={true} // NEW
+                    customInputPlaceholder="Add workstream lead by name..." // NEW
                   />
                 </div>
                 <div>
@@ -518,10 +520,12 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
                     label="Team Members"
                     options={userOptions}
                     value={watch(`workstreams.${index}.team_members`) || []}
-                    onChange={(newValue) => setValue(`workstreams.${index}.team_members`, newValue.map(val => Number(val)))}
+                    onChange={(newValue) => setValue(`workstreams.${index}.team_members`, newValue)}
                     isLoading={loadingUsers}
                     error={errorUsers}
                     placeholder="Assign team members..."
+                    allowCustomInput={true} // NEW
+                    customInputPlaceholder="Add team member by name..." // NEW
                   />
                 </div>
               </div>

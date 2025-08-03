@@ -50,8 +50,8 @@ export interface Workstream {
   activities: Activity[];
   program: number;
   color?: string;
-  workstream_leads?: number[];
-  team_members?: number[];
+  workstream_leads?: (string | number)[];
+  team_members?: (string | number)[];
   improvement_targets?: string[];
   organizational_goals?: string[];
   progress_summary?: {
@@ -72,9 +72,9 @@ export interface Program {
   time_horizon: string;
   workstreams: Workstream[];
   strategy: number;
-  executive_sponsors?: number[];
-  program_leads?: number[];
-  workforce_sponsors?: number[];
+  executive_sponsors?: (string | number)[];
+  program_leads?: (string | number)[];
+  workforce_sponsors?: (string | number)[];
   key_improvement_targets?: number[];
   key_organizational_goals?: number[];
   progress?: {
@@ -113,9 +113,9 @@ export interface Strategy {
   completed_at?: string | null;
   
   // Governance
-  executive_sponsors?: number[];
-  strategy_leads?: number[];
-  communication_leads?: number[];
+  executive_sponsors?: (string | number)[];
+  strategy_leads?: (string | number)[];
+  communication_leads?: (string | number)[];
   
   // Strategic goals
   goals?: StrategicGoal[];

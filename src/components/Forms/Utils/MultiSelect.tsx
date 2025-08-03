@@ -15,6 +15,8 @@ interface MultiSelectProps {
   label?: string;
   isLoading?: boolean;
   error?: string | null;
+  allowCustomInput?: boolean;
+  customInputPlaceholder?: string;
 }
 
 export const MultiSelect: FC<MultiSelectProps> = ({
@@ -24,10 +26,13 @@ export const MultiSelect: FC<MultiSelectProps> = ({
   placeholder = "Select items...",
   label,
   isLoading = false,
-  error = null
+  error = null,
+  allowCustomInput = false,
+  customInputPlaceholder = "Add custom entry..."
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [customInputValue, setCustomInputValue] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   // Close dropdown when clicking outside
@@ -43,11 +48,33 @@ export const MultiSelect: FC<MultiSelectProps> = ({
       document.removeEventListener('mousedown', handleClickOutside as never);
     };
   }, []);
-  
-  // Get selected items
-  const selectedItems = options.filter(option =>
-    value.includes(option.value)
-  );
+
+  // NEW: Add custom entry function
+  const addCustomEntry = () => {
+    if (customInputValue.trim() && !value.includes(customInputValue.trim())) {
+      onChange([...value, customInputValue.trim()]);
+      setCustomInputValue('');
+    }
+  };
+
+  // NEW: Handle Enter key for custom input
+  const handleCustomInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addCustomEntry();
+    }
+  };
+
+  // UPDATED: Get selected items - handle both user IDs and text
+  const selectedItems = value.map(val => {
+    // Try to find in options first (for user IDs)
+    const option = options.find(opt => opt.value === val);
+    if (option) {
+      return { ...option, isCustom: false };
+    }
+    // If not found in options, treat as custom text
+    return { label: String(val), value: val, isCustom: true };
+  });
   
   // Filter options based on search term
   const filteredOptions = options.filter(option =>
@@ -80,7 +107,7 @@ export const MultiSelect: FC<MultiSelectProps> = ({
       {label && <label className="block text-sm font-medium text-gray-700">{label}</label>}
       
       <div className="relative" ref={dropdownRef}>
-        {/* Selected items display */}
+        {/* Selected items display show custom entries differently */}
         <div 
           className="flex flex-wrap gap-1 p-2 border rounded-md min-h-10 cursor-pointer bg-white"
           onClick={() => setIsOpen(!isOpen)}
@@ -92,13 +119,20 @@ export const MultiSelect: FC<MultiSelectProps> = ({
               {selectedItems.map((item) => (
                 <span 
                   key={item.value} 
-                  className="inline-flex items-center px-2 py-1 bg-indigo-100 text-indigo-800 text-sm rounded-md"
+                  className={`inline-flex items-center px-2 py-1 text-sm rounded-md ${
+                    item.isCustom 
+                      ? 'bg-green-100 text-green-800' // Different color for custom entries
+                      : 'bg-indigo-100 text-indigo-800'
+                  }`}
                 >
+                  {item.isCustom && <span className="mr-1 text-xs">👤</span>}
                   {item.label}
                   <button
                     type="button"
                     onClick={(e) => removeItem(item.value, e)}
-                    className="ml-1 text-indigo-500 hover:text-indigo-700"
+                    className={`ml-1 hover:opacity-70 ${
+                      item.isCustom ? 'text-green-500' : 'text-indigo-500'
+                    }`}
                   >
                     <X size={14} />
                   </button>
@@ -131,7 +165,33 @@ export const MultiSelect: FC<MultiSelectProps> = ({
               </div>
             </div>
             
-            {/* Loading, error or empty state */}
+            {/* NEW: Custom input section */}
+            {allowCustomInput && (
+              <div className="p-2 border-b bg-blue-50">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 py-1 px-2 border rounded-md text-sm"
+                    placeholder={customInputPlaceholder}
+                    value={customInputValue}
+                    onChange={e => setCustomInputValue(e.target.value)}
+                    onKeyDown={handleCustomInputKeyDown}
+                    onClick={e => e.stopPropagation()}
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomEntry}
+                    disabled={!customInputValue.trim()}
+                    className="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:bg-gray-300"
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="text-xs text-blue-600 mt-1">Add people who aren't in the system yet</p>
+              </div>
+            )}
+            
+            {/* Rest of dropdown options remain the same */}
             {isLoading ? (
               <div className="p-2 text-center text-gray-500">Loading...</div>
             ) : error ? (

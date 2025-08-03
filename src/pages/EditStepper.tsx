@@ -487,6 +487,20 @@ const EditStepper: React.FC<EditStepperProps> = ({
         break;
            
       case 'milestones':
+          // Find the program ID from the workstream to populate the form
+          { let programId = 0;
+          if (entity.workstream) {
+            // Look up the workstream in contextOptions to get its program
+            const workstream = contextOptions.workstreams.find(
+              ws => ws.id === entity.workstream || ws.id === entity.workstream?.id
+            );
+            if (workstream && workstream.program) {
+              programId = typeof workstream.program === 'object' 
+                ? workstream.program.id 
+                : workstream.program;
+            }
+          }
+
         formData = {
           milestones: [{
             id: entity.id,
@@ -494,6 +508,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
             description: entity.description || '',
             deadline: entity.deadline || '',
             status: entity.status || 'not_started',
+            program: programId, // Populate the program field for form validation
             workstream: entity.workstream || null,
             parent_milestone: entity.parent_milestone || null,
             strategic_goals: entity.strategic_goals?.map((goal: any) => 
@@ -507,7 +522,7 @@ const EditStepper: React.FC<EditStepperProps> = ({
             updated_by: entity.updated_by || null
           }]
         };
-        break;
+        break; }
 
       case 'activities':
         formData = {

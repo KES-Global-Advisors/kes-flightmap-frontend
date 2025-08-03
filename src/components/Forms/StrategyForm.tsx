@@ -14,8 +14,8 @@ export type StrategyFormData = {
     id?: number;
     name: string;
     tagline?: string;
-    description?: string; // ADD this field
-    owner: number; // ADD this field
+    description?: string;
+    owner: number;
     vision: string;
     time_horizon: string;
     executive_sponsors: number[];
@@ -351,14 +351,16 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
                 label="Executive Sponsors"
                 options={userOptions}
                 value={watch(`strategies.${index}.executive_sponsors`) || []}
-                onChange={(newValue) => setValue(`strategies.${index}.executive_sponsors`, newValue.map(val => Number(val)))}
+                onChange={(newValue) => setValue(`strategies.${index}.executive_sponsors`, newValue)}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select executive sponsors..."
+                allowCustomInput={true} // NEW
+                customInputPlaceholder="Add executive sponsor by name..." // NEW
               />
               {!editMode && (
                 <p className="mt-1 text-xs text-gray-500">
-                  Select senior leaders who will champion this strategy
+                  Select existing users or add names of people not yet in the system
                 </p>
               )}
             </div>
@@ -369,10 +371,12 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
                 label="Strategy Leads"
                 options={userOptions}
                 value={watch(`strategies.${index}.strategy_leads`) || []}
-                onChange={(newValue) => setValue(`strategies.${index}.strategy_leads`, newValue.map(val => Number(val)))}
+                onChange={(newValue) => setValue(`strategies.${index}.strategy_leads`, newValue)}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select strategy leads..."
+                allowCustomInput={true} // NEW
+                customInputPlaceholder="Add strategy lead by name..." // NEW
               />
               {!editMode && (
                 <p className="mt-1 text-xs text-gray-500">
@@ -387,10 +391,12 @@ export const StrategyForm: React.FC<StrategyFormProps> = ({ editMode = false }) 
                 label="Communication Leads"
                 options={userOptions}
                 value={watch(`strategies.${index}.communication_leads`) || []}
-                onChange={(newValue) => setValue(`strategies.${index}.communication_leads`, newValue.map(val => Number(val)))}
+                onChange={(newValue) => setValue(`strategies.${index}.communication_leads`, newValue)}
                 isLoading={loadingUsers}
                 error={errorUsers}
                 placeholder="Select communication leads..."
+                allowCustomInput={true} // NEW
+                customInputPlaceholder="Add communication lead by name..." // NEW
               />
               {!editMode && (
                 <p className="mt-1 text-xs text-gray-500">

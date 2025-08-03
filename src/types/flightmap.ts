@@ -74,8 +74,8 @@ export interface Workstream {
   };
   // Additional optional fields from Model.ts:
   program?: number;
-  workstream_leads?: number[];
-  team_members?: number[];
+  workstream_leads?: (string | number)[];
+  team_members?: (string | number)[];
   improvement_targets?: string[];
   organizational_goals?: string[];
 }
@@ -93,9 +93,9 @@ export interface Program {
   };
   // Additional optional fields from Model.ts:
   strategy?: number;
-  executive_sponsors?: number[];
-  program_leads?: number[];
-  workforce_sponsors?: number[];
+  executive_sponsors?: (string | number)[];
+  program_leads?: (string | number)[];
+  workforce_sponsors?: (string | number)[];
   key_improvement_targets?: number[];
   key_organizational_goals?: number[];
   strategicObjectives?: {
@@ -143,9 +143,9 @@ export interface Strategy {
   };
   
   // Governance fields
-  executive_sponsors?: number[];
-  strategy_leads?: number[];
-  communication_leads?: number[];
+  executive_sponsors?: (string | number)[];
+  strategy_leads?: (string | number)[];
+  communication_leads?: (string | number)[];
 }
 
 export type StrategicGoal = {
