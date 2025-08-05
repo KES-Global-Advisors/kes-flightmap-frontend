@@ -600,8 +600,6 @@ const FormStepper: React.FC = () => {
     const isLastStep = currentStepIndex === FORM_STEPS.length - 1;
     const payloadArray = transformData(currentStepId, data);
     const results: unknown[] = [];
-    // separates the hardcoded endpoint string from any StepId-related type checking.
-    const FLIGHTMAP_ENDPOINT = 'flightmaps';
 
     try {
       // Submit data to backend
@@ -630,32 +628,10 @@ const FormStepper: React.FC = () => {
       newCompletedSteps[currentStepIndex] = true;
       setCompletedSteps(newCompletedSteps);
 
-      const formattedData = (() => {
-        switch (currentStepId) {
-          case 'flightmaps':
-            // Single record form - store as-is
-            return results[0] || data;
-          case 'strategies':
-            return { strategies: results };
-          case 'strategic-goals':
-            return { goals: results };
-          case 'programs':
-            return { programs: results };
-          case 'workstreams':
-            return { workstreams: results };
-          case 'milestones':
-            return { milestones: results };
-          case 'activities':
-            return { activities: results };
-          default:
-            return data;
-        }
-      })();
-
       setFormData(prev => ({
         ...prev,
-        [currentStepId]: formattedData,
-      }));
+        [currentStepId]: results,
+      }) as FormDataMap);
 
       // Check for flow creation AFTER successful milestone submission
       if (currentStepId === 'milestones' && !flowCreationCompleted && results.length > 1) {
@@ -675,7 +651,7 @@ const FormStepper: React.FC = () => {
         // Mark the flightmap as complete (no longer a draft)
         if (formData.strategies && Array.isArray(formData.strategies) && formData.strategies[0]?.id) {
           try {
-            await fetch(`${API}/${FLIGHTMAP_ENDPOINT}/${formData.strategies[0].id}/mark_complete/`, {
+            await fetch(`${API}/flightmaps/${formData.strategies[0].id}/mark_complete/`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${accessToken || ''}`,

@@ -42,9 +42,6 @@ export const ProgramForm: React.FC<ProgramFormProps> = ({ editMode = false }) =>
 
   // Optimized data transformation with null safety
   const userOptions = users ? users.map((u: User) => ({ label: u.username, value: u.id })) : [];
-  const strategicGoalOptions = strategicGoals
-    ? strategicGoals.map((goal: StrategicGoal) => ({ label: goal.goal_text, value: goal.id }))
-    : [];
 
   const addProgram = useCallback(() => {
     console.log("Adding program");
@@ -176,15 +173,14 @@ export const ProgramForm: React.FC<ProgramFormProps> = ({ editMode = false }) =>
 
   // Strategy-based filtering for strategic goals
   const getFilteredStrategicGoals = (strategyId: number) => {
-    if (!strategicGoals || !strategyId) return strategicGoalOptions;
+    if (!strategicGoals || !strategyId || strategyId === 0) return [];  // Return empty array instead of all options
 
     return strategicGoals
       .filter(goal => {
-        // Handle both object and number formats for robustness
         const goalStrategyId = typeof goal.strategy === 'object' 
           ? goal.strategy.id 
           : goal.strategy;
-        return goalStrategyId === strategyId;
+        return goalStrategyId == strategyId;
       })
       .map(goal => ({ label: goal.goal_text, value: goal.id }));
   };
@@ -226,7 +222,7 @@ export const ProgramForm: React.FC<ProgramFormProps> = ({ editMode = false }) =>
       {fields.map((field, index) => {
         const roleWarnings = validateRoleAssignments(index);
         const selectedStrategy = watch(`programs.${index}.strategy`);
-        const filteredGoals = selectedStrategy ? getFilteredStrategicGoals(selectedStrategy) : strategicGoalOptions;
+        const filteredGoals = selectedStrategy > 0 ? getFilteredStrategicGoals(selectedStrategy) : [];
 
         return (
           <div key={field.id} className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
@@ -407,9 +403,14 @@ export const ProgramForm: React.FC<ProgramFormProps> = ({ editMode = false }) =>
                     error={errorGoals}
                     placeholder="Select improvement targets..."
                   />
-                  {selectedStrategy && filteredGoals.length === 0 && (
+                  {selectedStrategy > 0 && filteredGoals.length === 0 && (
                     <p className="mt-1 text-xs text-yellow-600">
                       No strategic goals found for selected strategy
+                    </p>
+                  )}
+                  {selectedStrategy === 0 && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Please select a strategy first
                     </p>
                   )}
                 </div>
