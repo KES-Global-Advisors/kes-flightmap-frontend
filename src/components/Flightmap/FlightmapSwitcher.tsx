@@ -1,36 +1,13 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt flightmap flightmaps
+// cSpell:ignore workstream workstreams flightmaps Gantt flightmap flightmaps
 import React, { useState } from 'react';
 import FlightmapVisualization from './FlightmapVisualization';
 import GanttChart from './GanttChart';
 import FrameworkView from './FrameworkView';
-import { FlightmapData } from '@/types/flightmap';
-import { useUpdateMilestoneDeadline } from '@/api/flightmap';
 
+type ViewMode = 'flightmap' | 'gantt' | 'framework';
 
-interface Props {
-  roadmap: FlightmapData;
-}
-
-const FlightmapSwitcher: React.FC<Props> = React.memo(({ roadmap }) => {
-  const [viewMode, setViewMode] = useState<'flightmap' | 'gantt' | 'framework'>('flightmap');
-  const updateMilestoneMutation = useUpdateMilestoneDeadline();
-
-  const onMilestoneDeadlineChange = async (milestoneId: string, newDeadline: Date): Promise<boolean> => {
-    try {
-      const milestoneIdNumber = Number(milestoneId);
-      if (isNaN(milestoneIdNumber)) throw new Error('Invalid milestone ID');
-
-      await updateMilestoneMutation.mutateAsync({
-        milestoneId: milestoneIdNumber,
-        deadline: newDeadline.toISOString().slice(0, 10),
-      });
-
-      return true;
-    } catch (err) {
-      console.error(err);
-      return false;
-    }
-  };
+const FlightmapSwitcher: React.FC = () => {
+  const [viewMode, setViewMode] = useState<ViewMode>('flightmap');
 
   return (
     <div>
@@ -55,20 +32,11 @@ const FlightmapSwitcher: React.FC<Props> = React.memo(({ roadmap }) => {
         </button>
       </div>
 
-      {viewMode === 'flightmap' && (
-        <FlightmapVisualization
-          data={roadmap}
-          onMilestoneDeadlineChange={onMilestoneDeadlineChange}
-        />
-      )}
-      {viewMode === 'gantt' && <GanttChart data={roadmap} />}
-      {viewMode === 'framework' && <FrameworkView data={roadmap} />}
+      {viewMode === 'flightmap' && <FlightmapVisualization />}
+      {viewMode === 'gantt' && <GanttChart />}
+      {viewMode === 'framework' && <FrameworkView />}
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Only re-render if roadmap ID or critical fields change
-  return prevProps.roadmap.id === nextProps.roadmap.id && 
-         prevProps.roadmap.name === nextProps.roadmap.name;
-});
+};
 
 export default FlightmapSwitcher;

@@ -74,8 +74,8 @@ export interface Workstream {
   };
   // Additional optional fields from Model.ts:
   program?: number;
-  workstream_leads?: number[];
-  team_members?: number[];
+  workstream_leads?: (string | number)[];
+  team_members?: (string | number)[];
   improvement_targets?: string[];
   organizational_goals?: string[];
 }
@@ -93,9 +93,9 @@ export interface Program {
   };
   // Additional optional fields from Model.ts:
   strategy?: number;
-  executive_sponsors?: number[];
-  program_leads?: number[];
-  workforce_sponsors?: number[];
+  executive_sponsors?: (string | number)[];
+  program_leads?: (string | number)[];
+  workforce_sponsors?: (string | number)[];
   key_improvement_targets?: number[];
   key_organizational_goals?: number[];
   strategicObjectives?: {
@@ -110,28 +110,8 @@ export interface Strategy {
   tagline: string;
   vision: string;
   time_horizon: string;
-  programs: Program[];
-  goal_summary: {
-    business_goals: string[];
-    organizational_goals: string[];
-  };
-  // Additional optional fields from Model.ts:
-  roadmap?: number;
-  executive_sponsors?: number[];
-  strategy_leads?: number[];
-  communication_leads?: number[];
-}
-
-export type StrategicGoal = {
-  id: number;
-  strategy: number; // Reference to Strategy
-  category: 'business' | 'organizational';
-  goal_text: string;
-};
-
-export interface FlightmapData {
-  id: number;
-  name: string;
+  
+  // Merged Flightmap fields
   description?: string;
   owner: number;
   created_at: string;
@@ -150,13 +130,29 @@ export interface FlightmapData {
   };
   
   // Relationships
-  strategies: Strategy[];
+  programs: Program[];
+  goal_summary: {
+    business_goals: string[];
+    organizational_goals: string[];
+  };
   milestone_summary?: {
     total: number;
     completed: number;
     in_progress: number;
     overdue: number;
   };
+  
+  // Governance fields
+  executive_sponsors?: (string | number)[];
+  strategy_leads?: (string | number)[];
+  communication_leads?: (string | number)[];
 }
+
+export type StrategicGoal = {
+  id: number;
+  strategy: number; // Reference to Strategy
+  category: 'business' | 'organizational';
+  goal_text: string;
+};
 
 

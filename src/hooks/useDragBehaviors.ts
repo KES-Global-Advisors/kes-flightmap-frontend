@@ -168,7 +168,7 @@ export function useDragBehaviors({
   
   // Callbacks
   debouncedUpsertPosition: (
-    flightmapId: number, 
+    strategyId: number, 
     nodeType: 'milestone'|'workstream', 
     nodeId: number | string, 
     relY: number,

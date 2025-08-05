@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // cSpell:ignore workstream workstreams flightmaps Flightmap
-import { FlightmapData } from "@/types/flightmap";
+import { Strategy } from "@/types/flightmap";
 
-export function buildHierarchy(data: FlightmapData): any {
+export function buildHierarchy(data: Strategy): any {
   const mapNode = (node: any, type: string): any => ({
     id: node.id,
     name: node.name,
@@ -32,83 +32,72 @@ export function buildHierarchy(data: FlightmapData): any {
   });
 
   // Create the flightmap node.
-  const flightmapNode = mapNode(data, "flightmap");
-  flightmapNode.description = data.description || "";
-  flightmapNode.created_at = data.created_at || "";
+  const strategyNode = mapNode(data, "strategy");
+  strategyNode.tagline = data.tagline || "";
+  strategyNode.vision = data.vision || "";
+  strategyNode.time_horizon = data.time_horizon || "";
+  strategyNode.description = data.description || "";
+  strategyNode.created_at = data.created_at || "";
 
-  flightmapNode.children = data.strategies
-    ? data.strategies.map((strategy: any) => {
-        const strategyNode = mapNode(strategy, "strategy");
-        strategyNode.tagline = strategy.tagline || "";
-        strategyNode.vision = strategy.vision || "";
-        strategyNode.time_horizon = strategy.time_horizon || "";
-
-        strategyNode.children = strategy.programs
-          ? strategy.programs.map((program: any) => {
-              const programNode = mapNode(program, "program");
-              programNode.vision = program.vision || "";
-              programNode.time_horizon = program.time_horizon || "";
-
-              programNode.children = program.workstreams
-                ? program.workstreams.map((workstream: any) => {
-                    const workstreamNode = mapNode(workstream, "workstream");
-                    // Process milestones with the new parent relationship.
-                    if (workstream.milestones && workstream.milestones.length > 0) {
-                      // First, create milestone nodes and build a map.
-                      const milestoneNodesMap: { [key: number]: any } = {};
-                      const milestoneNodes: any[] = [];
-                      workstream.milestones.forEach((milestone: any) => {
-                        const milestoneNode = mapNode(milestone, "milestone");
-                        milestoneNode.deadline = milestone.deadline || "";
-                        milestoneNode.status = milestone.status || "";
-                        milestoneNode.current_progress = milestone.current_progress || 0;
-                        // Copy the new parent field (assumed to be provided as milestone.parent)
-                        milestoneNode.parentId = milestone.parent || null;
-                        // Attach any activities directly under this milestone.
-                        if (milestone.activities && milestone.activities.length > 0) {
-                          milestoneNode.children = milestone.activities.map((activity: any) =>
-                            mapNode(activity, "activity")
-                          );
-                        }
-                        milestoneNodesMap[milestone.id] = milestoneNode;
-                        milestoneNodes.push(milestoneNode);
-                      });
-                      // Organize milestones by nesting child milestones under their parent.
-                      const rootMilestones: any[] = [];
-                      milestoneNodes.forEach((node: any) => {
-                        if (node.parentId) {
-                          const parentNode = milestoneNodesMap[node.parentId];
-                          if (parentNode) {
-                            parentNode.children.push(node);
-                          } else {
-                            // If the parent isn’t found, treat as root.
-                            rootMilestones.push(node);
-                          }
+  strategyNode.children = data.programs
+        ? data.programs.map((program: any) => {
+            const programNode = mapNode(program, "program");
+            programNode.vision = program.vision || "";
+            programNode.time_horizon = program.time_horizon || "";
+            programNode.children = program.workstreams
+              ? program.workstreams.map((workstream: any) => {
+                  const workstreamNode = mapNode(workstream, "workstream");
+                  // Process milestones with the new parent relationship.
+                  if (workstream.milestones && workstream.milestones.length > 0) {
+                    // First, create milestone nodes and build a map.
+                    const milestoneNodesMap: { [key: number]: any } = {};
+                    const milestoneNodes: any[] = [];
+                    workstream.milestones.forEach((milestone: any) => {
+                      const milestoneNode = mapNode(milestone, "milestone");
+                      milestoneNode.deadline = milestone.deadline || "";
+                      milestoneNode.status = milestone.status || "";
+                      milestoneNode.current_progress = milestone.current_progress || 0;
+                      // Copy the new parent field (assumed to be provided as milestone.parent)
+                      milestoneNode.parentId = milestone.parent || null;
+                      // Attach any activities directly under this milestone.
+                      if (milestone.activities && milestone.activities.length > 0) {
+                        milestoneNode.children = milestone.activities.map((activity: any) =>
+                          mapNode(activity, "activity")
+                        );
+                      }
+                      milestoneNodesMap[milestone.id] = milestoneNode;
+                      milestoneNodes.push(milestoneNode);
+                    });
+                    // Organize milestones by nesting child milestones under their parent.
+                    const rootMilestones: any[] = [];
+                    milestoneNodes.forEach((node: any) => {
+                      if (node.parentId) {
+                        const parentNode = milestoneNodesMap[node.parentId];
+                        if (parentNode) {
+                          parentNode.children.push(node);
                         } else {
+                          // If the parent isn’t found, treat as root.
                           rootMilestones.push(node);
                         }
-                      });
-                      // Attach the top-level milestones to the workstream.
-                      workstreamNode.children.push(...rootMilestones);
-                    }
-
-                    // Also add activities directly under the workstream.
-                    if (workstream.activities && workstream.activities.length > 0) {
-                      const activityNodes = workstream.activities.map((activity: any) =>
-                        mapNode(activity, "activity")
-                      );
-                      workstreamNode.children.push(...activityNodes);
-                    }
-
-                    return workstreamNode;
-                  })
-                : [];
-              return programNode;
-            })
-          : [];
-        return strategyNode;
-      })
-    : [];
-
-  return flightmapNode;
+                      } else {
+                        rootMilestones.push(node);
+                      }
+                    });
+                    // Attach the top-level milestones to the workstream.
+                    workstreamNode.children.push(...rootMilestones);
+                  }
+                  // Also add activities directly under the workstream.
+                  if (workstream.activities && workstream.activities.length > 0) {
+                    const activityNodes = workstream.activities.map((activity: any) =>
+                      mapNode(activity, "activity")
+                    );
+                    workstreamNode.children.push(...activityNodes);
+                  }
+                  return workstreamNode;
+                })
+              : [];
+            return programNode;
+          })
+        : [];
+  return strategyNode;
 }

@@ -1,10 +1,11 @@
-// cSpell:ignore workstream workstreams roadmaps Gantt hoverable strat flightmap
+// cSpell:ignore workstream workstreams flightmaps Gantt hoverable strat flightmap
 import React, { useState, useEffect, MouseEvent, useRef } from 'react';
-import { FlightmapData } from '@/types/flightmap';
+import { Strategy } from '@/types/flightmap';
+import { useFlightmapContext } from '@/contexts/FlightmapContext';
 import { useAuth } from '@/contexts/UserContext';
 import { updateTaskStatus } from './GanttUtils/updateTaskStatus';
 import { sendContribution } from './GanttUtils/sendContribution';
-import Tooltip from './GanttUtils/Tooltip';  // Import your tooltip component
+import Tooltip from './GanttUtils/Tooltip';
 
 export interface GanttItem {
   id: string;
@@ -28,9 +29,6 @@ export interface GanttItem {
   actualDuration?: number | null;
 }
 
-interface GanttChartProps {
-  data: FlightmapData;
-}
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString(undefined, {
@@ -101,7 +99,7 @@ const CustomCheckbox = ({
 };
 
 
-const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
+const GanttChartInner: React.FC<{ data: Strategy }> = ({ data }) => {
   const [tasks, setTasks] = useState<GanttItem[]>([]);
   const [view, setView] = useState<'year' | 'quarter' | 'month'>('year');
   const [expandedItems, setExpandedItems] = useState<{ [key: string]: boolean }>({});
@@ -116,12 +114,13 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
   // Ref for click timeout to differentiate single and double clicks
   const clickTimeoutRef = useRef<number | null>(null);
 
-  // --- STEP 1: Flatten the roadmap data into a single tasks array ---
+  // --- STEP 1: Flatten the flightmap data into a single tasks array ---
   const processData = (): GanttItem[] => {
     const itemMap = new Map<string, GanttItem>();
   
-    data.strategies.forEach(strategy => {
-      const strat: GanttItem = {
+    if (!data) return [];
+    const strategy: Strategy = data;
+    const strat: GanttItem = {
         id: `s-${strategy.id}`,
         name: strategy.name,
         level: 'strategy',
@@ -136,7 +135,7 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
       };
       itemMap.set(strat.id, strat);
   
-      strategy.programs.forEach(program => {
+      data.programs.forEach(program => {
         const prog: GanttItem = {
           id: `p-${program.id}`,
           name: program.name,
@@ -226,7 +225,6 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
           });
         });
       });
-    });
   
     return Array.from(itemMap.values());
   };
@@ -244,7 +242,6 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
     setExpandedItems(expanded);
   }, [data]);
   
-
   // Expand/collapse toggling
   const toggleExpand = (itemId: string) => {
     setExpandedItems(prev => ({ ...prev, [itemId]: !prev[itemId] }));
@@ -600,6 +597,21 @@ const GanttChart: React.FC<GanttChartProps> = ({ data }) => {
       <Tooltip item={hoveredItem} visible={tooltipVisible && hoveredItem != null} x={tooltipPos.x} y={tooltipPos.y} />
     </div>
   );
+};
+
+// Outer component that handles context and null check
+const GanttChart: React.FC = () => {
+  const { flightmap: data } = useFlightmapContext();
+  
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">No flightmap selected</p>
+      </div>
+    );
+  }
+
+  return <GanttChartInner data={data} />;
 };
 
 export default GanttChart;

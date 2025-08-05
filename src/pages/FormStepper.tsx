@@ -5,8 +5,8 @@ import { ThemeContext } from '@/contexts/ThemeContext';
 import { useForm, FormProvider } from 'react-hook-form';
 import { Check, AlertCircle, FolderOpen, Clock } from 'lucide-react';
 import { showToast } from '@/components/Forms/Utils/toastUtils';
+import FlowCreationErrorBoundary from '@/pages/components/FlowCreationErrorBoundary';
 
-import { FlightmapForm, FlightmapFormData } from '../components/Forms/FlightmapForm';
 import { StrategyForm, StrategyFormData } from '../components/Forms/StrategyForm';
 import { StrategicGoalForm, StrategicGoalFormData } from '../components/Forms/StrategicGoalForm';
 import { ProgramForm, ProgramFormData } from '../components/Forms/ProgramForm';
@@ -17,11 +17,11 @@ import DependentActivityModal from '../components/Forms/Utils/DependentActivityM
 import DependentMilestoneModal from '../components/Forms/Utils/DependentMilestoneModal';
 import { DraftRecoveryModal } from '../components/Forms/Utils/DraftRecoveryModal';
 import { DraftListModal } from '../components/Forms/Utils/DraftListModal';
-
+import { FlowCreationPopup } from '../components/Forms/Utils/FlowCreationPopup';
+import { FlowCreationModal, MilestoneDependency } from '../components/Forms/Utils/FlowCreationModal';
 import { Activity, Milestone } from '../types/model';
 
 type StepId =
-  | 'flightmaps'
   | 'strategies'
   | 'strategic-goals'
   | 'programs'
@@ -30,7 +30,6 @@ type StepId =
   | 'activities';
 
 interface FormDataMap {
-  flightmaps?: FlightmapFormData;
   strategies?: StrategyFormData;
   'strategic-goals'?: StrategicGoalFormData;
   programs?: ProgramFormData;
@@ -40,7 +39,6 @@ interface FormDataMap {
 }
 
 type AllFormData =
-  | FlightmapFormData
   | StrategyFormData
   | StrategicGoalFormData
   | ProgramFormData
@@ -50,13 +48,8 @@ type AllFormData =
 
 // Validation rules for each step
 const VALIDATION_RULES = {
-  flightmaps: {
-    name: { required: 'Name is required' },
-    description: { required: 'Description is required' },
-    owner: { required: 'Owner is required' }
-  },
   strategies: {
-    required: ['flightmap', 'name', 'vision', 'time_horizon'],
+    required: ['name', 'owner', 'time_horizon'],
     arrayField: 'strategies'
   },
   'strategic-goals': {
@@ -72,7 +65,7 @@ const VALIDATION_RULES = {
     arrayField: 'workstreams'
   },
   milestones: {
-    required: ['workstream', 'name', 'deadline', 'status'],
+    required: ['program', 'workstream', 'name', 'deadline', 'status'],
     arrayField: 'milestones'
   },
   activities: {
@@ -82,7 +75,6 @@ const VALIDATION_RULES = {
 };
 
 const FORM_STEPS = [
-  { id: 'flightmaps' as StepId, label: 'Flightmap', component: FlightmapForm },
   { id: 'strategies' as StepId, label: 'Strategy', component: StrategyForm },
   { id: 'strategic-goals' as StepId, label: 'Strategic Goal', component: StrategicGoalForm },
   { id: 'programs' as StepId, label: 'Program', component: ProgramForm },
@@ -97,6 +89,11 @@ const FormStepper: React.FC = () => {
   const [formData, setFormData] = useState<FormDataMap>({});
   const [completedSteps, setCompletedSteps] = useState<boolean[]>(Array(FORM_STEPS.length).fill(false));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showFlowCreationPopup, setShowFlowCreationPopup] = useState(false);
+  const [flowCreationCompleted, setFlowCreationCompleted] = useState(false);
+  const [showFlowCreationModal, setShowFlowCreationModal] = useState(false);
+  const [savedMilestones, setSavedMilestones] = useState<any[]>([]);
+  const [isSavingDependencies, setIsSavingDependencies] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Flightmap Draft States
@@ -162,15 +159,7 @@ const FormStepper: React.FC = () => {
     const errors: string[] = [];
     const rules = VALIDATION_RULES[currentStepId];
 
-    if (currentStepId === 'flightmaps') {
-      // Single entity validation
-      const flightmapData = data as FlightmapFormData;
-      Object.entries(rules).forEach(([field, rule]: [string, any]) => {
-        if (rule.required && (!flightmapData[field as keyof FlightmapFormData] || flightmapData[field as keyof FlightmapFormData] === '')) {
-          errors.push(rule.required);
-        }
-      });
-    } else if (currentStepId === 'activities') {
+      if (currentStepId === 'activities') {
         // ✅ SPECIAL HANDLING: Activities need custom validation for new structure
         const activityData = data as ActivityFormData;
 
@@ -271,21 +260,14 @@ const FormStepper: React.FC = () => {
   // Transform data for API submission (unchanged from original)
   const transformData = (stepId: StepId, data: AllFormData): unknown[] => {
     switch (stepId) {
-      case 'flightmaps': {
-        const { name, description, owner } = data as FlightmapFormData;
-        return [{
-          name,
-          description,
-          owner,
-          is_draft: true,  // Mark as draft when creating
-          draft_id: draftId  // Link to the draft session
-        }];
-      }
       case 'strategies': {
         return (data as StrategyFormData).strategies.map(strategy => ({
-          flightmap: strategy.flightmap,
           name: strategy.name,
           tagline: strategy.tagline,
+          description: strategy.description, // ADD this field
+          owner: strategy.owner,
+          is_draft: true,  // Mark as draft when creating
+          draft_id: draftId,  // Link to the draft session
           vision: strategy.vision,
           time_horizon: strategy.time_horizon,
           executive_sponsors: Array.isArray(strategy.executive_sponsors)
@@ -356,6 +338,7 @@ const FormStepper: React.FC = () => {
       }
       case 'milestones': {
         return (data as MilestoneFormData).milestones.map(milestone => ({
+          program: milestone.program,
           workstream: milestone.workstream,
           name: milestone.name,
           description: milestone.description,
@@ -420,7 +403,7 @@ const FormStepper: React.FC = () => {
     }
   };
 
-// Enhanced save session function to save the entire session with automatic draft naming
+  // Enhanced save session function to save the entire session with automatic draft naming
   const saveSession = async (isAutoSave = false) => {
     if (!isAutoSave) {
       setIsSavingDraft(true);
@@ -433,17 +416,17 @@ const FormStepper: React.FC = () => {
         [currentStepId]: methods.getValues() // Include current unsaved data
       };
 
-      // Generate draft name based on flightmap name if available
+      // Generate draft name based on strategy name if available
       let generatedDraftName = draftName;
-      if (!generatedDraftName && fullFormData.flightmaps) {
-        const flightmapData = fullFormData.flightmaps as FlightmapFormData;
-        if (flightmapData.name) {
-          generatedDraftName = `${flightmapData.name} - Draft`;
+      if (!generatedDraftName && fullFormData.strategies) {
+        const strategyData = fullFormData.strategies as StrategyFormData;
+        if (strategyData.strategies && strategyData.strategies[0]?.name) {
+          generatedDraftName = `${strategyData.strategies[0].name} - Draft`;
         }
       }
 
       const sessionData = {
-        name: generatedDraftName || `Untitled Draft - ${new Date().toLocaleDateString()}`,
+        name: generatedDraftName || `Untitled Strategy Draft - ${new Date().toLocaleDateString()}`,
         current_step: currentStepId,
         form_data: fullFormData,
         completed_steps: completedSteps,
@@ -451,7 +434,7 @@ const FormStepper: React.FC = () => {
       };
 
       const url = draftId 
-        ? `${API}/flightmap-drafts/${draftId}/`
+        ? `${API}/flightmap-drafts/${draftId}/`  // Note: API endpoint remains same for backward compatibility
         : `${API}/flightmap-drafts/`;
 
       const response = await fetch(url, {
@@ -470,7 +453,7 @@ const FormStepper: React.FC = () => {
         setDraftName(draft.name);
 
         // Also save to localStorage as backup
-        localStorage.setItem('flightmap_draft_backup', JSON.stringify({
+        localStorage.setItem('strategy_draft_backup', JSON.stringify({  // Updated key name
           ...sessionData,
           draftId: draft.id,
           timestamp: new Date().toISOString()
@@ -619,6 +602,7 @@ const FormStepper: React.FC = () => {
     const results: unknown[] = [];
 
     try {
+      // Submit data to backend
       for (const item of payloadArray) {
         const response = await fetch(`${API}/${currentStepId}/`, {
           method: 'POST',
@@ -639,6 +623,7 @@ const FormStepper: React.FC = () => {
         results.push(result);
       }
 
+      // Mark step as completed and save results
       const newCompletedSteps = [...completedSteps];
       newCompletedSteps[currentStepIndex] = true;
       setCompletedSteps(newCompletedSteps);
@@ -648,11 +633,25 @@ const FormStepper: React.FC = () => {
         [currentStepId]: results,
       }));
 
+      // 🔥 NEW: Check for flow creation AFTER successful milestone submission
+      if (currentStepId === 'milestones' && !flowCreationCompleted && results.length > 1) {
+        console.log('✅ Milestones saved successfully to backend:', results);
+
+        // Store the saved milestones with real IDs
+        setSavedMilestones(results as any[]);
+
+        // Show flow creation popup with real milestone data
+        setShowFlowCreationPopup(true);
+        setIsSubmitting(false); // Stop loading animation
+        return; // Don't proceed to next step yet - wait for flow creation
+      }
+
+      // Handle final step or continue to next step
       if (isLastStep) {
-          // Mark the flightmap as complete (no longer a draft)
-        if (formData.flightmaps && Array.isArray(formData.flightmaps) && formData.flightmaps[0]?.id) {
+        // Mark the flightmap as complete (no longer a draft)
+        if (formData.strategies && Array.isArray(formData.strategies) && formData.strategies[0]?.id) {
           try {
-            await fetch(`${API}/flightmaps/${formData.flightmaps[0].id}/mark_complete/`, {
+            await fetch(`${API}/flightmaps/${formData.strategies[0].id}/mark_complete/`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${accessToken || ''}`,
@@ -660,7 +659,7 @@ const FormStepper: React.FC = () => {
               credentials: 'include',
             });
           } catch (error) {
-            console.error('Error marking flightmap as complete:', error);
+            console.error('Error marking strategy as complete:', error);
           }
         }
 
@@ -674,14 +673,13 @@ const FormStepper: React.FC = () => {
               },
               credentials: 'include',
             });
-            // Clear local storage backup
             localStorage.removeItem('flightmap_draft_backup');
           } catch (error) {
             console.error('Error deleting draft:', error);
           }
         }
 
-        showToast.success('Flightmap created successfully!');
+        showToast.success('Strategy created successfully!');
 
         // Reset everything
         setFormData({});
@@ -706,6 +704,7 @@ const FormStepper: React.FC = () => {
     }
   };
 
+
   // Enhanced back navigation - preserves form data for "quick edit"
   const handleBack = () => {
     if (currentStepIndex > 0) {
@@ -729,6 +728,115 @@ const FormStepper: React.FC = () => {
         [currentStepId]: currentData,
       }));
       setCurrentStepIndex(index);
+    }
+  };
+
+  // UPDATE handleEnterFlowMode function:
+  const handleEnterFlowMode = () => {
+    setShowFlowCreationPopup(false);
+    setShowFlowCreationModal(true);
+  };
+
+  // UPDATE handleSkipFlowCreation function:
+  const handleSkipFlowCreation = () => {
+    setShowFlowCreationPopup(false);
+    setFlowCreationCompleted(true);
+    setCurrentStepIndex(prev => prev + 1);
+  };
+
+  // UPDATE handleSaveDependencies function
+  const handleSaveDependencies = async (dependencies: MilestoneDependency[]): Promise<void> => {
+    if (dependencies.length === 0) {
+      setShowFlowCreationModal(false);
+      setFlowCreationCompleted(true);
+      setCurrentStepIndex(prev => prev + 1);
+      return;
+    }
+  
+    setIsSavingDependencies(true);
+    
+    try {
+      // Group dependencies by target milestone
+      const dependenciesByTarget = new Map<number, number[]>();
+      
+      dependencies.forEach(dep => {
+        const targetId = dep.targetId;
+        const sourceId = dep.sourceId;
+        
+        if (!dependenciesByTarget.has(targetId)) {
+          dependenciesByTarget.set(targetId, []);
+        }
+        dependenciesByTarget.get(targetId)!.push(sourceId);
+      });
+    
+      // Update each target milestone with its dependencies
+      const updatePromises: Promise<any>[] = [];
+      
+      for (const [targetMilestoneId, sourceMilestoneIds] of dependenciesByTarget) {
+        const targetMilestone = savedMilestones.find(m => m.id === targetMilestoneId);
+        
+        if (!targetMilestone) {
+          continue; // Skip missing milestones silently
+        }
+      
+        // Merge new dependencies with existing ones
+        const existingDependencies = targetMilestone.dependencies || [];
+        const allDependencies = [...existingDependencies];
+        sourceMilestoneIds.forEach(sourceId => {
+          if (!allDependencies.includes(sourceId)) {
+            allDependencies.push(sourceId);
+          }
+        });
+      
+        // PATCH request for this milestone
+        const updatePromise = fetch(`${API}/milestones/${targetMilestoneId}/`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken || ''}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            dependencies: allDependencies
+          }),
+        }).then(async response => {
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Failed to update milestone dependencies: ${errorData.detail || 'Unknown error'}`);
+          }
+          return response.json();
+        });
+      
+        updatePromises.push(updatePromise);
+      }
+    
+      // Wait for all milestone updates to complete
+      const results = await Promise.all(updatePromises);
+    
+      // Update local saved milestones with new dependency data
+      const updatedSavedMilestones = savedMilestones.map(milestone => {
+        const updatedMilestone = results.find(r => r.id === milestone.id);
+        return updatedMilestone || milestone;
+      });
+      setSavedMilestones(updatedSavedMilestones);
+    
+      // Success flow
+      setShowFlowCreationModal(false);
+      setFlowCreationCompleted(true);
+      setCurrentStepIndex(prev => prev + 1);
+      
+      const dependencyCount = dependencies.length;
+      
+      showToast.success(`Flow created successfully! ${dependencyCount} dependencies established.`);
+    
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unable to save dependencies';
+      showToast.error(`Failed to save flow: ${errorMessage}`);
+      
+      // Log error for monitoring (keep this one for production debugging)
+      console.error('Flow creation error:', error);
+    } finally {
+      setIsSavingDependencies(false);
     }
   };
 
@@ -768,13 +876,22 @@ const FormStepper: React.FC = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Create New Flightmap Data</h1>
-            <p className="text-gray-600">Step-by-step process to create complete flightmap structure.</p>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              Create Strategic Initiative  {/* Updated title */}
+            </h1>
+            <p className="text-gray-600">
+              Step-by-step process to create comprehensive strategy execution framework.
+            </p>
+            {formData.strategies && formData.strategies.strategies?.[0] && (
+              <div className="mt-2 text-sm text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full inline-block">
+                Strategy: {formData.strategies.strategies[0].name}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -990,6 +1107,28 @@ const FormStepper: React.FC = () => {
           onDeleteDraft={deleteDraft}
           isLoading={isLoadingDrafts}
         />
+      )}
+      {/* Flow Creation Decision Popup */}
+      {showFlowCreationPopup && savedMilestones.length > 1 && (
+        <FlowCreationPopup
+          isVisible={showFlowCreationPopup}
+          milestoneCount={savedMilestones.length}
+          onEnterFlowMode={handleEnterFlowMode}
+          onSkip={handleSkipFlowCreation}
+        />
+      )}
+      {/* Flow Creation Modal with Real Milestone Data */}
+      {showFlowCreationModal && savedMilestones.length > 0 && (
+        <FlowCreationErrorBoundary>
+          <FlowCreationModal
+            isOpen={showFlowCreationModal}
+            onClose={() => setShowFlowCreationModal(false)}
+            milestones={savedMilestones}
+            onSaveDependencies={handleSaveDependencies}
+            onSkip={handleSkipFlowCreation}
+            isSaving={isSavingDependencies}
+          />
+        </FlowCreationErrorBoundary>
       )}
       {lastAutoSave && (
         <div className="text-xs text-gray-500 flex items-center gap-1">

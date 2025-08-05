@@ -175,19 +175,19 @@ export const ProgramForm: React.FC<ProgramFormProps> = ({ editMode = false }) =>
   };
 
   // Strategy-based filtering for strategic goals
-const getFilteredStrategicGoals = (strategyId: number) => {
-  if (!strategicGoals || !strategyId) return strategicGoalOptions;
-  
-  return strategicGoals
-    .filter(goal => {
-      // Handle both object and number formats for robustness
-      const goalStrategyId = typeof goal.strategy === 'object' 
-        ? goal.strategy.id 
-        : goal.strategy;
-      return goalStrategyId === strategyId;
-    })
-    .map(goal => ({ label: goal.goal_text, value: goal.id }));
-};
+  const getFilteredStrategicGoals = (strategyId: number) => {
+    if (!strategicGoals || !strategyId) return strategicGoalOptions;
+
+    return strategicGoals
+      .filter(goal => {
+        // Handle both object and number formats for robustness
+        const goalStrategyId = typeof goal.strategy === 'object' 
+          ? goal.strategy.id 
+          : goal.strategy;
+        return goalStrategyId === strategyId;
+      })
+      .map(goal => ({ label: goal.goal_text, value: goal.id }));
+  };
 
   return (
     <div className="space-y-8">
@@ -358,10 +358,12 @@ const getFilteredStrategicGoals = (strategyId: number) => {
                     label="Executive Sponsors"
                     options={userOptions}
                     value={watch(`programs.${index}.executive_sponsors`) || []}
-                    onChange={(newValue) => setValue(`programs.${index}.executive_sponsors`, newValue.map(val => Number(val)))}
+                    onChange={(newValue) => setValue(`programs.${index}.executive_sponsors`, newValue)}
                     isLoading={loadingUsers}
                     error={errorUsers}
                     placeholder="Select executive sponsors..."
+                    allowCustomInput={true} // NEW
+                    customInputPlaceholder="Add executive sponsor by name..." // NEW
                   />
                 </div>
                 <div>
@@ -369,10 +371,12 @@ const getFilteredStrategicGoals = (strategyId: number) => {
                     label="Program Leads"
                     options={userOptions}
                     value={watch(`programs.${index}.program_leads`) || []}
-                    onChange={(newValue) => setValue(`programs.${index}.program_leads`, newValue.map(val => Number(val)))}
+                    onChange={(newValue) => setValue(`programs.${index}.program_leads`, newValue)}
                     isLoading={loadingUsers}
                     error={errorUsers}
                     placeholder="Select program leads..."
+                    allowCustomInput={true} // NEW
+                    customInputPlaceholder="Add program lead by name..." // NEW
                   />
                 </div>
               </div>
@@ -382,10 +386,12 @@ const getFilteredStrategicGoals = (strategyId: number) => {
                   label="Workforce Sponsors"
                   options={userOptions}
                   value={watch(`programs.${index}.workforce_sponsors`) || []}
-                  onChange={(newValue) => setValue(`programs.${index}.workforce_sponsors`, newValue.map(val => Number(val)))}
+                  onChange={(newValue) => setValue(`programs.${index}.workforce_sponsors`, newValue)}
                   isLoading={loadingUsers}
                   error={errorUsers}
                   placeholder="Select workforce sponsors..."
+                  allowCustomInput={true} // NEW
+                  customInputPlaceholder="Add workforce sponsor by name..." // NEW
                 />
               </div>
 

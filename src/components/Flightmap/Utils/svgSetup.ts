@@ -47,7 +47,8 @@ export function initializeVisualizationSVG(
     .attr("width", width)
     .attr("height", height)
     .attr("viewBox", `0 0 ${width} ${height}`)
-    .attr("class", className);
+    .attr("class", className)
+    .style("overflow", "visible");
 
   // Create container group
   const container = svgEl.append("g")
