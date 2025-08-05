@@ -1,7 +1,14 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Strategy } from '@/types/flightmap';
-import { useUpdateMilestoneDeadline } from '@/api/flightmap';
+import { 
+  useUpdateMilestoneDeadline, 
+  useDeleteMilestone, 
+  useDeleteWorkstream, 
+  useDeleteActivity, 
+  useRemoveDependency 
+} from '@/api/flightmap';
+import { showToast } from '@/components/Forms/Utils/toastUtils';
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
@@ -24,6 +31,10 @@ interface FlightmapContextType {
   // Mutations
   deleteFlightmap: (id: number) => Promise<void>;
   updateMilestoneDeadline: (milestoneId: string, newDeadline: Date) => Promise<boolean>;
+  deleteMilestone: (milestoneId: number) => Promise<boolean>;
+  deleteWorkstream: (workstreamId: number) => Promise<boolean>;
+  deleteActivity: (activityId: number) => Promise<boolean>;
+  removeDependency: (sourceId: number, targetId: number) => Promise<boolean>;
   
   // Utilities
   refetch: () => void;
@@ -50,6 +61,10 @@ export const FlightmapProvider: React.FC<FlightmapProviderProps> = ({ children }
   
   // Mutations
   const updateMilestoneMutation = useUpdateMilestoneDeadline();
+  const deleteMilestoneMutation = useDeleteMilestone();
+  const deleteWorkstreamMutation = useDeleteWorkstream();
+  const deleteActivityMutation = useDeleteActivity();
+  const removeDependencyMutation = useRemoveDependency();
 
   // Query for flightmaps
   const { data: flightmaps, isLoading, isError, error, refetch } = useQuery({
@@ -128,6 +143,58 @@ export const FlightmapProvider: React.FC<FlightmapProviderProps> = ({ children }
     }
   };
 
+    // Implement deletion methods
+  const deleteMilestone = async (milestoneId: number): Promise<boolean> => {
+    try {
+      await deleteMilestoneMutation.mutateAsync({ milestoneId });
+      showToast.success('Milestone deleted successfully');
+      return true;
+    } catch (error) {
+      console.error('Failed to delete milestone:', error);
+      showToast.error('Failed to delete milestone');
+      return false;
+    }
+  };
+
+  const deleteWorkstream = async (workstreamId: number): Promise<boolean> => {
+    try {
+      await deleteWorkstreamMutation.mutateAsync({ workstreamId });
+      showToast.success('Workstream deleted successfully');
+      return true;
+    } catch (error) {
+      console.error('Failed to delete workstream:', error);
+      showToast.error('Failed to delete workstream');
+      return false;
+    }
+  };
+
+  const deleteActivity = async (activityId: number): Promise<boolean> => {
+    try {
+      await deleteActivityMutation.mutateAsync({ activityId });
+      showToast.success('Activity deleted successfully');
+      return true;
+    } catch (error) {
+      console.error('Failed to delete activity:', error);
+      showToast.error('Failed to delete activity');
+      return false;
+    }
+  };
+
+  const removeDependency = async (sourceId: number, targetId: number): Promise<boolean> => {
+    try {
+      await removeDependencyMutation.mutateAsync({ 
+        milestoneId: targetId, 
+        dependencyId: sourceId 
+      });
+      showToast.success('Dependency removed successfully');
+      return true;
+    } catch (error) {
+      console.error('Failed to remove dependency:', error);
+      showToast.error('Failed to remove dependency');
+      return false;
+    }
+  };
+
   const value: FlightmapContextType = {
     flightmap,
     flightmaps,
@@ -141,6 +208,10 @@ export const FlightmapProvider: React.FC<FlightmapProviderProps> = ({ children }
     deleteFlightmap,
     updateMilestoneDeadline,
     refetch,
+    deleteMilestone,
+    deleteWorkstream,
+    deleteActivity,
+    removeDependency,
   };
 
   return (
