@@ -1319,7 +1319,135 @@ const FlightmapVisualizationInner: React.FC<{
     activitiesGroup.current.selectAll("*").remove();
     dependencyGroup.current.selectAll("*").remove();
 
-    // Function to add label to activity path
+    // Helper function to add delete button to activity path
+    function addActivityDeleteButton(
+      pathElement: d3.Selection<SVGPathElement, unknown, null, undefined>,
+      activity: any
+    ) {
+      const pathNode = pathElement.node();
+      if (!pathNode) return;
+
+      try {
+        const pathLength = pathNode.getTotalLength();
+        if (pathLength === 0) return;
+
+        // Position delete button at 25% along the path (not at the end)
+        const buttonPosition = pathNode.getPointAtLength(pathLength * 0.25);
+
+        // Create delete button group
+        const deleteBtn = activitiesGroup.current!
+          .append("g")
+          .attr("class", "activity-delete-btn")
+          .attr("data-activity-id", activity.id)
+          .raise()
+          .attr("cursor", "pointer")
+          .attr("opacity", isEditMode ? 1 : 0)
+          .style("pointer-events", isEditMode ? "all" : "none")
+          .on("mousedown", function(event) {
+            console.log("Activity delete mousedown!", activity.id);
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+
+            setTimeout(() => {
+              handleDeleteActivity(activity.id, activity.name);
+            }, 0);
+          });
+
+        // Delete button background circle
+        deleteBtn
+          .append("circle")
+          .attr("cx", buttonPosition.x)
+          .attr("cy", buttonPosition.y)
+          .attr("r", 8)
+          .attr("fill", "#ef4444")
+          .attr("stroke", "#dc2626")
+          .attr("stroke-width", 1);
+
+        // Delete icon (X)
+        deleteBtn
+          .append("text")
+          .attr("x", buttonPosition.x)
+          .attr("y", buttonPosition.y)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "10px")
+          .attr("fill", "white")
+          .attr("font-weight", "bold")
+          .text("×");
+
+      } catch (error) {
+        console.warn(`Failed to add delete button for activity ${activity.id}:`, error);
+      }
+    }
+
+    // Helper function to add delete button to dependency path
+    function addDependencyDeleteButton(
+      pathElement: d3.Selection<SVGPathElement, unknown, null, undefined>,
+      dependency: any,
+      isDuplicate: boolean = false
+    ) {
+      const pathNode = pathElement.node();
+      if (!pathNode) return;
+
+      try {
+        const pathLength = pathNode.getTotalLength();
+        if (pathLength === 0) return;
+
+        // Position delete button at 50% along the path (different from activities at 25%)
+        const buttonPosition = pathNode.getPointAtLength(pathLength * 0.50);
+
+        // Create delete button group
+        const deleteBtn = dependencyGroup.current!
+          .append("g")
+          .attr("class", "dependency-delete-btn")
+          .attr("data-source-id", dependency.source)
+          .raise()
+          .attr("data-target-id", dependency.target)
+          .attr("cursor", "pointer")
+          .attr("opacity", isEditMode ? 1 : 0)
+          .style("pointer-events", isEditMode ? "all" : "none")
+          .on("mousedown", function(event) {
+            console.log("Dependency delete mousedown!", dependency.source, "->", dependency.target);
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+
+            setTimeout(() => {
+              handleRemoveDependency(dependency.source, dependency.target);
+            }, 0);
+          });
+
+        // Delete button background circle (slightly different color for dependencies)
+        deleteBtn
+          .append("circle")
+          .attr("cx", buttonPosition.x)
+          .attr("cy", buttonPosition.y)
+          .attr("r", 8)
+          .attr("fill", isDuplicate ? "#f59e0b" : "#ef4444") // Orange for duplicates, red for regular
+          .attr("stroke", isDuplicate ? "#d97706" : "#dc2626")
+          .attr("stroke-width", 1);
+
+        // Delete icon (X)
+        deleteBtn
+          .append("text")
+          .attr("x", buttonPosition.x)
+          .attr("y", buttonPosition.y)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "10px")
+          .attr("fill", "white")
+          .attr("font-weight", "bold")
+          .text("×");
+
+      } catch (error) {
+        console.warn(`Failed to add delete button for dependency ${dependency.source}->${dependency.target}:`, error);
+      }
+    }
+
+    // Function to add label to activity path (simplified - no delete button here)
     function addActivityLabel(
       path: d3.Selection<SVGPathElement, unknown, null, undefined>,
       activity: any
@@ -1329,7 +1457,6 @@ const FlightmapVisualizationInner: React.FC<{
         const pathLength = pathNode.getTotalLength();
         const midpoint = pathNode.getPointAtLength(pathLength / 2);
 
-        // ─── ENHANCED WITH DELETE FUNCTIONALITY ─────────────────────────
         const labelGroup = activitiesGroup.current!
           .append("g")
           .attr("class", "activity-label-group")
@@ -1339,7 +1466,7 @@ const FlightmapVisualizationInner: React.FC<{
           .append("rect")
           .attr("x", midpoint.x - 100)
           .attr("y", midpoint.y - 10)
-          .attr("width", 210)
+          .attr("width", 200) // Reduced width since no delete button
           .attr("height", 20)
           .attr("fill", "white")
           .attr("fill-opacity", 0.8)
@@ -1356,48 +1483,7 @@ const FlightmapVisualizationInner: React.FC<{
           .attr("fill", "#3a3c40")
           .attr("data-activity-id", activity.id)
           .text(activity.name);
-        wrapText(textEl, 220);
-
-        // ADD DELETE BUTTON
-        const deleteBtn = labelGroup
-          .append("g")
-          .attr("class", "activity-delete-btn")
-          .raise()
-          .attr("cursor", "pointer")
-          .attr("opacity", isEditMode ? 1 : 0)
-          .style("pointer-events", isEditMode ? "all" : "none")
-          .on("mousedown", function(event) {
-            console.log("Activity delete mousedown!", activity.id);
-            
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            
-            setTimeout(() => {
-              handleDeleteActivity(activity.id, activity.name);
-            }, 0);
-          });
-
-        deleteBtn
-          .append("circle")
-          .attr("cx", midpoint.x + 95)
-          .attr("cy", midpoint.y)
-          .attr("r", 7)
-          .attr("fill", "#ef4444")
-          .attr("stroke", "#dc2626")
-          .attr("stroke-width", 1);
-
-        deleteBtn
-          .append("text")
-          .attr("x", midpoint.x + 95)
-          .attr("y", midpoint.y)
-          .attr("text-anchor", "middle")
-          .attr("dominant-baseline", "middle")
-          .attr("font-size", "10px")
-          .attr("fill", "white")
-          .attr("font-weight", "bold")
-          .text("×");
-        // ─── END DELETE FUNCTIONALITY ───────────────────────────────────
+        wrapText(textEl, 190); // Reduced wrap width
       }
     }
 
@@ -1429,9 +1515,6 @@ const FlightmapVisualizationInner: React.FC<{
         .attr("data-source-id", sourceId)
         .attr("data-target-id", targetId)
         .attr("data-duplicate-id", duplicateId)
-        .attr("shape-rendering", "geometricPrecision")
-        .attr("vector-effect", "non-scaling-stroke")
-        .style("will-change", "d")
         .datum({
           ...activity,
           id: activity.id,
@@ -1449,11 +1532,17 @@ const FlightmapVisualizationInner: React.FC<{
         .on("mousemove", handleD3MouseMove)
         .on("mouseout", handleD3MouseOut);
       
-      addActivityLabel(path, {
-        ...activity,
-        id: `${activity.id}-${targetId}`,
-        name: activity.name + " (cross-workstream)"
-      });
+      // Add delete button to cross-workstream activities
+      addActivityDeleteButton(path, activity);
+      
+      // Add label if activity has name
+      if (activity.name) {
+        addActivityLabel(path, {
+          ...activity,
+          id: `${activity.id}-${targetId}`,
+          name: activity.name + " (cross-workstream)"
+        });
+      }
     });
 
     // 2. Draw regular activity connections
@@ -1470,13 +1559,10 @@ const FlightmapVisualizationInner: React.FC<{
       
         const path = activitiesGroup.current!
           .append("path")
-          .attr(
-            "d",
-            d3.linkHorizontal()({
-              source: [source.x, source.y],
-              target: [target.x, target.y],
-            } as DefaultLinkObject) ?? ""
-          )
+          .attr("d", d3.linkHorizontal()({
+            source: [source.x, source.y],
+            target: [target.x, target.y],
+          } as DefaultLinkObject) ?? "")
           .attr("fill", "none")
           .attr("stroke", workstream.color)
           .attr("stroke-width", 1.5)
@@ -1496,7 +1582,13 @@ const FlightmapVisualizationInner: React.FC<{
           .on("mousemove", handleD3MouseMove)
           .on("mouseout", handleD3MouseOut);
         
-        addActivityLabel(path, activity);
+        // Add delete button to single activity
+        addActivityDeleteButton(path, activity);
+        
+        // Add label if activity has name
+        if (activity.name) {
+          addActivityLabel(path, activity);
+        }
       } else {
         // Handle multiple activities between same milestone pair
         const centerX = (source.x + target.x) / 2;
@@ -1531,6 +1623,7 @@ const FlightmapVisualizationInner: React.FC<{
             .attr("stroke-width", 1.5)
             .attr("marker-end", "url(#arrow)")
             .attr("class", "same-workstream-activity")
+            .attr("data-activity-id", activity.id)
             .datum({
               ...activity,
               source_milestone: sourceId,
@@ -1542,57 +1635,60 @@ const FlightmapVisualizationInner: React.FC<{
             .on("mousemove", handleD3MouseMove)
             .on("mouseout", handleD3MouseOut);
 
-          addActivityLabel(path, activity);
+          // Add delete button to curved activity
+          addActivityDeleteButton(path, activity);
+          
+          // Add label if activity has name
+          if (activity.name) {
+            addActivityLabel(path, activity);
+          }
         });
       }
     });
 
-    // 3. Draw dependencies between milestones in the same workstream
+    // 3. Draw dependencies between milestones (with delete buttons)
     sameWorkstreamDependencies.forEach((dep) => {
       const sourceCoord = placementCoordinates[dep.source.toString()];
       const targetCoord = placementCoordinates[dep.target.toString()];
 
       if (!sourceCoord || !targetCoord) return;
 
-      dependencyGroup.current!
+      const dependencyPath = dependencyGroup.current!
         .append("path")
         .attr("class", "dependency-line clickable-dependency")
-        .attr(
-          "d",
-          d3.linkHorizontal()({
-            source: [sourceCoord.x, sourceCoord.y],
-            target: [targetCoord.x, targetCoord.y],
-          } as DefaultLinkObject) ?? ""
-        )
+        .attr("d", d3.linkHorizontal()({
+          source: [sourceCoord.x, sourceCoord.y],
+          target: [targetCoord.x, targetCoord.y],
+        } as DefaultLinkObject) ?? "")
         .attr("fill", "none")
         .attr("stroke", "#6b7280")
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "4 3")
-        .attr("shape-rendering", "geometricPrecision")
-        .attr("vector-effect", "non-scaling-stroke")
-        .style("will-change", "d")
         .attr("cursor", "pointer")
         .datum(dep)
         .on("mouseover", (event) => {
           d3.select(event.target)
-            .attr("stroke", "#ef4444") // Highlight in red
+            .attr("stroke", "#ef4444")
             .attr("stroke-width", 3);
           handleD3MouseOver(event, "Click to remove dependency");
         })
         .on("mousemove", handleD3MouseMove)
         .on("mouseout", (event) => {
           d3.select(event.target)
-            .attr("stroke", "#6b7280") // Reset color
+            .attr("stroke", "#6b7280")
             .attr("stroke-width", 2);
           handleD3MouseOut();
         })
-        .on("click", (event, d) => { // ─── ADDED: Click handler ────────
+        .on("click", (event, d) => {
           event.stopPropagation();
           handleRemoveDependency(d.source, d.target);
         });
+
+      // Add delete button to dependency path
+      addDependencyDeleteButton(dependencyPath as d3.Selection<SVGPathElement, unknown, null, undefined>, dep, false);
     });
 
-    // 4. Draw dotted lines for duplicate milestone connections
+    // 4. Draw dotted lines for duplicate milestone connections (with delete buttons)
     Object.values(placementGroups)
       .flat()
       .filter(placement => placement.isDuplicate && placement.originalMilestoneId)
@@ -1616,29 +1712,23 @@ const FlightmapVisualizationInner: React.FC<{
           placementCoordinates[targetMilestoneId.toString()] : 
           null;
 
-        if (targetCoord) {
+        if (targetCoord && relatedDependency) {
           const originalWorkstream = workstreams.find(
             ws => ws.id === allMilestones.find(m => m.id === originalMilestoneId)?.workstreamId
           );
 
-          dependencyGroup.current!
+          const duplicateDependencyPath = dependencyGroup.current!
             .append("path")
             .attr("class", "duplicate-dependency-line")
-            .attr(
-              "d",
-              d3.linkHorizontal()({
-                source: [x, y],
-                target: [targetCoord.x, targetCoord.y],
-              } as DefaultLinkObject) ?? ""
-            )
+            .attr("d", d3.linkHorizontal()({
+              source: [x, y],
+              target: [targetCoord.x, targetCoord.y],
+            } as DefaultLinkObject) ?? "")
             .attr("fill", "none")
             .attr("stroke", originalWorkstream?.color || "#6b7280")
             .attr("stroke-width", 2)
             .attr("stroke-dasharray", "5 5")
-            .attr("opacity", 2)
-            .attr("shape-rendering", "geometricPrecision")
-            .attr("vector-effect", "non-scaling-stroke")
-            .style("will-change", "d")
+            .attr("opacity", 0.8)
             .on("mouseover", (event) => {
               handleD3MouseOver(
                 event, 
@@ -1647,6 +1737,9 @@ const FlightmapVisualizationInner: React.FC<{
             })
             .on("mousemove", handleD3MouseMove)
             .on("mouseout", handleD3MouseOut);
+
+          // Add delete button to duplicate dependency path (orange color to distinguish)
+          addDependencyDeleteButton(duplicateDependencyPath, relatedDependency, true);
         }
       });
     
@@ -1657,7 +1750,7 @@ const FlightmapVisualizationInner: React.FC<{
     placementCoordinates, connectionGroups, crossWorkstreamActivityData, 
     sameWorkstreamDependencies, placementGroups, workstreams, allMilestones, 
     dependencies, handleD3MouseOver, handleD3MouseMove, handleD3MouseOut,
-    handleDeleteActivity, handleRemoveDependency, isEditMode]);
+    handleDeleteActivity, isEditMode, handleRemoveDependency]);
 
   // ─── Render State Management ─────────────────────────────────────────────
   const [renderTrigger, setRenderTrigger] = useState({
