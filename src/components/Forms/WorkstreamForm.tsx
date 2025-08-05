@@ -16,8 +16,8 @@ export type WorkstreamFormData = {
     name: string;
     vision?: string;
     time_horizon: string;
-    workstream_leads: number[];
-    team_members: number[];
+    workstream_leads: (string | number)[];
+    team_members: (string | number)[];
     improvement_targets: string[];
     organizational_goals: string[];
     color: string;

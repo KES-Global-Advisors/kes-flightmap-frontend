@@ -18,9 +18,9 @@ export type StrategyFormData = {
     owner: number;
     vision: string;
     time_horizon: string;
-    executive_sponsors: number[];
-    strategy_leads: number[];
-    communication_leads: number[];
+    executive_sponsors: (string | number)[];
+    strategy_leads: (string | number)[];
+    communication_leads: (string | number)[];
   }[];
 };
 

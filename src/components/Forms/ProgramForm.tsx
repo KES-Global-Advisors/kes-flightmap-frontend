@@ -14,9 +14,9 @@ export type ProgramFormData = {
     name: string;
     vision?: string;
     time_horizon: string;
-    executive_sponsors: number[];
-    program_leads: number[];
-    workforce_sponsors: number[];
+    executive_sponsors: (string | number)[];
+    program_leads: (string | number)[];
+    workforce_sponsors: (string | number)[];
     key_improvement_targets: number[];
     key_organizational_goals: number[];
   }[];
