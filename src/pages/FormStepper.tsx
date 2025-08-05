@@ -600,8 +600,6 @@ const FormStepper: React.FC = () => {
     const isLastStep = currentStepIndex === FORM_STEPS.length - 1;
     const payloadArray = transformData(currentStepId, data);
     const results: unknown[] = [];
-    // separates the hardcoded endpoint string from any StepId-related type checking.
-    const FLIGHTMAP_ENDPOINT = 'flightmaps';
 
     try {
       // Submit data to backend
@@ -633,7 +631,7 @@ const FormStepper: React.FC = () => {
       setFormData(prev => ({
         ...prev,
         [currentStepId]: results,
-      }));
+      }) as FormDataMap);
 
       // Check for flow creation AFTER successful milestone submission
       if (currentStepId === 'milestones' && !flowCreationCompleted && results.length > 1) {
@@ -653,7 +651,7 @@ const FormStepper: React.FC = () => {
         // Mark the flightmap as complete (no longer a draft)
         if (formData.strategies && Array.isArray(formData.strategies) && formData.strategies[0]?.id) {
           try {
-            await fetch(`${API}/${FLIGHTMAP_ENDPOINT}/${formData.strategies[0].id}/mark_complete/`, {
+            await fetch(`${API}/flightmaps/${formData.strategies[0].id}/mark_complete/`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${accessToken || ''}`,
