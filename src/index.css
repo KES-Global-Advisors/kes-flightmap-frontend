@@ -4,3 +4,42 @@
   --font-sans: "InterVariable", "sans-serif";
   /* ... */
 }
+
+/* Flightmap deletion styles */
+/* .milestone-delete-btn,
+.workstream-delete-btn,
+.activity-delete-btn {
+  transition: opacity 200ms ease-in-out;
+  pointer-events: all;
+}
+
+.milestone:hover .milestone-delete-btn,
+.workstream:hover .workstream-delete-btn,
+.activity-label-group:hover .activity-delete-btn {
+  z-index: 1000;
+}
+
+.dependency-line {
+  transition: stroke 200ms ease-in-out, stroke-width 200ms ease-in-out;
+}
+
+.dependency-line:hover {
+  cursor: pointer;
+  filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.5));
+} */
+
+.workstream-area {
+    transition: y 0.2s ease-out;
+}
+
+.workstream-guideline {
+  transition: y1 0.2s ease-out, y2 0.2s ease-out;
+}
+
+.milestone {
+  transition: transform 0.2s ease-out;
+}
+
+.milestone.dragging, .workstream.dragging {
+  transition: none;
+}

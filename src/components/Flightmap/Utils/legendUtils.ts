@@ -14,12 +14,14 @@ export interface LegendItem {
  * @param legendData Array of legend items to display
  * @param position Position object {x, y} for legend placement
  * @param resetCallback Optional callback for the reset button
+ * @param editModeCallback Optional callback for the edit mode toggle
  */
 export function createLegend(
   svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
   legendData: LegendItem[],
   position: { x: number, y: number },
-  resetCallback?: () => void
+  resetCallback?: () => void,
+  editModeCallback?: (editMode: boolean) => void
 ) {
   // Create legend group
   const legend = svg
@@ -28,6 +30,53 @@ export function createLegend(
     .attr("transform", `translate(${position.x}, ${position.y})`);
 
   const legendItemHeight = 30;
+  let currentY = 0;
+  
+  // Add Edit Mode toggle at the top
+  if (editModeCallback) {
+    const editModeToggle = legend
+      .append("g")
+      .attr("class", "edit-mode-toggle")
+      .attr("cursor", "pointer");
+
+    editModeToggle
+      .append("rect")
+      .attr("x", 0)
+      .attr("y", currentY)
+      .attr("width", 120)
+      .attr("height", 25)
+      .attr("rx", 4)
+      .attr("fill", "#f3f4f6")
+      .attr("stroke", "#d1d5db")
+      .attr("stroke-width", 1);
+
+    const toggleText = editModeToggle
+      .append("text")
+      .attr("x", 60)
+      .attr("y", currentY + 16)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "12px")
+      .attr("fill", "#4b5563")
+      .text("Edit Mode: OFF");
+
+    let isEditMode = false;
+    
+    editModeToggle.on("click", () => {
+      isEditMode = !isEditMode;
+      editModeCallback(isEditMode);
+      
+      // Update button appearance
+      editModeToggle.select("rect")
+        .attr("fill", isEditMode ? "#fef3c7" : "#f3f4f6")
+        .attr("stroke", isEditMode ? "#f59e0b" : "#d1d5db");
+      
+      toggleText
+        .text(`Edit Mode: ${isEditMode ? "ON" : "OFF"}`)
+        .attr("fill", isEditMode ? "#d97706" : "#4b5563");
+    });
+    
+    currentY += 35;  // Space after toggle button
+  }
   
   // Add legend items
   legend
@@ -36,7 +85,7 @@ export function createLegend(
     .enter()
     .append("g")
     .attr("class", "legend-item")
-    .attr("transform", (_, i) => `translate(0, ${i * legendItemHeight})`)
+    .attr("transform", (_, i) => `translate(0, ${currentY + i * legendItemHeight})`)
     .each(function (d) {
       const g = d3.select(this);
       const shapeSize = 15;
@@ -135,10 +184,10 @@ export function createLegend(
 
   // Add reset button if callback provided
   if (resetCallback) {
-    const resetButton = svg
+    const resetButton = legend
       .append("g")
       .attr("class", "reset-positions-button")
-      .attr("transform", `translate(${position.x}, ${position.y + (legendData.length + 1) * legendItemHeight})`)
+      .attr("transform", `translate(0, ${currentY + (legendData.length + 0.5) * legendItemHeight})`)
       .attr("cursor", "pointer")
       .on("click", resetCallback);
 

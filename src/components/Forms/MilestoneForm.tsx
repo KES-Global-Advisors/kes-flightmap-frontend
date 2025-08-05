@@ -2,7 +2,8 @@
 import React, { useEffect, useCallback, useMemo } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import useFetch from '../../hooks/UseFetch';
-import { StrategicGoal, Workstream, Milestone } from '../../types/model';
+import { StrategicGoal, Workstream, Milestone, Program } from '../../types/model';
+import { useStrategyScoped } from '../../contexts/StrategyContext';
 import { PlusCircle, Trash2, Target, Calendar, AlertTriangle, CheckCircle2, Info, Clock } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 import { FormLabel } from './Utils/RequiredFieldIndicator';
@@ -10,6 +11,7 @@ import { FormLabel } from './Utils/RequiredFieldIndicator';
 export type MilestoneFormData = {
   milestones: {
     id?: number;
+    program: number;
     workstream: number;
     name: string;
     description?: string;
@@ -52,10 +54,19 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
   });
   
   const API = import.meta.env.VITE_API_BASE_URL;
+
+  // NEW: Get strategy-scoped filtering functions
+  const { getStrategyFilteredUrl } = useStrategyScoped();
   
   // Data fetching with comprehensive error boundary handling
+  // Add program fetching
+  const programsUrl = getStrategyFilteredUrl(`${API}/programs/`, 'strategy');
+  const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program[]>(programsUrl);
+
+  // Keep existing workstreams fetch but we'll filter it differently
+  const workstreamsUrl = getStrategyFilteredUrl(`${API}/workstreams/`, 'program__strategy');
   const { data: fetchedMilestones, loading: loadingMilestones, error: errorMilestones } = useFetch<Milestone[]>(`${API}/milestones/`);
-  const { data: workstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(`${API}/workstreams/`);
+  const { data: allWorkstreams, loading: loadingWorkstreams, error: errorWorkstreams } = useFetch<Workstream[]>(workstreamsUrl);
   const { data: strategicGoals, loading: loadingGoals, error: errorGoals } = useFetch<StrategicGoal[]>(`${API}/strategic-goals/`);
 
   /**
@@ -70,6 +81,13 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
     })) : [],
     [strategicGoals]
   );
+
+  // Filter workstreams based on selected program for hierarchical selection
+  const getFilteredWorkstreams = useCallback((programId: number | string) => {
+    if (!allWorkstreams || !programId) return [];
+    const numericProgramId = typeof programId === 'string' ? parseInt(programId, 10) : programId;
+    return allWorkstreams.filter(ws => ws.program === numericProgramId);
+  }, [allWorkstreams]);
 
   // Merge fetched milestones and dependent milestones with conflict resolution
   const DependentMilestoneOptions = useMemo(() => {
@@ -101,6 +119,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
       defaultDeadline.setMonth(defaultDeadline.getMonth() + 3); // 3-month default planning horizon
       
       append({
+        program: 0,
         workstream: 0,
         name: "",
         description: "",
@@ -149,31 +168,20 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
       return 'Milestone name should not exceed 100 characters for practical display';
     }
 
-    // Duplicate detection within form scope with enhanced comparison
+    // Duplicate detection
     const currentMilestones = watch('milestones') || [];
     const duplicateCount = currentMilestones.filter((m, i) => 
       i !== index && m.name && m.name.trim().toLowerCase() === trimmedValue.toLowerCase()
     ).length;
-    
+
     if (duplicateCount > 0) {
       return 'Milestone names must be unique within the same workstream for clarity';
     }
 
-    // Business naming convention validation
+    // Basic naming convention validation
     const hasValidStructure = /^[A-Za-z][\w\s\-&\\.\\(\\)]+[A-Za-z0-9\\)]$/.test(trimmedValue);
     if (!hasValidStructure && trimmedValue.length > 1) {
-      return 'Milestone name should follow standard naming conventions';
-    }
-
-    // Semantic quality indicators with proactive guidance
-    const hasActionableLanguage = /\b(complete|deliver|achieve|implement|launch|establish|finalize|deploy)\b/i.test(trimmedValue);
-    if (!hasActionableLanguage) {
-      console.warn(`Milestone ${index + 1}: Consider using action-oriented language for clarity`);
-    }
-
-    const hasSpecificOutcome = /\b(phase|stage|version|release|approval|review|demo|pilot|beta|production)\b/i.test(trimmedValue);
-    if (!hasSpecificOutcome) {
-      console.warn(`Milestone ${index + 1}: Consider including specific outcome indicators`);
+      return 'Please use standard naming conventions';
     }
 
     return true;
@@ -222,7 +230,7 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
     // Cross-validate with workstream timeline if available
     const milestoneData = watch(`milestones.${index}`);
     if (milestoneData?.workstream) {
-      const associatedWorkstream = workstreams?.find(w => w.id === milestoneData.workstream);
+      const associatedWorkstream = allWorkstreams?.find((w: Workstream) => w.id === milestoneData.workstream);
       if (associatedWorkstream?.time_horizon) {
         const workstreamDeadline = new Date(associatedWorkstream.time_horizon);
         if (selectedDate > workstreamDeadline) {
@@ -411,20 +419,114 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
             </div>
             
             <div className="space-y-4">
-              {/* Workstream Selection with Enhanced Error Handling */}
-              <div>
-                <FormLabel label="Workstream" required />
-                {loadingWorkstreams ? (
-                  <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
-                    <Clock className="w-4 h-4 inline mr-2" />
-                    Loading workstreams...
-                  </div>
-                ) : errorWorkstreams ? (
-                  <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
-                    <AlertTriangle className="w-4 h-4 inline mr-2" />
-                    Critical error loading workstreams: {errorWorkstreams}
-                  </div>
-                ) : (
+
+            {/* STEP 1: Program Selection - Hierarchical Flow */}
+            <div>
+              <FormLabel label="Program" required />
+              <div className="mb-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                Step 1 of 2: Select Program first, then Workstream
+              </div>
+              {loadingPrograms ? (
+                <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
+                  <Clock className="w-4 h-4 inline mr-2" />
+                  Loading programs...
+                </div>
+              ) : errorPrograms ? (
+                <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
+                  <AlertTriangle className="w-4 h-4 inline mr-2" />
+                  Error loading programs: {errorPrograms}
+                </div>
+              ) : !programs || programs.length === 0 ? (
+                <div className="mt-1 block w-full p-3 text-yellow-600 bg-yellow-50 rounded-md">
+                  <Info className="w-4 h-4 inline mr-2" />
+                  No programs available. Create programs first.
+                </div>
+              ) : (
+                <>
+                  <select
+                    {...register(`milestones.${index}.program` as const, {
+                      required: 'Program selection is required for hierarchical organization',
+                      onChange: () => {
+                        // Reset workstream when program changes
+                        setValue(`milestones.${index}.workstream`, 0);
+                      }
+                    })}
+                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
+                      errors.milestones?.[index]?.program ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''
+                    }`}
+                    disabled={editMode}
+                  >
+                    <option value="">Select a program</option>
+                    {programs.map((program: Program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name}
+                      </option>
+                    ))}
+                  </select>
+                  {editMode && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Program association is immutable in edit mode for data integrity
+                    </p>
+                  )}
+                  {errors.milestones?.[index]?.program && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.milestones[index]?.program?.message}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* STEP 2: Workstream Selection - Filtered by Program */}
+            <div>
+              <FormLabel label="Workstream" required />
+              <div className="mb-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                Step 2 of 2: Select from workstreams in chosen program
+              </div>
+              {(() => {
+                const selectedProgram = watch(`milestones.${index}.program`);
+                const selectedProgramId = selectedProgram ? parseInt(selectedProgram.toString(), 10) : 0;
+                const filteredWorkstreams = selectedProgramId && !isNaN(selectedProgramId)
+                  ? getFilteredWorkstreams(selectedProgramId)
+                  : [];
+                
+                if (!selectedProgram) {
+                  return (
+                    <div className="mt-1 block w-full p-3 text-blue-600 bg-blue-50 rounded-md">
+                      <Info className="w-4 h-4 inline mr-2" />
+                      Please select a program first
+                    </div>
+                  );
+                }
+                
+                if (loadingWorkstreams) {
+                  return (
+                    <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
+                      <Clock className="w-4 h-4 inline mr-2" />
+                      Loading workstreams...
+                    </div>
+                  );
+                }
+                
+                if (errorWorkstreams) {
+                  return (
+                    <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
+                      <AlertTriangle className="w-4 h-4 inline mr-2" />
+                      Critical error loading workstreams: {errorWorkstreams}
+                    </div>
+                  );
+                }
+                
+                if (filteredWorkstreams.length === 0) {
+                  return (
+                    <div className="mt-1 block w-full p-3 text-yellow-600 bg-yellow-50 rounded-md">
+                      <Info className="w-4 h-4 inline mr-2" />
+                      No workstreams available in selected program. Create workstreams first.
+                    </div>
+                  );
+                }
+                
+                return (
                   <>
                     <select
                       {...register(`milestones.${index}.workstream` as const, {
@@ -437,12 +539,15 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
                       disabled={editMode}
                     >
                       <option value="">Select a workstream</option>
-                      {workstreams?.map((ws: Workstream) => (
+                      {filteredWorkstreams.map((ws: Workstream) => (
                         <option key={ws.id} value={ws.id}>
                           {ws.name}
                         </option>
                       ))}
                     </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Showing {filteredWorkstreams.length} workstream(s) from selected program
+                    </p>
                     {editMode && (
                       <p className="mt-1 text-xs text-gray-500">
                         Workstream association is immutable in edit mode for data integrity
@@ -454,8 +559,9 @@ const MilestoneForm: React.FC<MilestoneFormProps> = ({
                       </p>
                     )}
                   </>
-                )}
-              </div>
+                );
+              })()}
+            </div>
               
               {/* Milestone Name with Advanced Validation */}
               <div>

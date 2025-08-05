@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
+import { StrategyProvider } from './contexts/StrategyContext';
 import { ReactNode, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
@@ -106,6 +107,7 @@ function App() {
     />
     <ThemeProvider>
       <AuthProvider>
+        <StrategyProvider>
         <BrowserRouter>
           <AppLayout>
             <Routes>
@@ -155,6 +157,7 @@ function App() {
             </Routes>
           </AppLayout>
         </BrowserRouter>
+        </StrategyProvider>
       </AuthProvider>
     </ThemeProvider>
     </>

@@ -7,6 +7,7 @@ import { Program, User } from '../../types/model';
 import { PlusCircle, Trash2, Users, Palette, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { MultiSelect } from './Utils/MultiSelect';
 import { FormLabel } from './Utils/RequiredFieldIndicator';
+import { useStrategyScoped } from '../../contexts/StrategyContext'; 
 
 export type WorkstreamFormData = {
   workstreams: {
@@ -44,8 +45,13 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
     name: "workstreams",
   });
 
+  // NEW: Get strategy-scoped filtering functions
+  const { getStrategyFilteredUrl, getCurrentStrategyId } = useStrategyScoped();
+
+  // Lines 40-45: Update data fetching to use strategy-scoped filtering
   // Data fetching with comprehensive error boundary handling
-  const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program[]>(`${API}/programs/`);
+  const programsUrl = getStrategyFilteredUrl(`${API}/programs/`);
+  const { data: programs, loading: loadingPrograms, error: errorPrograms } = useFetch<Program[]>(programsUrl);
   const { data: users, loading: loadingUsers, error: errorUsers } = useFetch<User[]>(`${API}/users/`);
 
   // Memoized data transformations for performance optimization
@@ -345,17 +351,27 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
             </div>
             
             <div className="space-y-4">
-              {/* Program Selection with Enhanced Error Handling */}
+              {/* Program Selection with Enhanced Error Handling and Strategy-Scoped Filtering */}
               <div>
                 <FormLabel label="Program" required />
+                {getCurrentStrategyId() && (
+                  <div className="mb-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                    Showing programs for current strategy only
+                  </div>
+                )}
                 {loadingPrograms ? (
                   <div className="mt-1 block w-full p-3 text-gray-500 bg-gray-50 rounded-md animate-pulse">
-                    Loading programs...
+                    Loading strategy programs...
                   </div>
                 ) : errorPrograms ? (
                   <div className="mt-1 block w-full p-3 text-red-600 bg-red-50 rounded-md">
                     <AlertTriangle className="w-4 h-4 inline mr-2" />
-                    Critical error loading programs: {errorPrograms}
+                    Error loading programs: {errorPrograms}
+                  </div>
+                ) : !programs || programs.length === 0 ? (
+                  <div className="mt-1 block w-full p-3 text-yellow-600 bg-yellow-50 rounded-md">
+                    <Info className="w-4 h-4 inline mr-2" />
+                    No programs available for the current strategy. Create programs first.
                   </div>
                 ) : (
                   <>
@@ -370,7 +386,7 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
                       disabled={editMode}
                     >
                       <option value="">Select a program</option>
-                      {programs?.map((program: Program) => (
+                      {programs.map((program: Program) => (
                         <option key={program.id} value={program.id}>
                           {program.name}
                         </option>
@@ -381,6 +397,11 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
                         Program association is immutable in edit mode for data integrity
                       </p>
                     )}
+                    {!editMode && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Only programs within the current strategy are shown for focused execution
+                      </p>
+                    )}
                     {errors.workstreams?.[index]?.program && (
                       <p className="mt-1 text-sm text-red-600">
                         {errors.workstreams[index]?.program?.message}
@@ -388,8 +409,7 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
                     )}
                   </>
                 )}
-              </div>
-              
+              </div>        
               {/* Workstream Name with Advanced Validation */}
               <div>
                 <FormLabel label="Name" required />
@@ -487,10 +507,12 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
                     label="Workstream Leads"
                     options={userOptions}
                     value={watch(`workstreams.${index}.workstream_leads`) || []}
-                    onChange={(newValue) => setValue(`workstreams.${index}.workstream_leads`, newValue.map(val => Number(val)))}
+                    onChange={(newValue) => setValue(`workstreams.${index}.workstream_leads`, newValue)}
                     isLoading={loadingUsers}
                     error={errorUsers}
                     placeholder="Assign workstream leadership..."
+                    allowCustomInput={true} // NEW
+                    customInputPlaceholder="Add workstream lead by name..." // NEW
                   />
                 </div>
                 <div>
@@ -498,10 +520,12 @@ const WorkstreamForm: React.FC<WorkstreamFormProps> = ({ editMode = false }) => 
                     label="Team Members"
                     options={userOptions}
                     value={watch(`workstreams.${index}.team_members`) || []}
-                    onChange={(newValue) => setValue(`workstreams.${index}.team_members`, newValue.map(val => Number(val)))}
+                    onChange={(newValue) => setValue(`workstreams.${index}.team_members`, newValue)}
                     isLoading={loadingUsers}
                     error={errorUsers}
                     placeholder="Assign team members..."
+                    allowCustomInput={true} // NEW
+                    customInputPlaceholder="Add team member by name..." // NEW
                   />
                 </div>
               </div>

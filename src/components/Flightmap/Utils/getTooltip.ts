@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const getTooltipContent = (d: any): string => {
     const type = d.data.type;
-    if (type === "roadmap") {
+    if (type === "flightmap") {
       return `<strong>${d.data.name}</strong><br/>
               <em>${d.data.description}</em><br/>
               Created: ${

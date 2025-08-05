@@ -16,7 +16,7 @@ export function ensureDuplicateNodeBackendRecord(
   processedDuplicatesSet: React.MutableRefObject<Set<string>>,
   // CHANGED: Use the enhanced upsert function with error handling
   debouncedUpsertPosition: (
-    flightmapId: number, 
+    strategyId: number, 
     nodeType: 'milestone'|'workstream', 
     nodeId: number | string, 
     relY: number, 

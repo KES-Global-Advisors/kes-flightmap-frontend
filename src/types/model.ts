@@ -7,25 +7,26 @@
     role: string;
   };
   
-  export type Flightmap = {
-    id: number;
-    name: string;
-    description?: string;
-    owner: number; // Reference to User
-    created_at: string;
-    updated_at: string;
-  };
-  
   export type Strategy = {
     id: number;
-    flightmap: number; // Reference to Flightmap
     name: string;
     tagline?: string;
     vision: string;
     time_horizon: string; // Date string
-    executive_sponsors: number[]; // Array of User IDs
-    strategy_leads: number[]; // Array of User IDs
-    communication_leads: number[]; // Array of User IDs
+    
+    // Merged Flightmap fields
+    description?: string;
+    owner: number; // Reference to User
+    created_at: string;
+    updated_at: string;
+    is_draft: boolean;
+    draft_id?: number | null;
+    completed_at?: string | null;
+    
+    // Governance
+    executive_sponsors: (string | number)[];
+    strategy_leads: (string | number)[];
+    communication_leads: (string | number)[];
   };
   
   export type StrategicGoal = {
@@ -44,21 +45,21 @@
     name: string;
     vision?: string;
     time_horizon: string; // Date string
-    executive_sponsors: number[]; // Array of User IDs
-    program_leads: number[]; // Array of User IDs
-    workforce_sponsors: number[]; // Array of User IDs
+    executive_sponsors: (string | number)[];
+    program_leads: (string | number)[];
+    workforce_sponsors: (string | number)[];
     key_improvement_targets: number[]; // Array of StrategicGoal IDs
     key_organizational_goals: number[]; // Array of StrategicGoal IDs
   };
   
   export type Workstream = {
     id: number;
-    program: number; // Reference to Program
+    program: number | Program; // Reference to Program
     name: string;
     vision?: string;
     time_horizon: string; // Date string
-    workstream_leads: number[]; // Array of User IDs
-    team_members: number[]; // Array of User IDs
+    workstream_leads: (string | number)[];
+    team_members: (string | number)[];
     improvement_targets: string[]; // JSON field
     organizational_goals: string[]; // JSON field
   };
