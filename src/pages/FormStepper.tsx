@@ -554,7 +554,7 @@ const FormStepper: React.FC = () => {
   // Enhanced check for local backup on component mount with in-app modal
   useEffect(() => {
     const checkLocalBackup = () => {
-      const backup = localStorage.getItem('flightmap_draft_backup');
+      const backup = localStorage.getItem('strategy_draft_backup');
       if (backup) {
         try {
           const data = JSON.parse(backup);
@@ -571,11 +571,11 @@ const FormStepper: React.FC = () => {
             setShowRecoveryModal(true);
           } else {
             // Clear old backup
-            localStorage.removeItem('flightmap_draft_backup');
+            localStorage.removeItem('strategy_draft_backup');
           }
         } catch (error) {
           console.error('Error checking backup:', error);
-          localStorage.removeItem('flightmap_draft_backup');
+          localStorage.removeItem('strategy_draft_backup');
         }
       }
     };
@@ -673,7 +673,7 @@ const FormStepper: React.FC = () => {
               },
               credentials: 'include',
             });
-            localStorage.removeItem('flightmap_draft_backup');
+            localStorage.removeItem('strategy_draft_backup');
           } catch (error) {
             console.error('Error deleting draft:', error);
           }
@@ -1077,7 +1077,7 @@ const FormStepper: React.FC = () => {
           isOpen={showRecoveryModal}
           onClose={() => {
             setShowRecoveryModal(false);
-            localStorage.removeItem('flightmap_draft_backup');
+            localStorage.removeItem('strategy_draft_backup');
           }}
           onRestore={() => {
             if (recoveryDraftData?.data) {
@@ -1086,13 +1086,13 @@ const FormStepper: React.FC = () => {
               setCurrentStepIndex(FORM_STEPS.findIndex(step => step.id === recoveryDraftData.data.current_step));
               setDraftId(recoveryDraftData.data.draftId);
               setShowRecoveryModal(false);
-              localStorage.removeItem('flightmap_draft_backup');
+              localStorage.removeItem('strategy_draft_backup');
               showToast.success('Draft restored successfully');
             }
           }}
           onDiscard={() => {
             setShowRecoveryModal(false);
-            localStorage.removeItem('flightmap_draft_backup');
+            localStorage.removeItem('strategy_draft_backup');
           }}
           draftData={recoveryDraftData}
         />
