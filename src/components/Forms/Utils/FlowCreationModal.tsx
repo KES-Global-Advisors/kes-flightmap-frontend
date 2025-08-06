@@ -383,7 +383,7 @@ export const FlowCreationModal: React.FC<FlowCreationModalProps> = ({
 
   // ─── Render Modal ─────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 bg-gray-500/75 bg-opacity-50 flex items-center justify-center">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-7xl h-5/6 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">

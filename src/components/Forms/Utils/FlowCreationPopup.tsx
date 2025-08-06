@@ -24,7 +24,7 @@ export const FlowCreationPopup: React.FC<FlowCreationPopupProps> = ({
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-40 bg-black bg-opacity-25 flex items-center justify-center">
+    <div className="fixed inset-0 z-40 bg-gray-500/75 bg-opacity-25 flex items-center justify-center">
       <div className="bg-white rounded-lg shadow-lg p-6 max-w-md mx-4">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
