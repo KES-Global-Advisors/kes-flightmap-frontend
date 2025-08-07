@@ -141,6 +141,7 @@ export function useDragBehaviors({
   connectionCache,
   activitiesGroup,
   dependencyGroup,
+  viewportRef,
 }: {
   // Data
   data: { id: number };
@@ -185,7 +186,8 @@ export function useDragBehaviors({
 
   activitiesGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
   dependencyGroup: React.RefObject<d3.Selection<SVGGElement, unknown, null, undefined> | null>;
-  debouncedUpdateConnections?: (nodeId: string | number) => void; // ADD THIS
+  viewportRef?: React.RefObject<HTMLDivElement | null>; 
+  debouncedUpdateConnections?: (nodeId: string | number) => void;
 }) {
 
     // CREATE: Batched state manager instance
@@ -556,21 +558,31 @@ export function useDragBehaviors({
         // Add dragging class for CSS styling
         d3.select(this).classed("dragging", true);
         
-        // Important: Raise this element to the top of the rendering order
-        // This ensures the node appears above connection lines during drag
+        // Important: Raise this element to the top
         d3.select(this).raise();
         
-        // Store the initial drag position 
+        // Store the initial drag position with scroll adjustment
+        const scrollX = viewportRef?.current?.scrollLeft || 0;
+        const scrollY = viewportRef?.current?.scrollTop || 0;
+        
         d.dragStartX = event.x;
         d.dragStartY = event.y;
+        d.scrollStartX = scrollX;  // Store initial scroll position
+        d.scrollStartY = scrollY;  // Store initial scroll position
       })
       .on("drag", function(event, d) {
+              // Account for any scroll changes during drag
+        const currentScrollX = viewportRef?.current?.scrollLeft || 0;
+        const currentScrollY = viewportRef?.current?.scrollTop || 0;
+        const scrollDeltaX = currentScrollX - d.scrollStartX;
+        const scrollDeltaY = currentScrollY - d.scrollStartY;
+        
         // Get current workstream position
         const workstreamId = d.isDuplicate ? d.placementWorkstreamId : d.milestone.workstreamId;
         
-        // Calculate position using delta from drag start
-        const deltaX = event.x - d.dragStartX;
-        const deltaY = event.y - d.dragStartY;
+        // Calculate position using delta from drag start, adjusted for scroll
+        const deltaX = event.x - d.dragStartX - scrollDeltaX;
+        const deltaY = event.y - d.dragStartY - scrollDeltaY;
         
         // Calculate new absolute position
         const newX = d.initialX + deltaX;
