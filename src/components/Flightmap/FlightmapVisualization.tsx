@@ -41,7 +41,7 @@ import { ensureDuplicateNodeBackendRecord } from './Utils/apiUtils';
 import { useTooltip } from '../../hooks/useTooltip';
 import { createLegend } from './Utils/legendUtils';
 import { setupZoomBehavior, resetZoom } from './Utils/zoomUtils';
-import { initializeVisualizationSVG, addResetViewButton, SvgContainers } from './Utils/svgSetup';
+import { initializeVisualizationSVG, SvgContainers } from './Utils/svgSetup';
 import { 
   WORKSTREAM_AREA_HEIGHT, 
   NODE_RADIUS,
@@ -69,6 +69,8 @@ const FlightmapVisualizationInner: React.FC<{
   const [milestonePositions, setMilestonePositions] = useState<{ [id: string]: { y: number } }>({});
   const [workstreamPositions, setWorkstreamPositions] = useState<{ [id: number]: { y: number } }>({});
   const [isEditMode, setIsEditMode] = useState(false);
+  // Track scroll position for coordinate adjustments
+  const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
   const dataId = useRef<string>(`${data.id || new Date().getTime()}`);
 
   // Container references to avoid recreating on every render
@@ -161,10 +163,21 @@ const FlightmapVisualizationInner: React.FC<{
   const contentWidth = width - margin.left - margin.right;
   const contentHeight = height - margin.top - margin.bottom;
 
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+
   // ─── 1️⃣ Load remote positions via hooks ───────────────────────────────────
   const { data: remoteMilestonePos = [] } = useNodePositions(data.id, 'milestone');
   const { data: remoteWorkstreamPos = [] } = useNodePositions(data.id, 'workstream');
   const upsertPos = useUpsertPosition();
+
+   // ─── Render State Management ─────────────────────────────────────────────
+  const [renderTrigger, setRenderTrigger] = useState({
+    timeline: 0,
+    workstreams: 0,
+    milestones: 0,
+    connections: 0,
+    all: 0
+  });
 
     // Enhanced retry function with exponential backoff
   const retryFailedSave = useCallback((saveKey: string) => {
@@ -356,8 +369,8 @@ const FlightmapVisualizationInner: React.FC<{
     
     // Initialize SVG with all containers
     svgContainers.current = initializeVisualizationSVG(svgRef, {
-      width,
-      height,
+      width: canvasDimensions.width,    // Use canvas dimensions
+      height: canvasDimensions.height,   // Use canvas dimensions
       margin,
       className: "bg-white"
     });
@@ -426,30 +439,19 @@ const FlightmapVisualizationInner: React.FC<{
       }
     );
 
-    // Add reset view button
-    addResetViewButton(
-      svgContainers.current.svg,
-      () => {
-        if (svgRef.current && zoomRef.current) {
-          resetZoom(svgRef, zoomRef.current);
-        }
-      },
-      { right: width - margin.right + 10, bottom: height - 40 }
-    );
-
   }, [width, height, margin, data.id, queryClient]);
 
   // 2. Initialize zoom behavior - executed once after container is created
   useEffect(() => {
     if (!svgRef.current || !container.current) return;
-    
-    // Setup zoom behavior
+
+    // Setup zoom behavior with viewport reference
     zoomRef.current = setupZoomBehavior(svgRef, container, {
       minScale: 0.5,
       maxScale: 5,
-      constrained: true,
+      // constrained: true,
       margin
-    });
+    }, viewportRef);  // Pass viewport ref
   }, [margin]);
 
   // 3. Data processing - runs when data changes
@@ -629,6 +631,96 @@ const FlightmapVisualizationInner: React.FC<{
       }
     });
   }, [removeDependency]);
+
+    // Calculate actual canvas dimensions based on content
+  const canvasDimensions = useMemo(() => {
+    if (!workstreams.length || !timelineMarkers.length) {
+      return { width: width, height: height };
+    }
+
+    // Calculate actual content bounds
+    const maxTimelineX = contentWidth + 100; // Add padding for rightmost elements
+    const totalWorkstreamHeight = workstreams.length * (WORKSTREAM_AREA_HEIGHT + 80) + 200;
+
+    return {
+      width: Math.max(width, maxTimelineX + margin.left + margin.right),
+      height: Math.max(height, totalWorkstreamHeight + margin.top + margin.bottom)
+    };
+  }, [workstreams, timelineMarkers, contentWidth, width, height, margin]);
+
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const target = event.currentTarget;
+    setScrollOffset({
+      x: target.scrollLeft,
+      y: target.scrollTop
+    });
+  }, []);
+
+  // Update zoomed dimensions when zoom changes
+  useEffect(() => {
+    if (!zoomRef.current) return;
+
+    // Update base dimensions in zoom behavior when canvas dimensions change
+    (zoomRef.current as any).updateBaseDimensions?.(canvasDimensions.width, canvasDimensions.height);
+  }, [canvasDimensions]);
+
+  const [zoomedDimensions, setZoomedDimensions] = useState(canvasDimensions);
+
+  // Track zoom changes and update wrapper dimensions
+  useEffect(() => {
+    if (!svgRef.current || !viewportRef.current) return;
+
+    const handleZoomChange = () => {
+      const scale = (zoomRef.current as any)?.getCurrentScale?.() || 1;
+      setZoomedDimensions({
+        width: canvasDimensions.width * scale,
+        height: canvasDimensions.height * scale
+      });
+    };
+
+    // Listen for zoom events
+    const svg = d3.select(svgRef.current);
+    svg.on("zoom.dimension-tracker", handleZoomChange);
+
+    return () => {
+      svg.on("zoom.dimension-tracker", null);
+    };
+  }, [canvasDimensions]);
+
+  // Add viewport visibility tracking for future optimization
+  const visibleWorkstreams = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!viewportRef.current || !workstreamGroup.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          const workstreamId = parseInt(entry.target.getAttribute('data-id') || '0');
+          if (entry.isIntersecting) {
+            visibleWorkstreams.current.add(workstreamId);
+          } else {
+            visibleWorkstreams.current.delete(workstreamId);
+          }
+        });
+
+        // Log visibility for future optimization
+        console.debug(`Visible workstreams: ${Array.from(visibleWorkstreams.current).join(', ')}`);
+      },
+      {
+        root: viewportRef.current,
+        rootMargin: '100px', // Pre-load slightly outside viewport
+        threshold: 0.01
+      }
+    );
+
+    // Observe all workstream elements
+    workstreamGroup.current.selectAll('.workstream').each(function() {
+      observer.observe(this as Element);
+    });
+
+    return () => observer.disconnect();
+  }, [workstreamGroup, renderTrigger.workstreams]);  // Re-observe when workstreams re-render
 
     // Scales setup - recalculated when timeline markers or dimensions change
   const xScale = useMemo(() => {
@@ -974,6 +1066,7 @@ const FlightmapVisualizationInner: React.FC<{
     onMilestoneDeadlineChange,
     connectionCache,
     debouncedUpdateConnections,
+    viewportRef,
   });
 
   // ─── Rendering Functions ─────────────────────────────────────────────────
@@ -1752,15 +1845,6 @@ const FlightmapVisualizationInner: React.FC<{
     dependencies, handleD3MouseOver, handleD3MouseMove, handleD3MouseOut,
     handleDeleteActivity, isEditMode, handleRemoveDependency]);
 
-  // ─── Render State Management ─────────────────────────────────────────────
-  const [renderTrigger, setRenderTrigger] = useState({
-    timeline: 0,
-    workstreams: 0,
-    milestones: 0,
-    connections: 0,
-    all: 0
-  });
-
   // Create specific trigger functions
   const triggerTimelineRender = useCallback(() => {
     setRenderTrigger(prev => ({ ...prev, timeline: prev.timeline + 1 }));
@@ -2093,20 +2177,96 @@ const FlightmapVisualizationInner: React.FC<{
     };
   }, [milestonePositions, workstreamPositions]);
 
+  // Replace the current return statement (lines ~1850-1870)
   return (
     <div className="w-full h-full relative">
-      <svg ref={svgRef}></svg>
+      <div 
+        ref={viewportRef}
+        className="flightmap-viewport"
+        style={{
+          width: '100%',
+          height: '100%',
+          overflow: 'auto',  // This enables both scrollbars when content overflows
+          position: 'relative'
+        }}
+        onScroll={handleScroll}
+      >
+        <div 
+          className="flightmap-canvas-wrapper"
+          style={{
+            width: `${zoomedDimensions.width}px`,  // Use zoomed dimensions
+            height: `${zoomedDimensions.height}px`, // Use zoomed dimensions
+            position: 'relative',
+            minWidth: '100%',
+            minHeight: '100%',
+            transformOrigin: '0 0'  // Ensure scaling happens from top-left
+          }}
+        >
+          <svg 
+            ref={svgRef}
+            style={{
+              width: canvasDimensions.width,  // Keep original SVG dimensions
+              height: canvasDimensions.height,
+              transformOrigin: '0 0'
+            }}
+          ></svg>
+        </div>
+      </div>
       <Tooltip
         content={tooltip.content}
-        left={tooltip.left}
-        top={tooltip.top}
+        left={tooltip.left + scrollOffset.x}
+        top={tooltip.top + scrollOffset.y}
         visible={tooltip.visible}
       />
-      <div className="absolute top-4 left-4 flex flex-col gap-2">
-        <ScreenshotButton svgRef={svgRef} />
+      <div className="absolute top-4 left-4 z-10">
+        <div className="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 p-2 flex flex-col gap-2">
+          {/* Screenshot Button */}
+          <ScreenshotButton svgRef={svgRef} />
+              
+          {/* Reset View Button */}
+          <button
+            onClick={() => {
+              if (svgRef.current && zoomRef.current) {
+                resetZoom(svgRef, zoomRef.current, 500, viewportRef);
+              }
+            }}
+            className="w-full bg-white hover:bg-gray-50 text-gray-700 font-medium text-sm px-4 py-2 rounded-md border border-gray-200 transition-colors duration-200 flex items-center justify-center gap-2"
+            title="Reset zoom and scroll position"
+          >
+            <svg 
+              className="w-4 h-4" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" 
+              />
+              <circle cx="11" cy="11" r="8" strokeWidth={2} />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 8v3m0 0v3m0-3h3m-3 0H8" />
+            </svg>
+            Reset View
+          </button>
+          
+          {/* Divider */}
+          <div className="border-t border-gray-200"></div>
+          
+          {/* Zoom Info */}
+          <div className="px-2 py-1 text-xs text-gray-600 text-center">
+            <div>Zoom: {Math.round((zoomedDimensions.width / canvasDimensions.width) * 100)}%</div>
+            <div className="text-gray-400 mt-1">
+              Ctrl+Scroll to zoom
+              {zoomedDimensions.width > window.innerWidth && (
+                <div className="text-blue-600 mt-1">↔ Scroll to navigate</div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-
-            {/* Add the confirmation modal */}
+      {/* Confirmation modal remains the same */}
       <ConfirmationModal
         isOpen={confirmModal.isOpen}
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
